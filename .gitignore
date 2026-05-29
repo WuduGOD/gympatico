@@ -1,0 +1,7 @@
+node_modules/
+backend/.env
+frontend/.env
+repomix-output.txt
+dist/
+build/
+.env

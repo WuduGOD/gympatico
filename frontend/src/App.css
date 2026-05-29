@@ -1,0 +1,13 @@
+/* Reset podstawowych marginesów i ustawienie box-sizing dla całej aplikacji */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: #121212;
+  color: #ffffff;
+  margin: 0;
+  font-family: sans-serif;
+}
