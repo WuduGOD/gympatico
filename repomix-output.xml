@@ -49,6 +49,7 @@ backend/routes/auth.js
 backend/routes/exercises.js
 backend/routes/friends.js
 backend/routes/stats.js
+backend/routes/templates.js
 backend/routes/weight.js
 backend/routes/workouts.js
 docker-compose.yml
@@ -70,6 +71,7 @@ frontend/src/assets/vite.svg
 frontend/src/components/WeightChart.jsx
 frontend/src/config/api.js
 frontend/src/hooks/useFriends.js
+frontend/src/hooks/useTemplates.js
 frontend/src/hooks/useWeightLogs.js
 frontend/src/hooks/useWorkouts.js
 frontend/src/index.css
@@ -121,176 +123,6 @@ const authenticateToken = (req, res, next) => {
 };
 
 module.exports = authenticateToken;
-</file>
-
-<file path="backend/package.json">
-{
-  "name": "gympatico",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon index.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "bcrypt": "^6.0.0",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "express-rate-limit": "^8.5.2",
-    "jsonwebtoken": "^9.0.3",
-    "pg": "^8.21.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.14"
-  }
-}
-</file>
-
-<file path="backend/routes/auth.js">
-const express = require('express');
-const router = express.Router();
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
-const rateLimit = require('express-rate-limit');
-
-// KONFIGURACJA RATE LIMITERA DLA STRONY AUTH
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // Okno czasowe: 15 minut
-  max: 10, // Maksymalnie 10 prób z jednego adresu IP w danym oknie
-  
-  // Format odpowiedzi dopasowany do frontendu (obsługa catch(err) i showToast)
-  message: { 
-    error: "Zbyt wiele nieudanych prób! Twój adres IP został tymczasowo zablokowany. Spróbuj ponownie za 15 minut." 
-  },
-  
-  standardHeaders: true, // Zwraca informacje o limicie w nagłówkach RateLimit-*
-  legacyHeaders: false,  // Wyłącza przestarzałe nagłówki X-RateLimit-*
-});
-
-// Rejestracja
-router.post('/register', authLimiter, async (req, res) => {
-  const { email, password, nick } = req.body;
-
-  if (!email || !password || !nick) {
-    return res.status(400).json({ error: "Wszystkie pola (email, password, nick) są wymagane!" });
-  }
-
-  if (password.length < 8) {
-    return res.status(400).json({ error: "Hasło musi składać się z co najmniej 8 znaków!" });
-  }
-
-  try {
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(password, saltRounds);
-
-    const query = `
-      INSERT INTO users (email, password_hash, nick) 
-      VALUES ($1, $2, $3) 
-      RETURNING id, email, nick, created_at
-    `;
-    const result = await pool.query(query, [email, passwordHash, nick]);
-
-    res.status(201).json({ message: "Użytkownik zarejestrowany! 🏋️‍♂️", user: result.rows[0] });
-  } catch (error) {
-    if (error.code === '23505') {
-      return res.status(400).json({ error: "Ten adres e-mail lub nick jest już zajęty!" });
-    }
-    res.status(500).json({ error: "Błąd serwera podczas rejestracji", details: error.message });
-  }
-});
-
-// Logowanie
-router.post('/login', authLimiter, async (req, res) => {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email i hasło są wymagane!" });
-  }
-
-  try {
-    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (userResult.rows.length === 0) {
-      return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
-    }
-
-    const user = userResult.rows[0];
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-
-    if (!isPasswordValid) {
-      return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
-    }
-
-    const token = jwt.sign(
-      { userId: user.id, nick: user.nick },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    res.json({
-      message: "Zalogowano pomyślnie! 🦾",
-      token,
-      user: { id: user.id, email: user.email, nick: user.nick, isPremium: user.is_premium }
-    });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas logowania", details: error.message });
-  }
-});
-
-// Pobranie aktualnych danych profilu użytkownika (w tym świeżego streaka)
-router.get('/me', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT id, email, nick, current_streak, is_premium, weekly_target_workouts FROM users WHERE id = $1',
-      [req.user.userId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Użytkownik nie istnieje." });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas pobierania profilu", details: error.message });
-  }
-});
-
-router.put('/weekly-target', authenticateToken, async (req, res) => {
-  const { weeklyTarget } = req.body;
-  const userId = req.user.userId;
-
-  // Walidacja wejścia - cel musi być logiczną liczbą dni w tygodniu (1-7)
-  const targetNum = parseInt(weeklyTarget);
-  if (isNaN(targetNum) || targetNum < 1 || targetNum > 7) {
-    return res.status(400).json({ error: "Cel tygodniowy musi być liczbą od 1 do 7!" });
-  }
-
-  try {
-    const query = `
-      UPDATE users 
-      SET weekly_target_workouts = $1 
-      WHERE id = $2 
-      RETURNING weekly_target_workouts
-    `;
-    const result = await pool.query(query, [targetNum, userId]);
-    
-    res.json({ 
-      message: "Cel zaktualizowany! 🎯", 
-      weekly_target_workouts: result.rows[0].weekly_target_workouts 
-    });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas aktualizacji celu", details: error.message });
-  }
-});
-
-module.exports = router;
 </file>
 
 <file path="backend/routes/exercises.js">
@@ -451,6 +283,114 @@ router.get('/', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
+<file path="backend/routes/templates.js">
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth'); // Zakładam, że tam masz middleware auth
+
+// 1. POBRANIE WSZYSTKICH SZABLONÓW UŻYTKOWNIKA
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    // Agregujemy serie bezpośrednio w bazie za pomocą json_agg, oszczędzając pamięć RAM serwera
+    const query = `
+      SELECT wt.id, wt.name, wt.created_at,
+             COALESCE(
+               json_agg(
+                 json_build_object(
+                   'exerciseId', ts.exercise_id,
+                   'weight', ts.weight,
+                   'reps', ts.reps,
+                   'order', ts.series_order
+                 ) ORDER BY ts.series_order ASC
+               ) FILTER (WHERE ts.id IS NOT NULL), '[]'
+             ) as series
+      FROM workout_templates wt
+      LEFT JOIN template_series ts ON wt.id = ts.template_id
+      WHERE wt.user_id = $1
+      GROUP BY wt.id
+      ORDER BY wt.name ASC
+    `;
+    const { rows } = await pool.query(query, [userId]);
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania szablonów", details: error.message });
+  }
+});
+
+// 2. TWORZENIE NOWEGO SZABLONU (TRANSAKCYJNE)
+router.post('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  let { name, series } = req.body;
+
+  // Walidacja Fail-Fast
+  if (!name || !name.trim() || !Array.isArray(series) || series.length === 0) {
+    return res.status(400).json({ error: "Nazwa szablonu oraz zestaw serii są wymagane!" });
+  }
+
+  name = name.trim();
+  if (name.length < 3 || name.length > 100) {
+    return res.status(400).json({ error: "Nazwa szablonu musi mieć od 3 do 100 znaków!" });
+  }
+
+  try {
+    await pool.query('BEGIN');
+
+    // Wstawienie nagłówka szablonu
+    const templateResult = await pool.query(
+      "INSERT INTO workout_templates (user_id, name) VALUES ($1, $2) RETURNING id, name",
+      [userId, name]
+    );
+    const templateId = templateResult.rows[0].id;
+
+    // Masowe wstawianie serii w pętli
+    for (let i = 0; i < series.length; i++) {
+      const s = series[i];
+      if (!s.exerciseId || s.weight === undefined || !s.reps) {
+        throw new Error("Niekompletne dane serii w szablonie.");
+      }
+
+      await pool.query(
+        `INSERT INTO template_series (template_id, exercise_id, weight, reps, series_order)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [templateId, s.exerciseId, s.weight, s.reps, s.order || (i + 1)]
+      );
+    }
+
+    await pool.query('COMMIT');
+    res.status(201).json({ message: "Szablon treningowy został zapisany! 💾", templateId });
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    res.status(500).json({ error: "Błąd podczas zapisu szablonu", details: error.message });
+  }
+});
+
+// 3. USUNIĘCIE SZABLONU (KASKADOWE PRZEZ BAZĘ)
+router.delete('/:id', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      "DELETE FROM workout_templates WHERE id = $1 AND user_id = $2",
+      [id, userId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Nie znaleziono szablonu lub brak uprawnień." });
+    }
+
+    res.json({ message: "Szablon usunięty pomyślnie. ✕" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd usuwania szablonu", details: error.message });
+  }
+});
+
+module.exports = router;
+</file>
+
 <file path="backend/routes/weight.js">
 const express = require('express');
 const router = express.Router();
@@ -509,249 +449,6 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     res.json({ message: "Pomiar wagi został pomyślnie usunięty." });
   } catch (error) {
     res.status(500).json({ error: "Błąd serwera podczas usuwania wpisu wagi", details: error.message });
-  }
-});
-
-module.exports = router;
-</file>
-
-<file path="backend/routes/workouts.js">
-const express = require('express');
-const router = express.Router();
-const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
-
-// Zapisanie treningu + wyliczenie streaka
-router.post('/', authenticateToken, async (req, res) => {
-  const { name, comment, series } = req.body;
-  const userId = req.user.userId;
-
-  if (!name || !series || !Array.isArray(series) || series.length === 0) {
-    return res.status(400).json({ error: "Nazwa treningu oraz serie są wymagane!" });
-  }
-
-  try {
-    await pool.query('BEGIN');
-
-    const sessionResult = await pool.query(
-      "INSERT INTO workout_sessions (user_id, name, comment, started_at, ended_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id",
-      [userId, name, comment || null]
-    );
-    const sessionId = sessionResult.rows[0].id;
-
-    for (let i = 0; i < series.length; i++) {
-      const s = series[i];
-      let estimatedOneRM = null;
-      if (s.reps >= 1 && s.reps <= 12) {
-        estimatedOneRM = s.weight * (1 + s.reps / 30);
-      }
-
-      await pool.query(
-        `INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [sessionId, s.exerciseId, s.weight, s.reps, s.order || (i + 1), estimatedOneRM, s.isAlternative || false, s.comment || null]
-      );
-    }
-
-    const userResult = await pool.query('SELECT current_streak, weekly_target_workouts FROM users WHERE id = $1', [userId]);
-    const { current_streak, weekly_target_workouts } = userResult.rows[0];
-
-    // Definiujemy bezpieczny cel (fallback na 3, jeśli w bazie siedzi NULL)
-    const target = weekly_target_workouts ?? 3;
-
-    // 1. Pobieramy liczbę treningów z BIEŻĄCEGO tygodnia (wliczając ten właśnie zapisany)
-    const thisWeekResult = await pool.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 AND started_at >= date_trunc('week', NOW())`, [userId]
-    );
-    const workoutsThisWeek = parseInt(thisWeekResult.rows[0].count);
-
-    // 2. Pobieramy liczbę treningów z POPRZEDNIEGO tygodnia
-    const lastWeekResult = await pool.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
-      AND started_at >= date_trunc('week', NOW() - INTERVAL '1 week') 
-      AND started_at < date_trunc('week', NOW())`, [userId]
-    );
-    const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count);
-
-    let newStreak = current_streak;
-    const didMeetGoalLastWeek = workoutsLastWeek >= target;
-
-    // LOGIKA AKTUALIZACJI Z WYKORZYSTANIEM ZMIENNEJ TARGET:
-    if (workoutsThisWeek === target) {
-      // Użytkownik właśnie domknął cel w tym tygodniu!
-      if (didMeetGoalLastWeek || current_streak === 0) {
-        // Jeśli poprzedni tydzień był zaliczony (lub dopiero zaczyna od zera), podbijamy streak
-        newStreak = current_streak + 1;
-      } else {
-        // Jeśli poprzedni tydzień zawalił, ale w tym właśnie zrobił cel – jego nowy streak to 1
-        newStreak = 1;
-      }
-    } else if (workoutsThisWeek > target) {
-      // Każdy kolejny trening ponad cel w tym samym tygodniu tylko utrzymuje obecny (już podbity) streak
-      newStreak = current_streak;
-    } else {
-      // Użytkownik jest w trakcie robienia celu (workoutsThisWeek < target)
-      if (didMeetGoalLastWeek) {
-        // Poprzedni tydzień był zielony, więc w trakcie tego tygodnia wciąż utrzymujemy jego dotychczasowy streak
-        newStreak = current_streak;
-      } else {
-        // Poprzedni tydzień był czerwony i w tym jeszcze nie osiągnął celu -> streak leci na 0
-        newStreak = 0;
-      }
-    }
-
-    await pool.query(
-      'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
-      [newStreak, userId]
-    );
-    await pool.query('COMMIT');
-
-    res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
-  } catch (error) {
-    await pool.query('ROLLBACK');
-    res.status(500).json({ error: "Błąd transakcji", details: error.message });
-  }
-});
-
-// Pobranie historii treningów
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  
-  // Pobieramy parametry z query stringa, ustawiając bezpieczne wartości domyślne
-  const limit = parseInt(req.query.limit) || 20;
-  const offset = parseInt(req.query.offset) || 0;
-
-  try {
-    // Krok A: Pobieramy tylko określone sesje treningowe dla danej strony
-    const sessionsQuery = `
-      SELECT id, name, comment, started_at as "startedAt"
-      FROM workout_sessions
-      WHERE user_id = $1
-      ORDER BY started_at DESC
-      LIMIT $2 OFFSET $3
-    `;
-    const sessionsResult = await pool.query(sessionsQuery, [userId, limit, offset]);
-    const sessions = sessionsResult.rows;
-
-    if (sessions.length === 0) {
-      return res.json([]);
-    }
-
-    // Krok B: Wyciągamy ID pobranych sesji, aby pobrać do nich serie
-    const sessionIds = sessions.map(s => s.id);
-
-    const seriesQuery = `
-      SELECT 
-        ls.id, 
-        ls.workout_session_id, 
-        ls.exercise_id, 
-        ls.weight, 
-        ls.reps, 
-        ls.series_order as "order", -- <--- TUTAJ: mapujemy series_order na alias "order"
-        ls.estimated_one_rm,
-        ex.name as "exerciseName"
-      FROM log_series ls
-      JOIN exercises ex ON ls.exercise_id = ex.id
-      WHERE ls.workout_session_id = ANY($1)
-      ORDER BY ls.workout_session_id, ls.series_order ASC
-    `;
-    const seriesResult = await pool.query(seriesQuery, [sessionIds]);
-    const allSeries = seriesResult.rows;
-
-    // Krok C: Mapujemy serie do odpowiadających im sesji treningowych
-    const historyData = sessions.map(session => {
-      return {
-        ...session,
-        series: allSeries.filter(s => s.workout_session_id === session.id)
-      };
-    });
-
-    res.json(historyData);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas pobierania historii", details: error.message });
-  }
-});
-
-router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
-  const { exerciseId } = req.params;
-  const userId = req.user.userId;
-
-  try {
-    const query = `
-      SELECT 
-        TO_CHAR(ws.started_at, 'YYYY-MM-DD') as date,
-        MAX(ls.estimated_one_rm) as max_1rm
-      FROM log_series ls
-      JOIN workout_sessions ws ON ls.workout_session_id = ws.id
-      WHERE ls.exercise_id = $1 
-        AND ws.user_id = $2 
-        AND ls.estimated_one_rm IS NOT NULL
-      GROUP BY TO_CHAR(ws.started_at, 'YYYY-MM-DD') -- Grupowanie TYLKO po sformatowanym dniu
-      ORDER BY date ASC -- Sortowanie tekstowe YYYY-MM-DD działa perfekcyjnie chronologicznie
-    `;
-    
-    const result = await pool.query(query, [exerciseId, userId]);
-    
-    const progressionData = result.rows.map(row => ({
-      date: row.date,
-      oneRm: parseFloat(row.max_1rm)
-    }));
-
-    res.json(progressionData);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd podczas pobierania progresji 1RM", details: error.message });
-  }
-});
-
-router.delete('/:sessionId', authenticateToken, async (req, res) => {
-  const { sessionId } = req.params;
-  const userId = req.user.userId;
-
-  try {
-    // Sprawdzamy, czy sesja istnieje i należy do zalogowanego użytkownika
-    const checkQuery = 'SELECT * FROM workout_sessions WHERE id = $1 AND user_id = $2';
-    const checkResult = await pool.query(checkQuery, [sessionId, userId]);
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: "Nie znaleziono treningu lub nie masz uprawnień do jego usunięcia." });
-    }
-
-    // Usuwamy trening. Kaskada (ON DELETE CASCADE) na poziomie bazy danych automatycznie usunie serie z log_series.
-    await pool.query('DELETE FROM workout_sessions WHERE id = $1', [sessionId]);
-
-    res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas usuwania treningu", details: error.message });
-  }
-});
-
-// Edycja metadanych treningu (Nazwa i Komentarz)
-router.patch('/:sessionId', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { sessionId } = req.params;
-  const { name, comment } = req.body;
-
-  // Walidacja obecności nazwy (nie pozwalamy na wyczyszczenie nazwy sesji)
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: "Nazwa treningu jest wymagana!" });
-  }
-
-  try {
-    const updateQuery = `
-      UPDATE workout_sessions 
-      SET name = $1, comment = $2 
-      WHERE id = $3 AND user_id = $4 
-      RETURNING id, name, comment
-    `;
-    const result = await pool.query(updateQuery, [name.trim(), comment ? comment.trim() : null, sessionId, userId]);
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Nie znaleziono sesji treningowej lub brak uprawnień." });
-    }
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas edycji parametrów treningu", details: error.message });
   }
 });
 
@@ -1042,6 +739,73 @@ export function useFriends(token) {
     friendNickInput, setFriendNickInput, socialMessage, setSocialMessage,
     handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend
   };
+}
+</file>
+
+<file path="frontend/src/hooks/useTemplates.js">
+import { useState, useCallback } from 'react';
+import { API_BASE_URL } from '../config/api';
+
+export function useTemplates(token, showToast) {
+  const [templates, setTemplates] = useState([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+
+  const fetchTemplates = useCallback(async () => {
+    if (!token) return;
+    setLoadingTemplates(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/templates`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Nie udało się pobrać szablonów.');
+      const data = await res.json();
+      setTemplates(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  }, [token]);
+
+  const handleSaveTemplate = useCallback(async (name, seriesList) => {
+    if (!token) return false;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/templates`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ name, series: seriesList })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Błąd zapisu szablonu');
+      
+      showToast(data.message || 'Szablon zapisany! 💾', 'success');
+      await fetchTemplates(); // Odśwież listę w tle
+      return true;
+    } catch (err) {
+      showToast(err.message, 'error');
+      return false;
+    }
+  }, [token, fetchTemplates, showToast]);
+
+  const handleDeleteTemplate = useCallback(async (id) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/templates/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Nie udało się usunąć szablonu.');
+      showToast('Szablon został usunięty ✕', 'success');
+      setTemplates(prev => prev.filter(t => t.id !== id));
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }, [token, showToast]);
+
+  return { templates, loadingTemplates, fetchTemplates, handleSaveTemplate, handleDeleteTemplate };
 }
 </file>
 
@@ -1703,425 +1467,12 @@ export default function LoginView({ onLoginSuccess }) {
 }
 </file>
 
-<file path="frontend/src/views/NewWorkout.jsx">
-import React from 'react'
-
-export default function NewWorkout({
-  workoutName, setWorkoutName,
-  workoutComment, setWorkoutComment,
-  currentSelectedExercise, setCurrentSelectedExercise,
-  seriesWeight, setSeriesWeight,
-  seriesReps, setSeriesReps,
-  exercises, localSeriesList,
-  addSeriesToLocalList, handleSaveWorkout,
-  removeSeriesFromLocalList
-}) {
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
-      
-      {/* LEWA STRONA: KREATOR */}
-      <div className="lg:col-span-2 flex flex-col gap-6">
-        
-        {/* KARTA A: METADANE TRENINGU */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-xl font-bold tracking-tight mb-4 flex items-center gap-2">
-            <span>📝</span> Szczegóły sesji treningowej
-          </h2>
-          
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 flex flex-col gap-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Nazwa treningu:</label>
-              <input 
-                type="text" 
-                placeholder="np. Push Day / Klatka + Barki" 
-                value={workoutName} 
-                onChange={e => setWorkoutName(e.target.value)} 
-                className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-              />
-            </div>
-            
-            <div className="flex-1 flex flex-col gap-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Komentarz / Notatki:</label>
-              <input 
-                type="text" 
-                placeholder="np. Dobra pompa, progres w ostatniej serii" 
-                value={workoutComment} 
-                onChange={e => setWorkoutComment(e.target.value)} 
-                className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* KARTA B: DODAWANIE SERII */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-xl font-bold tracking-tight mb-4 flex items-center gap-2">
-            <span>💪</span> Dodaj wykonaną serię
-          </h2>
-          
-          <form onSubmit={addSeriesToLocalList} className="flex flex-col gap-4">
-            
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Wybierz ćwiczenie:</label>
-              <select
-                value={currentSelectedExercise}
-                onChange={e => setCurrentSelectedExercise(e.target.value)}
-                className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed cursor-pointer"
-              >
-                {exercises.map(ex => (
-                  <option key={ex.id} value={ex.id} className="bg-[#2d2d2d]">
-                    {ex.name} ({ex.muscle_group})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Ciężar (kg):</label>
-                <input 
-                  type="number" 
-                  step="0.5"
-                  placeholder="0" 
-                  value={seriesWeight} 
-                  onChange={e => setSeriesWeight(e.target.value)} 
-                  className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed font-mono"
-                  required
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Powtórzenia:</label>
-                <input 
-                  type="number" 
-                  placeholder="0" 
-                  value={seriesReps} 
-                  onChange={e => setSeriesReps(e.target.value)} 
-                  className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed font-mono"
-                  required
-                />
-              </div>
-            </div>
-
-            <button 
-              type="submit"
-              className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-lg text-sm tracking-wide transition-all active:scale-[0.98] border border-zinc-700 cursor-pointer mt-2"
-            >
-              + Dodaj serię do listy
-            </button>
-          </form>
-        </section>
-      </div>
-
-      {/* PRAWA STRONA: PODGLĄD KOSZYKA */}
-      <section className="lg:col-span-1 bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40 flex flex-col justify-between h-fit min-h-[350px]">
-        <div>
-          <div className="border-b border-zinc-800 pb-3 mb-4 flex justify-between items-center">
-            <h2 className="text-lg font-bold tracking-tight">Aktualny zestaw 🛒</h2>
-            <span className="bg-gymRed/10 text-gymRed text-xs px-2.5 py-0.5 rounded-full font-bold">
-              Serii: {localSeriesList.length}
-            </span>
-          </div>
-
-          {localSeriesList.length === 0 ? (
-            <div className="text-center py-12 flex flex-col items-center gap-2">
-              <span className="text-3xl opacity-40">🏋️‍♂️</span>
-              <p className="text-zinc-500 italic text-sm">Lista jest pusta. Dodaj pierwszą serię powyżej, aby zacząć logowanie.</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto pr-1">
-              {localSeriesList.map((s, idx) => (
-                <div 
-                  key={idx} 
-                  className="flex justify-between items-center bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800/60 shadow-sm text-xs md:text-sm group hover:border-zinc-700 transition-colors"
-                >
-                  <div className="flex flex-col gap-0.5 max-w-[75%]">
-                    <strong className="text-zinc-200 truncate">{s.exerciseName}</strong>
-                    <span className="text-zinc-400">
-                      Seria {s.order}: <span className="text-gymRed font-semibold">{s.weight} kg</span> × {s.reps} powt.
-                    </span>
-                  </div>
-                  
-                  <button 
-                    onClick={() => removeSeriesFromLocalList(idx)}
-                    className="p-2 text-zinc-500 hover:text-gymRed transition-colors rounded hover:bg-gymRed/10 cursor-pointer"
-                    title="Usuń serię"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="mt-6 pt-4 border-t border-zinc-800/60">
-          <button 
-            onClick={handleSaveWorkout}
-            disabled={localSeriesList.length === 0}
-            className={`w-full py-4 text-white font-bold rounded-xl text-base tracking-wide transition-all shadow-md mt-auto
-              ${localSeriesList.length === 0 
-                ? 'bg-zinc-800 text-zinc-500 border border-zinc-900 opacity-50 cursor-not-allowed' 
-                : 'bg-gymRed hover:bg-red-600 active:scale-[0.98] cursor-pointer shadow-red-950/20'
-              }`}
-          >
-            🔥 ZAKOŃCZ I ZAPISZ TRENING
-          </button>
-        </div>
-      </section>
-
-    </div>
-  )
-}
-</file>
-
-<file path="frontend/src/views/Social.jsx">
-import React from 'react'
-
-export default function Social({
-  friendNickInput, 
-  setFriendNickInput,
-  handleSendFriendRequest, 
-  pendingRequests, 
-  handleAcceptFriend, 
-  handleRejectFriend,
-  friends
-}) {
-  return (
-    // lg:grid-cols-3 = Na dużych ekranach rezerwujemy 2 kolumny na ranking i 1 na zaproszenia (przez col-span)
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
-      
-      {/* LEWA STRONA: WYSZUKIWARKA + OCZEKUJĄCE (Zajmuje 1 kolumnę na desktopie, pełną szerokość na mobile) */}
-      <div className="lg:col-span-1 flex flex-col gap-6">
-        
-        {/* SEKCJA 1: WYSZUKAJ ZNAJOMYCH */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">Szukaj znajomych 🔍</h2>
-          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangu.</p>
-          
-          <form onSubmit={handleSendFriendRequest} className="flex gap-2">
-            <input 
-              type="text" 
-              placeholder="np. MarekWorkout" 
-              value={friendNickInput} 
-              onChange={e => setFriendNickInput(e.target.value)} 
-              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-            />
-            <button 
-              type="submit" 
-              className="bg-gymRed hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
-            >
-              Zaproś
-            </button>
-          </form>
-        </section>
-
-        {/* SEKCJA 2: OCZEKUJĄCE ZAPROSZENIA */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-4">Oczekujące zaproszenia ✉️</h2>
-          
-          {pendingRequests.length === 0 ? (
-            <p className="text-zinc-500 italic text-sm text-center py-4">Brak nowych zaproszeń.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {pendingRequests.map(req => (
-                <div key={req.friendship_id} className="flex justify-between items-center bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800 shadow-sm">
-                  <span className="text-sm">Od: <strong className="text-zinc-200">{req.nick}</strong></span>
-                  
-                  {/* PRZYCISKI AKCJI (Zwinne i kompaktowe) */}
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => handleAcceptFriend(req.friendship_id)} 
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
-                    >
-                      Akceptuj
-                    </button>
-                    <button 
-                      onClick={() => handleRejectFriend(req.friendship_id)} 
-                      className="border border-gymRed text-gymRed hover:bg-gymRed/10 font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
-                    >
-                      Odrzuć
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
-      {/* PRAWA STRONA: RANKING STREAKÓW (Zajmuje 2 kolumny na desktopie dla maksymalnego prestiżu) */}
-      <section className="lg:col-span-2 bg-gymCard p-4 md:p-6 rounded-xl shadow-lg border border-zinc-800/40">
-        <div className="border-b border-zinc-800 pb-4 mb-4">
-          <h2 className="text-xl md:text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-gymRed">
-            Ranking Streaków Gangu GymPatico 🔥
-          </h2>
-          <p className="text-zinc-400 text-xs md:text-sm mt-1">Utrzymuj cel tygodniowy, aby piąć się w górę tabeli!</p>
-        </div>
-
-        {friends.length === 0 ? (
-          <p className="text-zinc-500 italic text-center py-12">Brak znajomych w rankingu. Zaproś kogoś!</p>
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            {friends.map((f, idx) => {
-              // Podświetlenie podium (Top 1, Top 2, Top 3)
-              const isFirst = idx === 0;
-              const isSecond = idx === 1;
-              const isThird = idx === 2;
-
-              return (
-                <div 
-                  key={f.id} 
-                  className={`flex justify-between items-center p-3.5 rounded-lg shadow-sm transition-all duration-200 ${
-                    isFirst 
-                      ? 'bg-amber-500/10 border border-amber-500/30' 
-                      : 'bg-[#2d2d2d] border border-zinc-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    {/* Złoty, srebrny lub biały numer pozycji */}
-                    <span className={`text-lg font-black w-8 text-center ${
-                      isFirst ? 'text-amber-400' : isSecond ? 'text-zinc-300' : isThird ? 'text-amber-600' : 'text-zinc-500'
-                    }`}>
-                      #{idx + 1}
-                    </span>
-                    <strong className={`text-sm md:text-base ${isFirst ? 'text-amber-200 font-bold' : 'text-zinc-100'}`}>
-                      {f.nick} {isFirst && '👑'}
-                    </strong>
-                  </div>
-                  
-                  <div className="text-right">
-                    <span className={`font-black text-sm md:text-lg tracking-tight ${
-                      isFirst ? 'text-amber-400' : 'text-gymRed'
-                    }`}>
-                      🔥 {f.current_streak} {f.current_streak === 1 ? 'tyg.' : 'tyg.'}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-    </div>
-  )
-}
-</file>
-
 <file path="frontend/vercel.json">
 {
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
-</file>
-
-<file path="init.sql">
--- 1. Tabela Użytkowników
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    nick VARCHAR(55) UNIQUE NOT NULL,
-    weekly_target_workouts INT DEFAULT 3,
-    current_streak INT DEFAULT 0,
-    max_streak INT DEFAULT 0,
-    last_workout_at TIMESTAMP,
-    is_premium BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2. Tabela Logów Wagi
-CREATE TABLE weight_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    weight NUMERIC(5,2) NOT NULL,
-    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 3. Tabela Ćwiczeń (Czysta kolumna name, bez starego ograniczenia UNIQUE)
-CREATE TABLE exercises (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255) NOT NULL,
-    muscle_group VARCHAR(100) NOT NULL,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE DEFAULT NULL
-);
-
--- 4. INDEKSY UNIKALNE (Muszą powstać natychmiast po tabeli exercises!)
--- Zabezpieczenie ćwiczeń globalnych (brak wielokrotnych duplikatów o tej samej nazwie w atlasie systemowym)
-CREATE UNIQUE INDEX exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
-
--- Zabezpieczenie ćwiczeń prywatnych (dany user nie doda u siebie dwóch tak samo nazwanych pozycji)
-CREATE UNIQUE INDEX exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
-
--- 5. Tabela Znajomości
-CREATE TABLE friendships (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    status VARCHAR(20) DEFAULT 'PENDING',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_friendship UNIQUE (sender_id, receiver_id)
-);
-
--- 6. Tabela Sesji Treningowych
-CREATE TABLE workout_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    comment TEXT,
-    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 7. Tabela Serii Treningowych
-CREATE TABLE log_series (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
-    exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE,
-    weight NUMERIC NOT NULL,
-    reps INT NOT NULL,
-    series_order INT NOT NULL,
-    estimated_one_rm NUMERIC,
-    is_alternative BOOLEAN DEFAULT FALSE,
-    comment TEXT
-);
-
--- 8. SEEDOWANIE BAZY DANYCH (Teraz ON CONFLICT idealnie trafia w utworzony wyżej indeks globalny)
-INSERT INTO exercises (name, muscle_group) VALUES
-  -- Klatka piersiowa
-  ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),
-  ('Wyciskanie hantli na ławce skośnej dodatniej', 'Klatka piersiowa'),
-  ('Pompki na poręczach (Dips)', 'Klatka piersiowa'),
-  ('Rozpiętki z hantlami na ławce poziomej', 'Klatka piersiowa'),
-
-  -- Plecy
-  ('Martwy ciąg klasyczny', 'Plecy'),
-  ('Podciąganie na drążku (nachwytem)', 'Plecy'),
-  ('Wiosłowanie sztangą w opadzie tułowia', 'Plecy'),
-  ('Ściąganie drążka wyciągu górnego do klatki', 'Plecy'),
-  ('Wiosłowanie hantlem jednorącz w oparciu o ławkę', 'Plecy'),
-
-  -- Barki
-  ('Wyciskanie żołnierskie (OHP)', 'Barki'),
-  ('Wyciskanie hantli siedząc', 'Barki'),
-  ('Unoszenie hantli bokiem stojąc', 'Barki'),
-  ('Odwrotne rozpiętki na maszynie (Face pulls)', 'Barki'),
-
-  -- Nogi
-  ('Przysiad ze sztangą na plecach (Back squat)', 'Nogi'),
-  ('Wypychanie ciężaru na suwnicy (Leg press)', 'Nogi'),
-  ('Rumuński martwy ciąg (RDL)', 'Nogi'),
-  ('Prostowanie nóg na maszynie siedząc', 'Nogi'),
-  ('Uginanie nóg na maszynie leżąc', 'Nogi'),
-
-  -- Ramiona (Biceps i Triceps)
-  ('Uginanie przedramion ze sztangą łamaną stojąc', 'Biceps'),
-  ('Uginanie przedramion z hantlami z supinacją', 'Biceps'),
-  ('Wyciskanie francuskie ze sztangą łamaną leżąc', 'Triceps'),
-  ('Prostowanie przedramion na wyciągu (linki)', 'Triceps')
-ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
 </file>
 
 <file path="backend/config/db.js">
@@ -2151,138 +1502,185 @@ const pool = new Pool(poolConfig);
 module.exports = pool;
 </file>
 
-<file path="backend/routes/friends.js">
+<file path="backend/package.json">
+{
+  "name": "gympatico",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
+</file>
+
+<file path="backend/routes/auth.js">
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
+const rateLimit = require('express-rate-limit');
 
-// Wysyłanie zaproszenia
-router.post('/request', authenticateToken, async (req, res) => {
-  const { targetNick } = req.body;
-  const senderId = req.user.userId;
+// KONFIGURACJA RATE LIMITERA DLA STRONY AUTH
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // Okno czasowe: 15 minut
+  max: 10, // Maksymalnie 10 prób z jednego adresu IP w danym oknie
+  
+  // Format odpowiedzi dopasowany do frontendu (obsługa catch(err) i showToast)
+  message: { 
+    error: "Zbyt wiele nieudanych prób! Twój adres IP został tymczasowo zablokowany. Spróbuj ponownie za 15 minut." 
+  },
+  
+  standardHeaders: true, // Zwraca informacje o limicie w nagłówkach RateLimit-*
+  legacyHeaders: false,  // Wyłącza przestarzałe nagłówki X-RateLimit-*
+});
 
-  if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
+// Rejestracja
+router.post('/register', authLimiter, async (req, res) => {
+  let { email, password, nick } = req.body;
+
+  // 1. Wstępna walidacja obecności pól
+  if (!email || !password || !nick) {
+    return res.status(400).json({ error: "Wszystkie pola (email, password, nick) są wymagane!" });
+  }
+
+  // 2. Sanitization & Trim (oczyszczanie ze skrajnych spacji)
+  email = email.trim();
+  nick = nick.trim();
+
+  // 3. Twarda walidacja długości (Input Length Validation)
+  if (nick.length < 2 || nick.length > 50) {
+    return res.status(400).json({ error: "Nick musi mieć od 2 do 50 znaków!" });
+  }
+
+  if (email.length > 254) {
+    return res.status(400).json({ error: "Adres e-mail jest zbyt długi!" });
+  }
+
+  if (password.length < 8 || password.length > 100) {
+    return res.status(400).json({ error: "Hasło musi mieć od 8 do 100 znaków!" });
+  }
 
   try {
-    const userResult = await pool.query('SELECT id FROM users WHERE nick = $1', [targetNick]);
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    const query = `
+      INSERT INTO users (email, password_hash, nick) 
+      VALUES ($1, $2, $3) 
+      RETURNING id, email, nick, created_at
+    `;
+    const result = await pool.query(query, [email, passwordHash, nick]);
+
+    res.status(201).json({ message: "Użytkownik zarejestrowany! 🏋️‍♂️", user: result.rows[0] });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(400).json({ error: "Ten adres e-mail lub nick jest już zajęty!" });
+    }
+    res.status(500).json({ error: "Błąd serwera podczas rejestracji", details: error.message });
+  }
+});
+
+// Logowanie
+router.post('/login', authLimiter, async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email i hasło są wymagane!" });
+  }
+
+  try {
+    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
+      return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
     }
 
-    const receiverId = userResult.rows[0].id;
-    if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
+    const user = userResult.rows[0];
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
-    const checkResult = await pool.query(
-      "SELECT * FROM friendships WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)",
-      [senderId, receiverId]
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
+    }
+
+    const token = jwt.sign(
+      { userId: user.id, nick: user.nick },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
     );
-    if (checkResult.rows.length > 0) {
-      return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
-    }
 
-    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1, $2, \'PENDING\')', [senderId, receiverId]);
-    res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
+    res.json({
+      message: "Zalogowano pomyślnie! 🦾",
+      token,
+      user: { id: user.id, email: user.email, nick: user.nick, isPremium: user.is_premium }
+    });
   } catch (error) {
-    res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
+    res.status(500).json({ error: "Błąd serwera podczas logowania", details: error.message });
   }
 });
 
-// Pobranie rankingu znajomych
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
+// Pobranie aktualnych danych profilu użytkownika (w tym świeżego streaka)
+router.get('/me', authenticateToken, async (req, res) => {
   try {
-    // Dynamicznie zerujemy streak w rankingu, jeśli użytkownik opuścił cały tydzień treningowy
-    const query = `
-      SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
-        CASE 
-          WHEN u.last_workout_at < NOW() - INTERVAL '12 days' THEN 0
-          ELSE u.current_streak
-        END as "current_streak"
-      FROM friendships f
-      JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1) OR (f.receiver_id = u.id AND f.sender_id = $1)
-      WHERE f.status = 'ACCEPTED' AND u.id != $1
-      ORDER BY "current_streak" DESC
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd pobierania rankingu znajomych", details: error.message });
-  }
-});
-
-// Skrzynka odbiorcza zaproszeń
-router.get('/requests', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    const query = `
-      SELECT f.id as friendship_id, u.id as sender_id, u.nick 
-      FROM friendships f 
-      JOIN users u ON f.sender_id = u.id
-      WHERE f.receiver_id = $1 AND f.status = 'PENDING'
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd ładowania skrzynki", details: error.message });
-  }
-});
-
-// Akceptacja zaproszenia
-router.post('/accept', authenticateToken, async (req, res) => {
-  const { friendshipId } = req.body;
-  const userId = req.user.userId; // Wyciągamy ID zalogowanego użytkownika z tokenu
-
-  if (!friendshipId) {
-    return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
-  }
-
-  try {
-    // Dodajemy warunek: receiver_id = $2
-    const query = `
-      UPDATE friendships 
-      SET status = 'ACCEPTED' 
-      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING' 
-      RETURNING *
-    `;
+    const result = await pool.query(
+      'SELECT id, email, nick, current_streak, is_premium, weekly_target_workouts FROM users WHERE id = $1',
+      [req.user.userId]
+    );
     
-    const result = await pool.query(query, [friendshipId, userId]);
-    
-    // Jeśli zaproszenie nie należało do usera, zapytanie nie zmodyfikuje żadnego wiersza
     if (result.rows.length === 0) {
-      return res.status(404).json({ 
-        error: "Zaproszenie nie istnieje, zostało już przetworzone lub nie masz uprawnień do jego akceptacji." 
-      });
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
     }
     
-    res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
+    res.json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
+    res.status(500).json({ error: "Błąd serwera podczas pobierania profilu", details: error.message });
   }
 });
 
-router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
-  const { friendshipId } = req.params;
+router.put('/weekly-target', authenticateToken, async (req, res) => {
+  const { weeklyTarget } = req.body;
   const userId = req.user.userId;
 
+  // Walidacja wejścia - cel musi być logiczną liczbą dni w tygodniu (1-7)
+  const targetNum = parseInt(weeklyTarget);
+  if (isNaN(targetNum) || targetNum < 1 || targetNum > 7) {
+    return res.status(400).json({ error: "Cel tygodniowy musi być liczbą od 1 do 7!" });
+  }
+
   try {
-    // Pancerne i szybkie zapytanie: kasujemy tylko, jeśli ID się zgadza, status to PENDING i zalogowany user jest ODBIORCĄ
-    const deleteQuery = `
-      DELETE FROM friendships 
-      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING'
+    const query = `
+      UPDATE users 
+      SET weekly_target_workouts = $1 
+      WHERE id = $2 
+      RETURNING weekly_target_workouts
     `;
-    const result = await pool.query(deleteQuery, [friendshipId, userId]);
-
-    // Jeśli baza danych nie usunęła żadnego wiersza (rowCount === 0), zwracamy błąd uprawnień lub braku rekordu
-    if (result.rowCount === 0) {
-      return res.status(404).json({ 
-        error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." 
-      });
-    }
-
-    res.json({ message: "Zaproszenie zostało odrzucone. ✕" });
+    const result = await pool.query(query, [targetNum, userId]);
+    
+    res.json({ 
+      message: "Cel zaktualizowany! 🎯", 
+      weekly_target_workouts: result.rows[0].weekly_target_workouts 
+    });
   } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas odrzucania zaproszenia", details: error.message });
+    res.status(500).json({ error: "Błąd serwera podczas aktualizacji celu", details: error.message });
   }
 });
 
@@ -2538,6 +1936,379 @@ createRoot(document.getElementById('root')).render(
 )
 </file>
 
+<file path="frontend/src/views/NewWorkout.jsx">
+import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useWorkouts } from '../hooks/useWorkouts'
+
+export default function NewWorkout({ token, exercises, templates, onSaveTemplate, onDeleteTemplate }) {
+  const navigate = useNavigate()
+  const {
+    workoutName, setWorkoutName,
+    workoutComment, setWorkoutComment,
+    localSeriesList, setLocalSeriesList,
+    handleAddSeriesRow, handleRemoveSeriesRow, handleSeriesInputChange,
+    handleSaveWorkout
+  } = useWorkouts(token, () => navigate('/history'))
+
+  const [selectedExercise, setSelectedExercise] = useState('')
+  const [templateNameInput, setTemplateNameInput] = useState('')
+  const [saveAsTemplateCheckbox, setSaveAsTemplateCheckbox] = useState(false)
+
+  // ODPALENIE SZABLONU (Wstrzyknięcie danych do lokalnego stanu serii)
+  const handleLoadTemplate = (templateId) => {
+    if (!templateId) return
+    const tpl = templates.find(t => t.id === templateId)
+    if (!tpl) return
+
+    setWorkoutName(tpl.name)
+    // Mapujemy strukturę bazy danych na strukturę oczekiwaną przez frontendowy useWorkouts
+    const loadedSeries = tpl.series.map((s, idx) => ({
+      id: `tpl-${Date.now()}-${idx}-${Math.random()}`,
+      exerciseId: s.exerciseId,
+      weight: s.weight,
+      reps: s.reps,
+      order: s.order
+    }))
+    setLocalSeriesList(loadedSeries)
+  }
+
+  // WRAPPER ZAPISU (Łączy zapis treningu z ewentualnym zapisem szablonu)
+  const onSubmitWorkout = async (e) => {
+    e.preventDefault()
+    
+    if (saveAsTemplateCheckbox) {
+      const nameForTemplate = templateNameInput.trim() || workoutName.trim() || "Mój Szablon"
+      const success = await onSaveTemplate(nameForTemplate, localSeriesList)
+      if (!success) return // Jeśli walidacja szablonu wywali błąd, nie przerywamy i nie zapisujemy złego treningu
+    }
+
+    handleSaveWorkout(e)
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto text-left space-y-6">
+      <div>
+        <h2 className="text-xl md:text-2xl font-black tracking-tight">Kreator Treningu 🏋️‍♂️</h2>
+        <p className="text-zinc-400 text-xs md:text-sm mt-0.5">Zaloguj dzisiejsze serie robocze lub wczytaj gotowy szablon.</p>
+      </div>
+
+      {/* SEKCJA SZABLONÓW (WCZYTAJ / USUŃ) */}
+      <section className="bg-gymCard p-4 rounded-xl border border-zinc-800/40 shadow-md">
+        <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">Szybki Start z Szablonu</h3>
+        {templates.length === 0 ? (
+          <p className="text-zinc-600 italic text-xs">Brak zapisanych szablonów treningowych.</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {templates.map(tpl => (
+              <div key={tpl.id} className="flex justify-between items-center bg-[#2d2d2d]/50 p-2.5 rounded-lg border border-zinc-800/60 hover:border-zinc-700 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => handleLoadTemplate(tpl.id)}
+                  className="flex-1 text-left font-bold text-sm text-zinc-200 hover:text-gymRed transition-colors"
+                >
+                  📋 {tpl.name} <span className="text-[10px] text-zinc-500 font-normal ml-1">({tpl.series.length} serii)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeleteTemplate(tpl.id)}
+                  className="text-zinc-500 hover:text-gymRed text-xs px-2 py-1 transition-colors"
+                  title="Usuń szablon"
+                >
+                  Usuń ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <form onSubmit={onSubmitWorkout} className="space-y-6">
+        {/* METADANE TRENINGU */}
+        <div className="bg-gymCard p-4 md:p-5 rounded-xl border border-zinc-800/40 shadow-lg space-y-4">
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Nazwa treningu</label>
+            <input 
+              type="text" 
+              placeholder="np. Klatka + Ramiona (Push)" 
+              value={workoutName} 
+              onChange={e => setWorkoutName(e.target.value)}
+              className="w-full p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none focus:border-gymRed font-medium"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Notatki / Komentarz (Opcjonalnie)</label>
+            <textarea 
+              placeholder="np. Skupienie na fazie negatywnej, progres ciężaru w wyciskaniu" 
+              value={workoutComment} 
+              onChange={e => setWorkoutComment(e.target.value)}
+              className="w-full p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none focus:border-gymRed font-medium min-h-[70px] resize-none"
+            />
+          </div>
+        </div>
+
+        {/* LISTA SERII */}
+        <div className="bg-gymCard p-4 md:p-5 rounded-xl border border-zinc-800/40 shadow-lg space-y-4">
+          <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-300">Zestaw serii roboczych</h3>
+            <span className="text-xs text-zinc-500 font-mono">Łącznie serii: {localSeriesList.length}</span>
+          </div>
+
+          {localSeriesList.length === 0 ? (
+            <p className="text-zinc-500 italic text-center py-6 text-sm">Lista serii jest pusta. Wybierz ćwiczenie poniżej, aby zacząć.</p>
+          ) : (
+            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+              {localSeriesList.map((s, index) => {
+                const exObj = exercises.find(e => e.id === s.exerciseId)
+                return (
+                  <div key={s.id} className="flex flex-col sm:flex-row gap-3 p-3 bg-[#2d2d2d]/40 rounded-xl border border-zinc-800/60 relative group">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[10px] font-bold text-gymRed font-mono uppercase">Seria #{index + 1}</span>
+                      <h4 className="text-sm font-bold text-zinc-200 truncate">{exObj?.name || 'Nieznane ćwiczenie'}</h4>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <div className="w-24">
+                        <input 
+                          type="number" 
+                          step="0.25"
+                          placeholder="kg"
+                          value={s.weight}
+                          onChange={e => handleSeriesInputChange(s.id, 'weight', e.target.value)}
+                          className="w-full p-2 rounded border border-zinc-800 bg-[#2d2d2d] text-white text-center text-sm font-mono"
+                          required
+                        />
+                      </div>
+                      <span className="text-zinc-600 text-xs font-mono">x</span>
+                      <div className="w-16">
+                        <input 
+                          type="number" 
+                          placeholder="powt"
+                          value={s.reps}
+                          onChange={e => handleSeriesInputChange(s.id, 'reps', e.target.value)}
+                          className="w-full p-2 rounded border border-zinc-800 bg-[#2d2d2d] text-white text-center text-sm font-mono"
+                          required
+                        />
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => handleRemoveSeriesRow(s.id)}
+                        className="text-zinc-500 hover:text-gymRed text-sm p-1 transition-colors ml-1"
+                        title="Usuń serię"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* DODAWANIE NOWEGO ĆWICZENIA DO LISTY */}
+          <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-zinc-800/60">
+            <select
+              value={selectedExercise}
+              onChange={e => setSelectedExercise(e.target.value)}
+              className="flex-1 p-2.5 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none focus:border-gymRed cursor-pointer"
+            >
+              <option value="" disabled>-- Wybierz ćwiczenie z atlasu --</option>
+              {exercises.map(ex => (
+                <option key={ex.id} value={ex.id}>{ex.name} ({ex.muscleGroup})</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedExercise) {
+                  handleAddSeriesRow(selectedExercise)
+                  setSelectedExercise('')
+                }
+              }}
+              disabled={!selectedExercise}
+              className="bg-[#333] hover:bg-zinc-700 disabled:opacity-40 text-white font-bold px-4 py-2.5 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
+            >
+              + Dodaj Serię
+            </button>
+          </div>
+        </div>
+
+        {/* PANEL ZAPISU JAKO SZABLON (ZABEZPIECZONY PRZED PAYLOADEM) */}
+        <section className="bg-gymCard p-4 md:p-5 rounded-xl border border-zinc-800/40 shadow-lg space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <input 
+              type="checkbox"
+              checked={saveAsTemplateCheckbox}
+              onChange={e => setSaveAsTemplateCheckbox(e.target.checked)}
+              className="w-4 h-4 rounded border-zinc-800 bg-[#2d2d2d] text-gymRed accent-gymRed cursor-pointer"
+            />
+            <span className="text-sm font-bold text-zinc-300 group-hover:text-white transition-colors">
+              Zapisz tę kompozycję jako szablon wielokrotnego użytku 💾
+            </span>
+          </label>
+
+          {saveAsTemplateCheckbox && (
+            <div className="pt-2 animate-in fade-in slide-in-from-top-2 duration-150">
+              <label className="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Nazwa nowego szablonu (Opcjonalnie)</label>
+              <input 
+                type="text" 
+                placeholder={workoutName.trim() || "np. Mój Nowy Szablon"}
+                value={templateNameInput}
+                onChange={e => setTemplateNameInput(e.target.value)}
+                className="w-full p-2.5 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-xs outline-none focus:border-gymRed font-medium"
+                maxLength={100}
+              />
+            </div>
+          )}
+        </section>
+
+        {/* PRZYCISK GŁÓWNY */}
+        <button
+          type="submit"
+          disabled={localSeriesList.length === 0}
+          className="w-full py-4 bg-gymRed hover:bg-red-600 disabled:opacity-40 text-white font-black text-center rounded-xl text-base shadow-xl transition-all active:scale-[0.98] cursor-pointer"
+        >
+          Zapisz i Zakończ Sesję Treningową 🚀
+        </button>
+      </form>
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/views/Social.jsx">
+import React from 'react'
+
+export default function Social({
+  friendNickInput, 
+  setFriendNickInput,
+  handleSendFriendRequest, 
+  pendingRequests, 
+  handleAcceptFriend, 
+  handleRejectFriend,
+  friends,
+  user // <--- NOWOŚĆ: odebranie zalogowanego użytkownika z App.jsx
+}) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
+      
+      {/* LEWA STRONA: WYSZUKIWARKA + OCZEKUJĄCE */}
+      <div className="lg:col-span-1 flex flex-col gap-6">
+        
+        {/* SEKCJA 1: WYSZUKAJ ZNAJOMYCH */}
+        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
+          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">Szukaj znajomych 🔍</h2>
+          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangen.</p>
+          
+          <form onSubmit={handleSendFriendRequest} className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="np. MarekWorkout" 
+              value={friendNickInput} 
+              onChange={e => setFriendNickInput(e.target.value)} 
+              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
+            />
+            <button 
+              type="submit" 
+              className="bg-gymRed hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
+            >
+              Zaproś
+            </button>
+          </form>
+        </section>
+
+        {/* SEKCJA 2: OCZEKUJĄCE ZAPROSZENIA */}
+        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
+          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-4">Oczekujące zaproszenia ✉️</h2>
+          
+          {pendingRequests.length === 0 ? (
+            <p className="text-zinc-500 italic text-sm text-center py-4">Brak nowych zaproszeń.</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {pendingRequests.map(req => (
+                <div key={req.friendship_id} className="flex justify-between items-center bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800 shadow-sm">
+                  <span className="text-sm">Od: <strong className="text-zinc-200">{req.nick}</strong></span>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => handleAcceptFriend(req.friendship_id)} 
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
+                    >
+                      Akceptuj
+                    </button>
+                    <button 
+                      onClick={() => handleRejectFriend(req.friendship_id)} 
+                      className="border border-gymRed text-gymRed hover:bg-gymRed/10 font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
+                    >
+                      Odrzuć
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* PRAWA STRONA: RANKING STREAKÓW */}
+      <section className="lg:col-span-2 bg-gymCard p-4 md:p-6 rounded-xl shadow-lg border border-zinc-800/40">
+        <div className="border-b border-zinc-800 pb-4 mb-4">
+          <h2 className="text-xl md:text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-gymRed">
+            Ranking Streaków Gangu GymPatico 🔥
+          </h2>
+          <p className="text-zinc-400 text-xs md:text-sm mt-1">Utrzymuj cel tygodniowy, aby piąć się w górę tabeli!</p>
+        </div>
+
+        {friends.length === 0 ? (
+          <p className="text-zinc-500 italic text-center py-12">Brak znajomych w rankingu. Zaproś kogoś!</p>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {friends.map((f, idx) => {
+              const isFirst = idx === 0;
+              const isSecond = idx === 1;
+              const isThird = idx === 2;
+              const isMe = f.id === user?.id; // <--- NOWOŚĆ: Sprawdzenie czy ten wiersz to Ty
+
+              return (
+                <div 
+                  key={f.id} 
+                  className={`flex justify-between items-center p-3.5 rounded-lg shadow-sm transition-all duration-200 ${
+                    isMe
+                      ? 'bg-gymRed/10 border-2 border-gymRed/40 shadow-[0_0_15px_rgba(255,71,87,0.05)]' // Styl dla Ciebie
+                      : isFirst 
+                        ? 'bg-amber-500/10 border border-amber-500/30' 
+                        : 'bg-[#2d2d2d] border border-zinc-800/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`text-lg font-black w-8 text-center ${
+                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : isSecond ? 'text-zinc-300' : isThird ? 'text-amber-600' : 'text-zinc-500'
+                    }`}>
+                      #{idx + 1}
+                    </span>
+                    <strong className={`text-sm md:text-base ${isMe ? 'text-gymRed font-black' : isFirst ? 'text-amber-200 font-bold' : 'text-zinc-100'}`}>
+                      {f.nick} {isMe ? '(Ty) ⚡' : isFirst ? '👑' : ''}
+                    </strong>
+                  </div>
+                  
+                  <div className="text-right">
+                    <span className={`font-black text-sm md:text-lg tracking-tight ${
+                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : 'text-gymRed'
+                    }`}>
+                      🔥 {f.current_streak} {f.current_streak === 1 ? 'tyg.' : 'tyg.'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+    </div>
+  )
+}
+</file>
+
 <file path="frontend/src/views/StatsView.jsx">
 import React from 'react'
 
@@ -2691,6 +2462,873 @@ export default defineConfig({
 })
 </file>
 
+<file path="init.sql">
+-- 1. Tabela Użytkowników
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    nick VARCHAR(55) UNIQUE NOT NULL,
+    weekly_target_workouts INT DEFAULT 3,
+    current_streak INT DEFAULT 0,
+    max_streak INT DEFAULT 0,
+    last_workout_at TIMESTAMP,
+    is_premium BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Tabela Logów Wagi
+CREATE TABLE weight_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    weight NUMERIC(5,2) NOT NULL,
+    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Tabela Ćwiczeń (Czysta kolumna name, bez starego ograniczenia UNIQUE)
+CREATE TABLE exercises (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    muscle_group VARCHAR(100) NOT NULL,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE DEFAULT NULL
+);
+
+-- 4. INDEKSY UNIKALNE (Muszą powstać natychmiast po tabeli exercises!)
+-- Zabezpieczenie ćwiczeń globalnych (brak wielokrotnych duplikatów o tej samej nazwie w atlasie systemowym)
+CREATE UNIQUE INDEX exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
+
+-- Zabezpieczenie ćwiczeń prywatnych (dany user nie doda u siebie dwóch tak samo nazwanych pozycji)
+CREATE UNIQUE INDEX exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
+
+-- 5. Tabela Znajomości
+CREATE TABLE friendships (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'PENDING',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_friendship UNIQUE (sender_id, receiver_id)
+);
+
+-- 6. Tabela Sesji Treningowych
+CREATE TABLE workout_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    comment TEXT,
+    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 7. Tabela Serii Treningowych
+CREATE TABLE log_series (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
+    exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE,
+    weight NUMERIC NOT NULL,
+    reps INT NOT NULL,
+    series_order INT NOT NULL,
+    estimated_one_rm NUMERIC,
+    is_alternative BOOLEAN DEFAULT FALSE,
+    comment TEXT
+);
+
+-- Tabela główna szablonów
+CREATE TABLE workout_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tabela przechowująca konfigurację serii w danym szablonie
+CREATE TABLE template_series (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
+    exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+    weight NUMERIC(6,2) NOT NULL,
+    reps INT NOT NULL,
+    series_order INT NOT NULL
+);
+
+CREATE INDEX idx_templates_user ON workout_templates(user_id);
+CREATE INDEX idx_template_series_template ON template_series(template_id);
+
+-- 8. SEEDOWANIE BAZY DANYCH (Teraz ON CONFLICT idealnie trafia w utworzony wyżej indeks globalny)
+INSERT INTO exercises (name, muscle_group) VALUES
+  -- Klatka piersiowa
+  ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),
+  ('Wyciskanie hantli na ławce skośnej dodatniej', 'Klatka piersiowa'),
+  ('Pompki na poręczach (Dips)', 'Klatka piersiowa'),
+  ('Rozpiętki z hantlami na ławce poziomej', 'Klatka piersiowa'),
+
+  -- Plecy
+  ('Martwy ciąg klasyczny', 'Plecy'),
+  ('Podciąganie na drążku (nachwytem)', 'Plecy'),
+  ('Wiosłowanie sztangą w opadzie tułowia', 'Plecy'),
+  ('Ściąganie drążka wyciągu górnego do klatki', 'Plecy'),
+  ('Wiosłowanie hantlem jednorącz w oparciu o ławkę', 'Plecy'),
+
+  -- Barki
+  ('Wyciskanie żołnierskie (OHP)', 'Barki'),
+  ('Wyciskanie hantli siedząc', 'Barki'),
+  ('Unoszenie hantli bokiem stojąc', 'Barki'),
+  ('Odwrotne rozpiętki na maszynie (Face pulls)', 'Barki'),
+
+  -- Nogi
+  ('Przysiad ze sztangą na plecach (Back squat)', 'Nogi'),
+  ('Wypychanie ciężaru na suwnicy (Leg press)', 'Nogi'),
+  ('Rumuński martwy ciąg (RDL)', 'Nogi'),
+  ('Prostowanie nóg na maszynie siedząc', 'Nogi'),
+  ('Uginanie nóg na maszynie leżąc', 'Nogi'),
+
+  -- Ramiona (Biceps i Triceps)
+  ('Uginanie przedramion ze sztangą łamaną stojąc', 'Biceps'),
+  ('Uginanie przedramion z hantlami z supinacją', 'Biceps'),
+  ('Wyciskanie francuskie ze sztangą łamaną leżąc', 'Triceps'),
+  ('Prostowanie przedramion na wyciągu (linki)', 'Triceps')
+ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
+</file>
+
+<file path="backend/routes/friends.js">
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+
+// Wysyłanie zaproszenia
+router.post('/request', authenticateToken, async (req, res) => {
+  const { targetNick } = req.body;
+  const senderId = req.user.userId;
+
+  if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
+
+  try {
+    const userResult = await pool.query('SELECT id FROM users WHERE nick = $1', [targetNick]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
+    }
+
+    const receiverId = userResult.rows[0].id;
+    if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
+
+    const checkResult = await pool.query(
+      "SELECT * FROM friendships WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)",
+      [senderId, receiverId]
+    );
+    if (checkResult.rows.length > 0) {
+      return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
+    }
+
+    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1, $2, \'PENDING\')', [senderId, receiverId]);
+    res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
+  }
+});
+
+// Pobranie rankingu znajomych
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    // Łączymy wyniki znajomych z danymi zalogowanego usera przez UNION
+    const query = `
+      SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
+        CASE 
+          WHEN u.last_workout_at < NOW() - INTERVAL '12 days' THEN 0
+          ELSE u.current_streak
+        END as "current_streak"
+      FROM friendships f
+      JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1) OR (f.receiver_id = u.id AND f.sender_id = $1)
+      WHERE f.status = 'ACCEPTED' AND u.id != $1
+
+      UNION
+
+      SELECT id, nick, last_workout_at, is_premium,
+        CASE 
+          WHEN last_workout_at < NOW() - INTERVAL '12 days' THEN 0
+          ELSE current_streak
+        END as "current_streak"
+      FROM users
+      WHERE id = $1
+
+      ORDER BY "current_streak" DESC, nick ASC
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania rankingu znajomych", details: error.message });
+  }
+});
+
+// Skrzynka odbiorcza zaproszeń
+router.get('/requests', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const query = `
+      SELECT f.id as friendship_id, u.id as sender_id, u.nick 
+      FROM friendships f 
+      JOIN users u ON f.sender_id = u.id
+      WHERE f.receiver_id = $1 AND f.status = 'PENDING'
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd ładowania skrzynki", details: error.message });
+  }
+});
+
+// Akceptacja zaproszenia
+router.post('/accept', authenticateToken, async (req, res) => {
+  const { friendshipId } = req.body;
+  const userId = req.user.userId; // Wyciągamy ID zalogowanego użytkownika z tokenu
+
+  if (!friendshipId) {
+    return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
+  }
+
+  try {
+    // Dodajemy warunek: receiver_id = $2
+    const query = `
+      UPDATE friendships 
+      SET status = 'ACCEPTED' 
+      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING' 
+      RETURNING *
+    `;
+    
+    const result = await pool.query(query, [friendshipId, userId]);
+    
+    // Jeśli zaproszenie nie należało do usera, zapytanie nie zmodyfikuje żadnego wiersza
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        error: "Zaproszenie nie istnieje, zostało już przetworzone lub nie masz uprawnień do jego akceptacji." 
+      });
+    }
+    
+    res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
+  }
+});
+
+router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
+  const { friendshipId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    // Pancerne i szybkie zapytanie: kasujemy tylko, jeśli ID się zgadza, status to PENDING i zalogowany user jest ODBIORCĄ
+    const deleteQuery = `
+      DELETE FROM friendships 
+      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING'
+    `;
+    const result = await pool.query(deleteQuery, [friendshipId, userId]);
+
+    // Jeśli baza danych nie usunęła żadnego wiersza (rowCount === 0), zwracamy błąd uprawnień lub braku rekordu
+    if (result.rowCount === 0) {
+      return res.status(404).json({ 
+        error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." 
+      });
+    }
+
+    res.json({ message: "Zaproszenie zostało odrzucone. ✕" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas odrzucania zaproszenia", details: error.message });
+  }
+});
+
+module.exports = router;
+</file>
+
+<file path="backend/routes/workouts.js">
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+
+// Zapisanie treningu + wyliczenie streaka
+router.post('/', authenticateToken, async (req, res) => {
+  const { name, comment, series } = req.body;
+  const userId = req.user.userId;
+
+  if (!name || !series || !Array.isArray(series) || series.length === 0) {
+    return res.status(400).json({ error: "Nazwa treningu oraz serie są wymagane!" });
+  }
+
+  // 1. Pobieramy dedykowanego, pojedynczego klienta z puli połączeń
+  const client = await pool.connect();
+
+  try {
+    // 2. Uruchamiamy transakcję na zabezpieczonym kliencie
+    await client.query('BEGIN');
+
+    const sessionResult = await client.query(
+      "INSERT INTO workout_sessions (user_id, name, comment, started_at, ended_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id",
+      [userId, name, comment || null]
+    );
+    const sessionId = sessionResult.rows[0].id;
+
+    for (let i = 0; i < series.length; i++) {
+      const s = series[i];
+      let estimatedOneRM = null;
+      if (s.reps >= 1 && s.reps <= 12) {
+        estimatedOneRM = s.weight * (1 + s.reps / 30);
+      }
+
+      // Wszystkie zapytania w pętli lecą przez stałe połączenie "client"
+      await client.query(
+        `INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [sessionId, s.exerciseId, s.weight, s.reps, s.order || (i + 1), estimatedOneRM, s.isAlternative || false, s.comment || null]
+      );
+    }
+
+    const userResult = await client.query('SELECT current_streak, weekly_target_workouts FROM users WHERE id = $1', [userId]);
+    const { current_streak, weekly_target_workouts } = userResult.rows[0];
+
+    const target = weekly_target_workouts ?? 3;
+
+    const thisWeekResult = await client.query(
+      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 AND started_at >= date_trunc('week', NOW())`, [userId]
+    );
+    const workoutsThisWeek = parseInt(thisWeekResult.rows[0].count);
+
+    const lastWeekResult = await client.query(
+      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
+      AND started_at >= date_trunc('week', NOW() - INTERVAL '1 week') 
+      AND started_at < date_trunc('week', NOW())`, [userId]
+    );
+    const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count);
+
+    let newStreak = current_streak;
+    const didMeetGoalLastWeek = workoutsLastWeek >= target;
+
+    if (workoutsThisWeek === target) {
+      if (didMeetGoalLastWeek || current_streak === 0) {
+        newStreak = current_streak + 1;
+      } else {
+        newStreak = 1;
+      }
+    } else if (workoutsThisWeek > target) {
+      newStreak = current_streak;
+    } else {
+      if (didMeetGoalLastWeek) {
+        newStreak = current_streak;
+      } else {
+        newStreak = 0;
+      }
+    }
+
+    await client.query(
+      'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
+      [newStreak, userId]
+    );
+
+    // 3. Jeśli wszystko przeszło bez błędów — zatwierdzamy zmiany w bazie danych
+    await client.query('COMMIT');
+    
+    res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
+  } catch (error) {
+    // 4. W przypadku jakiegokolwiek niepowodzenia cofamy CAŁĄ transakcję
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: "Błąd transakcji", details: error.message });
+  } finally {
+    // 5. BEZWZGLĘDNIE zwalniamy klienta z powrotem do puli połączeń, aby nie zablokować bazy
+    client.release();
+  }
+});
+
+// Pobranie historii treningów
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  
+  // Pobieramy parametry z query stringa, ustawiając bezpieczne wartości domyślne
+  const limit = parseInt(req.query.limit) || 20;
+  const offset = parseInt(req.query.offset) || 0;
+
+  try {
+    // Krok A: Pobieramy tylko określone sesje treningowe dla danej strony
+    const sessionsQuery = `
+      SELECT id, name, comment, started_at as "startedAt"
+      FROM workout_sessions
+      WHERE user_id = $1
+      ORDER BY started_at DESC
+      LIMIT $2 OFFSET $3
+    `;
+    const sessionsResult = await pool.query(sessionsQuery, [userId, limit, offset]);
+    const sessions = sessionsResult.rows;
+
+    if (sessions.length === 0) {
+      return res.json([]);
+    }
+
+    // Krok B: Wyciągamy ID pobranych sesji, aby pobrać do nich serie
+    const sessionIds = sessions.map(s => s.id);
+
+    const seriesQuery = `
+      SELECT 
+        ls.id, 
+        ls.workout_session_id, 
+        ls.exercise_id, 
+        ls.weight, 
+        ls.reps, 
+        ls.series_order as "order", -- <--- TUTAJ: mapujemy series_order na alias "order"
+        ls.estimated_one_rm,
+        ex.name as "exerciseName"
+      FROM log_series ls
+      JOIN exercises ex ON ls.exercise_id = ex.id
+      WHERE ls.workout_session_id = ANY($1)
+      ORDER BY ls.workout_session_id, ls.series_order ASC
+    `;
+    const seriesResult = await pool.query(seriesQuery, [sessionIds]);
+    const allSeries = seriesResult.rows;
+
+    // Krok C: Mapujemy serie do odpowiadających im sesji treningowych
+    const historyData = sessions.map(session => {
+      return {
+        ...session,
+        series: allSeries.filter(s => s.workout_session_id === session.id)
+      };
+    });
+
+    res.json(historyData);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas pobierania historii", details: error.message });
+  }
+});
+
+router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
+  const { exerciseId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    const query = `
+      SELECT 
+        TO_CHAR(ws.started_at, 'YYYY-MM-DD') as date,
+        MAX(ls.estimated_one_rm) as max_1rm
+      FROM log_series ls
+      JOIN workout_sessions ws ON ls.workout_session_id = ws.id
+      WHERE ls.exercise_id = $1 
+        AND ws.user_id = $2 
+        AND ls.estimated_one_rm IS NOT NULL
+      GROUP BY TO_CHAR(ws.started_at, 'YYYY-MM-DD') -- Grupowanie TYLKO po sformatowanym dniu
+      ORDER BY date ASC -- Sortowanie tekstowe YYYY-MM-DD działa perfekcyjnie chronologicznie
+    `;
+    
+    const result = await pool.query(query, [exerciseId, userId]);
+    
+    const progressionData = result.rows.map(row => ({
+      date: row.date,
+      oneRm: parseFloat(row.max_1rm)
+    }));
+
+    res.json(progressionData);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd podczas pobierania progresji 1RM", details: error.message });
+  }
+});
+
+router.delete('/:sessionId', authenticateToken, async (req, res) => {
+  const { sessionId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    // Sprawdzamy, czy sesja istnieje i należy do zalogowanego użytkownika
+    const checkQuery = 'SELECT * FROM workout_sessions WHERE id = $1 AND user_id = $2';
+    const checkResult = await pool.query(checkQuery, [sessionId, userId]);
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: "Nie znaleziono treningu lub nie masz uprawnień do jego usunięcia." });
+    }
+
+    // Usuwamy trening. Kaskada (ON DELETE CASCADE) na poziomie bazy danych automatycznie usunie serie z log_series.
+    await pool.query('DELETE FROM workout_sessions WHERE id = $1', [sessionId]);
+
+    res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas usuwania treningu", details: error.message });
+  }
+});
+
+// Edycja metadanych treningu (Nazwa i Komentarz)
+router.patch('/:sessionId', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { sessionId } = req.params;
+  let { name, comment } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: "Nazwa treningu jest wymagana!" });
+  }
+
+  name = name.trim();
+  comment = comment ? comment.trim() : null;
+
+  // Identyczne limity znaków jak przy tworzeniu sesji
+  if (name.length < 3 || name.length > 100) {
+    return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
+  }
+
+  if (comment && comment.length > 500) {
+    return res.status(400).json({ error: "Komentarz może mieć maksymalnie 500 znaków!" });
+  }
+
+  try {
+    const updateQuery = `
+      UPDATE workout_sessions 
+      SET name = $1, comment = $2 
+      WHERE id = $3 AND user_id = $4 
+      RETURNING id, name, comment
+    `;
+    const result = await pool.query(updateQuery, [name.trim(), comment ? comment.trim() : null, sessionId, userId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Nie znaleziono sesji treningowej lub brak uprawnień." });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas edycji parametrów treningu", details: error.message });
+  }
+});
+
+module.exports = router;
+</file>
+
+<file path="frontend/src/views/Dashboard.jsx">
+import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom' // <--- NOWY IMPORT DLA ONBOARDINGU
+import WeightChart from '../components/WeightChart'
+
+export default function Dashboard({
+  user, weightLogs, weightInput, setWeightInput, handleAddWeight,
+  exercises, onUpdateWeeklyTarget, progressionData, fetchProgression, onDeleteWeight
+}) {
+  const navigate = useNavigate() // <--- INSTANCJA ROUTERA
+  const [selectedExercise, setSelectedExercise] = useState(exercises[0]?.id || '')
+  const [localTarget, setLocalTarget] = useState(user?.weekly_target_workouts || 3)
+
+  // STANY DLA AUTORSKIEGO MODALU USUWANIA WAGI
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [logToDelete, setLogToDelete] = useState(null)
+
+  // Każdorazowa zmiana ćwiczenia w selektorze dzwoni do bazy po świeżą progresję 1RM
+  useEffect(() => {
+    if (selectedExercise) {
+      fetchProgression(selectedExercise)
+    }
+  }, [selectedExercise, fetchProgression])
+
+  // Automatyczne ustawienie pierwszego ćwiczenia, jeśli baza na starcie była pusta
+  useEffect(() => {
+    if (exercises.length > 0 && !selectedExercise) {
+      setSelectedExercise(exercises[0].id)
+    }
+  }, [exercises, selectedExercise])
+
+  useEffect(() => {
+    if (user?.weekly_target_workouts) {
+      setLocalTarget(user.weekly_target_workouts)
+    }
+  }, [user?.weekly_target_workouts])
+
+  // HANDLERY MODALU BEZPIECZEŃSTWA
+  const initiateDelete = (id) => {
+    setLogToDelete(id)
+    setIsModalOpen(true)
+  }
+
+  const confirmDelete = () => {
+    if (logToDelete) {
+      onDeleteWeight(logToDelete)
+    }
+    closeModal()
+  }
+
+  const closeModal = () => {
+    setIsModalOpen(false)
+    setLogToDelete(null)
+  }
+
+  // --- PARAMETRYZACJA GENEROWANIA WYKRESU SVG ---
+  const svgWidth = 500
+  const svgHeight = 200
+  const padding = 35
+
+  const validData = progressionData.filter(d => !isNaN(d.oneRm))
+
+  // DYNAMICZNE WYKRYWANIE NOWEGO UŻYTKOWNIKA (Brak wagi i brak historii 1RM)
+  const isNewUser = weightLogs.length === 0 && validData.length === 0
+
+  let pointsPath = ''
+  let gradientPath = ''
+  let pointsArray = []
+
+  if (validData.length > 1) {
+    const minX = 0
+    const maxX = validData.length - 1
+    const yValues = validData.map(d => d.oneRm)
+    const minY = Math.min(...yValues) * 0.9
+    const maxY = Math.max(...yValues) * 1.1
+
+    pointsArray = validData.map((d, index) => {
+      const x = padding + (index / maxX) * (svgWidth - padding * 2)
+      const denominator = (maxY - minY) === 0 ? 1 : (maxY - minY);
+      const y = (maxY - minY) === 0 
+        ? svgHeight / 2 
+        : svgHeight - padding - ((d.oneRm - minY) / denominator) * (svgHeight - padding * 2);
+
+      return { x, y, oneRm: d.oneRm, date: d.date }
+    })
+
+    pointsPath = pointsArray.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+    gradientPath = `${pointsPath} L ${pointsArray[pointsArray.length - 1].x} ${svgHeight - padding} L ${pointsArray[0].x} ${svgHeight - padding} Z`
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left relative">
+      
+      {/* ONBOARDING BANNER: Wyświetla się tylko, gdy konto jest całkowicie puste */}
+      {isNewUser && (
+        <section className="col-span-1 md:col-span-2 lg:col-span-3 bg-gradient-to-br from-gymCard to-[#1a1a1a] p-5 md:p-6 rounded-2xl border border-gymRed/20 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gymRed/5 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="max-w-3xl">
+            <span className="inline-block bg-gymRed/10 text-gymRed text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider mb-3">
+              🚀 Witamy w Gangu GymPatico!
+            </span>
+            <h2 className="text-xl md:text-2xl font-black tracking-tight text-white mb-1.5">
+              Twój panel treningowy został zainicjalizowany 🛠️
+            </h2>
+            <p className="text-zinc-400 text-xs md:text-sm leading-relaxed mb-6">
+              Profil jest gotowy do pracy. Aby zdjąć blokadę pustych wykresów analitycznych i rozpocząć budowanie formy, wykonaj te proste kroki wstępne:
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* KROK 1 */}
+              <div className="bg-[#2d2d2d]/40 p-4 rounded-xl border border-zinc-800/60 flex flex-col justify-between">
+                <div>
+                  <span className="text-base mb-1 block">⚖️ Krok 1</span>
+                  <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wide">Zapisz wagę startową</h4>
+                  <p className="text-zinc-500 text-[11px] mt-1 leading-normal">Wpisz swoją obecną wagę w formularzu na samym dole tego panelu.</p>
+                </div>
+              </div>
+
+              {/* KROK 2 */}
+              <div className="bg-[#2d2d2d]/40 p-4 rounded-xl border border-zinc-800/60 flex flex-col justify-between">
+                <div>
+                  <span className="text-base mb-1 block">🎯 Krok 2</span>
+                  <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wide">Ustaw cel tygodniowy</h4>
+                  <p className="text-zinc-500 text-[11px] mt-1 leading-normal">Zadeklaruj suwakiem po lewej stronie, ile razy w tygodniu zamierzasz ćwiczyć.</p>
+                </div>
+              </div>
+
+              {/* KROK 3 - INTERAKTYWNY LINK DO KREATORA */}
+              <div 
+                onClick={() => navigate('/new-workout')}
+                className="bg-[#2d2d2d]/60 p-4 rounded-xl border border-gymRed/30 flex flex-col justify-between cursor-pointer hover:border-gymRed hover:bg-[#2d2d2d]/90 transition-all group shadow-md"
+              >
+                <div>
+                  <span className="text-base mb-1 block">🏋️‍♂️ Krok 3</span>
+                  <h4 className="text-xs font-bold text-gymRed uppercase tracking-wide group-hover:text-red-400 transition-colors">
+                    Zaloguj pierwszy trening
+                  </h4>
+                  <p className="text-zinc-300 text-[11px] mt-1 leading-normal font-medium">
+                    Kliknij tutaj, aby otworzyć kreator i zapisać pierwsze serie robocze!
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* LEWA KOLUMNA: STATYSTYKI I CEL TYGODNIOWY */}
+      <div className="flex flex-col gap-6 lg:col-span-1">
+        
+        {/* WIDGET 1: PROFIL I AKTUALNY STREAK */}
+        <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-gymRed/5 rounded-full blur-2xl transition-all group-hover:bg-gymRed/10"></div>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400 mb-1">Twój Profil</h2>
+          <div className="text-2xl font-black text-white tracking-tight">{user?.nick || 'Sportowiec'}</div>
+          
+          <div className="mt-4 flex items-center justify-between bg-[#2d2d2d] p-4 rounded-lg border border-zinc-800/60">
+            <span className="text-sm text-zinc-400 font-medium">Aktualny streak tygodniowy:</span>
+            <span className="text-2xl font-black text-gymRed drop-shadow-[0_2px_10px_rgba(255,71,87,0.2)] flex items-center gap-1 animate-pulse">
+              🔥 {user?.current_streak || 0}
+            </span>
+          </div>
+        </section>
+
+        {/* WIDGET 2: CEL TRENINGOWY */}
+        <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400">Cel tygodniowy 🎯</h2>
+            <span className="text-sm font-black text-gymRed bg-gymRed/10 px-2.5 py-0.5 rounded-full">
+              {localTarget} dni
+            </span>
+          </div>
+          <p className="text-zinc-500 text-xs mb-4">Zadeklaruj ile razy w tygodniu chcesz trenować w garażu.</p>
+          
+          <input 
+            type="range" 
+            min="1" 
+            max="7" 
+            value={localTarget}
+            onChange={(e) => setLocalTarget(parseInt(e.target.value))}
+            onMouseUp={() => onUpdateWeeklyTarget(localTarget)}
+            onTouchEnd={() => onUpdateWeeklyTarget(localTarget)}
+            className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-gymRed transition-all"
+          />
+          <div className="flex justify-between text-[10px] font-bold text-zinc-600 mt-1 px-1">
+            <span>1 DZIEŃ</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7 DNI</span>
+          </div>
+        </section>
+      </div>
+
+      {/* ŚRODKOWA KOLUMNA: WYKRES PROGRESJI SIŁOWEJ */}
+      <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 md:col-span-2 flex flex-col justify-between">
+        <div>
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-zinc-800 pb-4 mb-4">
+            <div>
+              <h2 className="text-lg font-bold tracking-tight">Krzywa progresu siłowego (Est. 1RM) 📈</h2>
+              <p className="text-zinc-400 text-xs mt-0.5">Wykres generowany automatycznie na podstawie serii roboczych.</p>
+            </div>
+
+            <select
+              value={selectedExercise}
+              onChange={(e) => setSelectedExercise(e.target.value)}
+              className="p-2 rounded-md border border-zinc-800 bg-[#2d2d2d] text-white text-xs md:text-sm outline-none focus:border-gymRed cursor-pointer max-w-[250px]"
+            >
+              <option value="" disabled>Wybierz ćwiczenie...</option>
+              {exercises.map(ex => (
+                <option key={ex.id} value={ex.id} className="bg-[#2d2d2d]">{ex.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="w-full overflow-hidden bg-zinc-900/50 p-2 rounded-xl border border-zinc-800/40 flex justify-center items-center">
+            {validData.length < 2 ? (
+              <div className="text-center py-16 text-zinc-500 italic text-sm flex flex-col items-center gap-1">
+                <span>📊</span> Zaloguj minimum 2 różne dni treningowe dla tego ćwiczenia, aby wygenerować linię progresu.
+              </div>
+            ) : (
+              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-[220px]">
+                <defs>
+                  <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ff4757" stopOpacity="0.25"/>
+                    <stop offset="100%" stopColor="#ff4757" stopOpacity="0.00"/>
+                  </linearGradient>
+                </defs>
+                
+                <line x1={padding} y1={padding} x2={svgWidth - padding} y2={padding} stroke="#2d2d2d" strokeWidth="1" strokeDasharray="4"/>
+                <line x1={padding} y1={svgHeight - padding} x2={svgWidth - padding} y2={svgHeight - padding} stroke="#333" strokeWidth="1"/>
+
+                <path d={gradientPath} fill="url(#chartGradient)" />
+                <path d={pointsPath} fill="none" stroke="#ff4757" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+
+                {pointsArray.map((p, i) => (
+                  <g key={i} className="group/node cursor-pointer">
+                    <circle cx={p.x} cy={p.y} r="5" fill="#121212" stroke="#ff4757" strokeWidth="2.5" className="transition-all hover:r-7 hover:fill-[#ff4757]"/>
+                    <g className="opacity-0 group-hover/node:opacity-100 transition-opacity duration-150 pointer-events-none">
+                      <rect x={p.x - 40} y={p.y - 32} width="80" height="22" rx="4" fill="#1e1e1e" stroke="#ff4757" strokeWidth="1"/>
+                      <text x={p.x} y={p.y - 17} fill="white" fontSize="10" fontWeight="bold" textAnchor="middle">
+                        {p.oneRm.toFixed(1)} kg
+                      </text>
+                    </g>
+                  </g>
+                ))}
+              </svg>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* DOLNA SEKCJA: WAGA CAŁKOWITA + CHART */}
+      <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 md:col-span-2 lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <div className="md:col-span-1 flex flex-col justify-between border-b md:border-b-0 md:border-r border-zinc-800 pb-4 md:pb-0 md:pr-6">
+          <div>
+            <h2 className="text-base font-bold tracking-tight mb-1">Zarejestruj wagę ciała ⚖️</h2>
+            <p className="text-zinc-500 text-xs mb-4">Wpisuj wagę poranną na czczo, aby monitorować trendy masowe.</p>
+          </div>
+          
+          <div className="flex gap-2 mt-auto">
+            <input 
+              type="number" 
+              step="0.1" 
+              placeholder="np. 84.5" 
+              value={weightInput}
+              onChange={(e) => setWeightInput(e.target.value)}
+              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none focus:border-gymRed font-mono"
+            />
+            <button 
+              onClick={handleAddWeight}
+              className="bg-gymRed hover:bg-red-600 text-white font-bold px-5 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
+            >
+              Dodaj
+            </button>
+          </div>
+        </div>
+
+        <div className="md:col-span-2 flex flex-col justify-between">
+          <div>
+            <h2 className="text-base font-bold tracking-tight mb-1">Ostatnie pomiary wagi</h2>
+            <p className="text-zinc-500 text-xs mb-4">Twoja oś czasu masy ciała wraz z wykresem trendu.</p>
+          </div>
+
+          <div className="mb-4">
+            <WeightChart logs={weightLogs} />
+          </div>
+
+          {weightLogs.length === 0 ? (
+            <p className="text-zinc-600 italic text-sm py-2">Brak zapisanych pomiarów wagi.</p>
+          ) : (
+            <div className="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2">
+              {weightLogs.slice(0, 7).map(log => (
+                <div 
+                  key={log.id} 
+                  className="bg-[#2d2d2d] border border-zinc-800/70 p-3 rounded-lg flex flex-col items-center min-w-[90px] shadow-sm transition-colors hover:border-zinc-700 relative group"
+                >
+                  <button
+                    onClick={() => initiateDelete(log.id)}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-800 border border-zinc-700 rounded-full flex items-center justify-center text-[9px] font-black text-zinc-400 hover:text-gymRed hover:border-gymRed active:scale-90 transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer shadow-md"
+                    title="Usuń pomiar"
+                  >
+                    ✕
+                  </button>
+
+                  <span className="text-base font-black text-zinc-100 font-mono">
+                    {parseFloat(log.weight).toFixed(1)} <span className="text-[10px] text-zinc-400 font-normal">kg</span>
+                  </span>
+                  <span className="text-[10px] text-zinc-400 font-medium mt-1 uppercase tracking-tighter">
+                    {new Date(log.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* --- AUTORSKI MODAL POTWIERDZENIA USUWANIA POMIARU WAGI --- */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity"></div>
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚖️</div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Usunąć pomiar wagi?</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja bezpowrotnie wymaże ten dzień z Twojego wykresu progresu masy ciała.</p>
+            <div className="flex gap-3">
+              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm transition-all active:scale-95 cursor-pointer border border-zinc-800">Anuluj</button>
+              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm transition-all active:scale-95 cursor-pointer shadow-lg shadow-red-950/20">Tak, usuń</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  )
+}
+</file>
+
 <file path="frontend/src/App.jsx">
 import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
@@ -2705,6 +3343,7 @@ import Social from './views/Social'
 import { useWeightLogs } from './hooks/useWeightLogs'
 import { useFriends } from './hooks/useFriends'
 import { useWorkouts } from './hooks/useWorkouts'
+import { useTemplates } from './hooks/useTemplates';
 import { API_BASE_URL } from './config/api'
 import StatsView from './views/StatsView'
 
@@ -2734,6 +3373,8 @@ function AppContent() {
     friends, pendingRequests, friendNickInput, setFriendNickInput, 
     handleSendFriendRequest, handleAcceptFriend, handleRejectFriend, fetchFriendsData 
   } = useFriends(token)
+
+  const { templates, fetchTemplates, handleSaveTemplate, handleDeleteTemplate } = useTemplates(token, showToast);
   
   const {
     workoutsHistory, workoutName, setWorkoutName, workoutComment, setWorkoutComment, 
@@ -2751,14 +3392,14 @@ function AppContent() {
     navigate('/')
   }
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     localStorage.removeItem('gp_token');
     localStorage.removeItem('gp_user');
-    setToken(null)
-    setUser(null)
-    setLocalSeriesList([])
-    navigate('/login')
-  }
+    setToken(null);
+    setUser(null);
+    setLocalSeriesList([]); // Pochodzi z destrukcji useWorkouts
+    navigate('/login');
+  }, [navigate, setLocalSeriesList]); // setToken i setUser są gwarantowane jako stabilne przez Reacta
 
   const fetchStatsData = useCallback(async () => {
   if (!token) return;
@@ -2805,7 +3446,8 @@ function AppContent() {
         fetchWeightLogs(),
         fetchWorkoutsData(),
         fetchFriendsData(),
-        fetchStatsData()
+        fetchStatsData(),
+        fetchTemplates()
       ]);
     } catch (error) {
       console.error("❌ Błąd ładowania danych:", error.message);
@@ -3034,7 +3676,7 @@ function AppContent() {
           
           <Route path="/new-workout" element={token ? <NewWorkout workoutName={workoutName} setWorkoutName={setWorkoutName} workoutComment={workoutComment} setWorkoutComment={setWorkoutComment} currentSelectedExercise={currentSelectedExercise} setCurrentSelectedExercise={setCurrentSelectedExercise} seriesWeight={seriesWeight} setSeriesWeight={setSeriesWeight} seriesReps={seriesReps} setSeriesReps={setSeriesReps} exercises={exercises} localSeriesList={localSeriesList} addSeriesToLocalList={addSeriesToLocalList} handleSaveWorkout={onSaveWorkout} removeSeriesFromLocalList={removeSeriesFromLocalList} /> : <Navigate to="/login" />} />
           <Route path="/history" element={token ? <History workoutsHistory={workoutsHistory} onDeleteWorkout={onDeleteWorkout} onLoadMoreWorkouts={onLoadMoreWorkouts} hasMoreWorkouts={hasMoreWorkouts} onUpdateWorkout={onUpdateWorkoutMetadata} /> : <Navigate to="/login" />} />
-          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} /> : <Navigate to="/login" />} />
+          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} /> : <Navigate to="/login" />} />
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>
@@ -3062,283 +3704,6 @@ export default function App() {
 }
 </file>
 
-<file path="frontend/src/views/Dashboard.jsx">
-import React, { useState, useEffect } from 'react'
-import WeightChart from '../components/WeightChart'
-
-export default function Dashboard({
-  user, weightLogs, weightInput, setWeightInput, handleAddWeight,
-  exercises, onUpdateWeeklyTarget, progressionData, fetchProgression, onDeleteWeight
-}) {
-  const [selectedExercise, setSelectedExercise] = useState(exercises[0]?.id || '')
-  const [localTarget, setLocalTarget] = useState(user?.weekly_target_workouts || 3)
-
-  // STANY DLA AUTORSKIEGO MODALU USUWANIA WAGI
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [logToDelete, setLogToDelete] = useState(null)
-
-  // Każdorazowa zmiana ćwiczenia w selektorze dzwoni do bazy po świeżą progresję 1RM
-  useEffect(() => {
-    if (selectedExercise) {
-      fetchProgression(selectedExercise)
-    }
-  }, [selectedExercise, fetchProgression])
-
-  // Automatyczne ustawienie pierwszego ćwiczenia, jeśli baza na starcie była pusta
-  useEffect(() => {
-    if (exercises.length > 0 && !selectedExercise) {
-      setSelectedExercise(exercises[0].id)
-    }
-  }, [exercises, selectedExercise])
-
-  useEffect(() => {
-    if (user?.weekly_target_workouts) {
-      setLocalTarget(user.weekly_target_workouts)
-    }
-  }, [user?.weekly_target_workouts])
-
-  // HANDLERY MODALU BEZPIECZEŃSTWA
-  const initiateDelete = (id) => {
-    setLogToDelete(id)
-    setIsModalOpen(true)
-  }
-
-  const confirmDelete = () => {
-    if (logToDelete) {
-      onDeleteWeight(logToDelete)
-    }
-    closeModal()
-  }
-
-  const closeModal = () => {
-    setIsModalOpen(false)
-    setLogToDelete(null)
-  }
-
-  // --- PARAMETRYZACJA GENEROWANIA WYKRESU SVG ---
-  const svgWidth = 500
-  const svgHeight = 200
-  const padding = 35
-
-  const validData = progressionData.filter(d => !isNaN(d.oneRm))
-
-  let pointsPath = ''
-  let gradientPath = ''
-  let pointsArray = []
-
-  if (validData.length > 1) {
-    const minX = 0
-    const maxX = validData.length - 1
-    const yValues = validData.map(d => d.oneRm)
-    const minY = Math.min(...yValues) * 0.9
-    const maxY = Math.max(...yValues) * 1.1
-
-    pointsArray = validData.map((d, index) => {
-      const x = padding + (index / maxX) * (svgWidth - padding * 2)
-      const denominator = (maxY - minY) === 0 ? 1 : (maxY - minY);
-      const y = (maxY - minY) === 0 
-        ? svgHeight / 2 
-        : svgHeight - padding - ((d.oneRm - minY) / denominator) * (svgHeight - padding * 2);
-
-      return { x, y, oneRm: d.oneRm, date: d.date }
-    })
-
-    pointsPath = pointsArray.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-    gradientPath = `${pointsPath} L ${pointsArray[pointsArray.length - 1].x} ${svgHeight - padding} L ${pointsArray[0].x} ${svgHeight - padding} Z`
-  }
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left relative">
-      
-      {/* LEWA KOLUMNA: STATYSTYKI I CEL TYGODNIOWY */}
-      <div className="flex flex-col gap-6 lg:col-span-1">
-        
-        {/* WIDGET 1: PROFIL I AKTUALNY STREAK */}
-        <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gymRed/5 rounded-full blur-2xl transition-all group-hover:bg-gymRed/10"></div>
-          <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400 mb-1">Twój Profil</h2>
-          <div className="text-2xl font-black text-white tracking-tight">{user?.nick || 'Sportowiec'}</div>
-          
-          <div className="mt-4 flex items-center justify-between bg-[#2d2d2d] p-4 rounded-lg border border-zinc-800/60">
-            <span className="text-sm text-zinc-400 font-medium">Aktualny streak tygodniowy:</span>
-            <span className="text-2xl font-black text-gymRed drop-shadow-[0_2px_10px_rgba(255,71,87,0.2)] flex items-center gap-1 animate-pulse">
-              🔥 {user?.current_streak || 0}
-            </span>
-          </div>
-        </section>
-
-        {/* WIDGET 2: CEL TRENINGOWY */}
-        <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400">Cel tygodniowy 🎯</h2>
-            <span className="text-sm font-black text-gymRed bg-gymRed/10 px-2.5 py-0.5 rounded-full">
-              {localTarget} dni
-            </span>
-          </div>
-          <p className="text-zinc-500 text-xs mb-4">Zadeklaruj ile razy w tygodniu chcesz trenować w garażu.</p>
-          
-          <input 
-            type="range" 
-            min="1" 
-            max="7" 
-            value={localTarget}
-            onChange={(e) => setLocalTarget(parseInt(e.target.value))}
-            onMouseUp={() => onUpdateWeeklyTarget(localTarget)}
-            onTouchEnd={() => onUpdateWeeklyTarget(localTarget)}
-            className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-gymRed transition-all"
-          />
-          <div className="flex justify-between text-[10px] font-bold text-zinc-600 mt-1 px-1">
-            <span>1 DZIEŃ</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7 DNI</span>
-          </div>
-        </section>
-      </div>
-
-      {/* ŚRODKOWA KOLUMNA: WYKRES PROGRESJI SIŁOWEJ */}
-      <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 md:col-span-2 flex flex-col justify-between">
-        <div>
-          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-zinc-800 pb-4 mb-4">
-            <div>
-              <h2 className="text-lg font-bold tracking-tight">Krzywa progresu siłowego (Est. 1RM) 📈</h2>
-              <p className="text-zinc-400 text-xs mt-0.5">Wykres generowany automatycznie na podstawie serii roboczych.</p>
-            </div>
-
-            <select
-              value={selectedExercise}
-              onChange={(e) => setSelectedExercise(e.target.value)}
-              className="p-2 rounded-md border border-zinc-800 bg-[#2d2d2d] text-white text-xs md:text-sm outline-none focus:border-gymRed cursor-pointer max-w-[250px]"
-            >
-              <option value="" disabled>Wybierz ćwiczenie...</option>
-              {exercises.map(ex => (
-                <option key={ex.id} value={ex.id} className="bg-[#2d2d2d]">{ex.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="w-full overflow-hidden bg-zinc-900/50 p-2 rounded-xl border border-zinc-800/40 flex justify-center items-center">
-            {validData.length < 2 ? (
-              <div className="text-center py-16 text-zinc-500 italic text-sm flex flex-col items-center gap-1">
-                <span>📊</span> Zaloguj minimum 2 różne dni treningowe dla tego ćwiczenia, aby wygenerować linię progresu.
-              </div>
-            ) : (
-              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-[220px]">
-                <defs>
-                  <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ff4757" stopOpacity="0.25"/>
-                    <stop offset="100%" stopColor="#ff4757" stopOpacity="0.00"/>
-                  </linearGradient>
-                </defs>
-                
-                <line x1={padding} y1={padding} x2={svgWidth - padding} y2={padding} stroke="#2d2d2d" strokeWidth="1" strokeDasharray="4"/>
-                <line x1={padding} y1={svgHeight - padding} x2={svgWidth - padding} y2={svgHeight - padding} stroke="#333" strokeWidth="1"/>
-
-                <path d={gradientPath} fill="url(#chartGradient)" />
-                <path d={pointsPath} fill="none" stroke="#ff4757" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-
-                {pointsArray.map((p, i) => (
-                  <g key={i} className="group/node cursor-pointer">
-                    <circle cx={p.x} cy={p.y} r="5" fill="#121212" stroke="#ff4757" strokeWidth="2.5" className="transition-all hover:r-7 hover:fill-[#ff4757]"/>
-                    <g className="opacity-0 group-hover/node:opacity-100 transition-opacity duration-150 pointer-events-none">
-                      <rect x={p.x - 40} y={p.y - 32} width="80" height="22" rx="4" fill="#1e1e1e" stroke="#ff4757" strokeWidth="1"/>
-                      <text x={p.x} y={p.y - 17} fill="white" fontSize="10" fontWeight="bold" textAnchor="middle">
-                        {p.oneRm.toFixed(1)} kg
-                      </text>
-                    </g>
-                  </g>
-                ))}
-              </svg>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* DOLNA SEKCJA: WAGA CAŁKOWITA + CHART */}
-      <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 md:col-span-2 lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        <div className="md:col-span-1 flex flex-col justify-between border-b md:border-b-0 md:border-r border-zinc-800 pb-4 md:pb-0 md:pr-6">
-          <div>
-            <h2 className="text-base font-bold tracking-tight mb-1">Zarejestruj wagę ciała ⚖️</h2>
-            <p className="text-zinc-500 text-xs mb-4">Wpisuj wagę poranną na czczo, aby monitorować trendy masowe.</p>
-          </div>
-          
-          <div className="flex gap-2 mt-auto">
-            <input 
-              type="number" 
-              step="0.1" 
-              placeholder="np. 84.5" 
-              value={weightInput}
-              onChange={(e) => setWeightInput(e.target.value)}
-              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none focus:border-gymRed font-mono"
-            />
-            <button 
-              onClick={handleAddWeight}
-              className="bg-gymRed hover:bg-red-600 text-white font-bold px-5 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
-            >
-              Dodaj
-            </button>
-          </div>
-        </div>
-
-        <div className="md:col-span-2 flex flex-col justify-between">
-          <div>
-            <h2 className="text-base font-bold tracking-tight mb-1">Ostatnie pomiary wagi</h2>
-            <p className="text-zinc-500 text-xs mb-4">Twoja oś czasu masy ciała wraz z wykresem trendu.</p>
-          </div>
-
-          <div className="mb-4">
-            <WeightChart logs={weightLogs} />
-          </div>
-
-          {weightLogs.length === 0 ? (
-            <p className="text-zinc-600 italic text-sm py-2">Brak zapisanych pomiarów wagi.</p>
-          ) : (
-            <div className="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2">
-              {weightLogs.slice(0, 7).map(log => (
-                <div 
-                  key={log.id} 
-                  className="bg-[#2d2d2d] border border-zinc-800/70 p-3 rounded-lg flex flex-col items-center min-w-[90px] shadow-sm transition-colors hover:border-zinc-700 relative group"
-                >
-                  <button
-                    onClick={() => initiateDelete(log.id)} // <--- ZMIANA: wywołanie bezpiecznego modalu
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-800 border border-zinc-700 rounded-full flex items-center justify-center text-[9px] font-black text-zinc-400 hover:text-gymRed hover:border-gymRed active:scale-90 transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer shadow-md"
-                    title="Usuń pomiar"
-                  >
-                    ✕
-                  </button>
-
-                  <span className="text-base font-black text-zinc-100 font-mono">
-                    {parseFloat(log.weight).toFixed(1)} <span className="text-[10px] text-zinc-400 font-normal">kg</span>
-                  </span>
-                  <span className="text-[10px] text-zinc-400 font-medium mt-1 uppercase tracking-tighter">
-                    {new Date(log.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* --- AUTORSKI MODAL POTWIERDZENIA USUWANIA POMIARU WAGI --- */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity"></div>
-          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚖️</div>
-            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Usunąć pomiar wagi?</h3>
-            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja bezpowrotnie wymaże ten dzień z Twojego wykresu progresu masy ciała.</p>
-            <div className="flex gap-3">
-              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm transition-all active:scale-95 cursor-pointer border border-zinc-800">Anuluj</button>
-              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm transition-all active:scale-95 cursor-pointer shadow-lg shadow-red-950/20">Tak, usuń</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-    </div>
-  )
-}
-</file>
-
 <file path="backend/index.js">
 require('dotenv').config(); // Wczytujemy zmienne na samym starcie
 
@@ -3351,10 +3716,14 @@ if (!process.env.JWT_SECRET) {
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const pool = require('./config/db');
+const templatesRouter = require('./routes/templates');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+app.use(helmet());
 
 // 1. Definiujemy bezpieczną listę zaufanych adresów (origins)
 const allowedOrigins = [
@@ -3399,6 +3768,7 @@ app.use('/api/workouts', require('./routes/workouts'));
 app.use('/api/friends', require('./routes/friends'));
 app.use('/api/exercises', require('./routes/exercises'));
 app.use('/api/stats', require('./routes/stats'));
+app.use('/api/templates', templatesRouter);
 
 // [INFO] Stary, publiczny blok app.get('/api/exercises') został usunięty.
 // Wszystkie zapytania GET oraz POST dla ćwiczeń przetwarza teraz moduł powyżej.
