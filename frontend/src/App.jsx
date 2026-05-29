@@ -21,6 +21,7 @@ function AppContent() {
     return savedUser ? JSON.parse(savedUser) : null;
   });
   const [exercises, setExercises] = useState([])
+  const [stats, setStats] = useState(null)
   const [loadingData, setLoadingData] = useState(false)
 
   const navigate = useNavigate()
@@ -65,6 +66,16 @@ function AppContent() {
     navigate('/login')
   }
 
+  const fetchStatsData = useCallback(async () => {
+  if (!token) return;
+  const res = await fetch(`${API_BASE_URL}/api/stats`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error('Błąd pobierania statystyk');
+  const data = await res.json();
+  setStats(data);
+}, [token]);
+
   // Globalny, zabezpieczony mechanizm synchronizacji stanów z bazą
   const fetchAllData = useCallback(async () => {
     if (!token) return;
@@ -99,7 +110,8 @@ function AppContent() {
         fetchUserProfile,
         fetchWeightLogs(),
         fetchWorkoutsData(),
-        fetchFriendsData()
+        fetchFriendsData(),
+        fetchStatsData()
       ]);
     } catch (error) {
       console.error("❌ Błąd ładowania danych:", error.message);
@@ -107,7 +119,7 @@ function AppContent() {
     } finally {
       setLoadingData(false);
     }
-  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise]);
+  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData]);
 
   useEffect(() => {
     fetchAllData()
@@ -313,7 +325,7 @@ function AppContent() {
           <Route path="/new-workout" element={token ? <NewWorkout workoutName={workoutName} setWorkoutName={setWorkoutName} workoutComment={workoutComment} setWorkoutComment={setWorkoutComment} currentSelectedExercise={currentSelectedExercise} setCurrentSelectedExercise={setCurrentSelectedExercise} seriesWeight={seriesWeight} setSeriesWeight={setSeriesWeight} seriesReps={seriesReps} setSeriesReps={setSeriesReps} exercises={exercises} localSeriesList={localSeriesList} addSeriesToLocalList={addSeriesToLocalList} handleSaveWorkout={onSaveWorkout} removeSeriesFromLocalList={removeSeriesFromLocalList} /> : <Navigate to="/login" />} />
           <Route path="/history" element={token ? <History workoutsHistory={workoutsHistory} onDeleteWorkout={onDeleteWorkout} onLoadMoreWorkouts={onLoadMoreWorkouts} hasMoreWorkouts={hasMoreWorkouts} onUpdateWorkout={onUpdateWorkoutMetadata} /> : <Navigate to="/login" />} />
           <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} /> : <Navigate to="/login" />} />
-          <Route path="/stats" element={token ? <StatsView token={token} key={location.key} /> : <Navigate to="/login" />} />
+          <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>
       </main>

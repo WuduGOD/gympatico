@@ -1,33 +1,9 @@
-import React, { useState, useEffect } from 'react'
-import { API_BASE_URL } from '../config/api'
+import React from 'react'
 
-export default function StatsView({ token }) {
-  const [stats, setStats] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    if (!token) return
-    
-    fetch(`${API_BASE_URL}/api/stats`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(async res => {
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Nie udało się pobrać statystyk.')
-        return data
-      })
-      .then(data => {
-        setStats(data)
-        setLoading(false)
-      })
-      .catch(err => {
-        setError(err.message)
-        setLoading(false)
-      })
-  }, [token])
-
-  if (loading) {
+export default function StatsView({ stats, loading }) {
+  
+  // Ekran ładowania odpali się TYLKO przy pierwszym uruchomieniu aplikacji, gdy stan jest jeszcze pusty
+  if (loading && !stats) {
     return (
       <div className="text-center py-20 text-gymRed font-bold animate-pulse text-sm md:text-base">
         🔄 Kompilowanie raportu treningowego...
@@ -35,16 +11,18 @@ export default function StatsView({ token }) {
     )
   }
 
-  if (error) {
+  // Zabezpieczenie na wypadek, gdyby użytkownik nie miał jeszcze żadnej historii treningowej
+  if (!stats) {
     return (
-      <div className="bg-red-500/10 border border-red-500/20 text-gymRed font-bold text-center p-4 rounded-xl text-sm max-w-md mx-auto">
-        ⚠️ Błąd: {error}
+      <div className="bg-zinc-900 border border-zinc-800 text-zinc-400 font-medium text-center p-8 rounded-xl text-sm max-w-md mx-auto shadow-xl mt-10">
+        ⚠️ Brak dostępnych danych analitycznych.<br />
+        <span className="text-xs text-zinc-500 font-normal block mt-1">Zapisz swój pierwszy trening w kreatorze, aby wygenerować raport.</span>
       </div>
     )
   }
 
-  // Przelicznik tonażu na tony dla lepszego UX
-  const tonnageInTons = (stats?.totalTonnage / 1000).toFixed(2)
+  // Przelicznik tonażu na tony dla lepszego UX (używamy pewnych danych, bez znaku zapytania)
+  const tonnageInTons = (stats.totalTonnage / 1000).toFixed(2)
 
   return (
     <div className="space-y-6 text-left">
@@ -62,7 +40,7 @@ export default function StatsView({ token }) {
           <span className="text-2xl mb-2 block">🏋️‍♂️</span>
           <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Ukończone sesje</h3>
           <div className="text-4xl font-black text-white mt-2 font-mono tracking-tight group-hover:text-blue-400 transition-colors">
-            {stats?.totalWorkouts}
+            {stats.totalWorkouts}
           </div>
           <p className="text-[11px] text-zinc-500 mt-1">Wszystkie zarejestrowane dni treningowe</p>
         </div>
@@ -75,7 +53,7 @@ export default function StatsView({ token }) {
           <div className="text-4xl font-black text-emerald-400 mt-2 font-mono tracking-tight">
             {tonnageInTons} <span className="text-lg font-normal text-zinc-400">t</span>
           </div>
-          <p className="text-[11px] text-zinc-500 mt-1">Suma: {stats?.totalTonnage.toLocaleString()} kg</p>
+          <p className="text-[11px] text-zinc-500 mt-1">Suma: {stats.totalTonnage.toLocaleString()} kg</p>
         </div>
 
         {/* KARTA 3: ŻYCIOWY STREAK */}
@@ -84,9 +62,9 @@ export default function StatsView({ token }) {
           <span className="text-2xl mb-2 block">🔥</span>
           <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Życiowy rekord kontynuacji</h3>
           <div className="text-4xl font-black text-gymRed mt-2 font-mono tracking-tight">
-            {stats?.maxStreak} <span className="text-lg font-normal text-zinc-400">dni</span>
+            {stats.maxStreak} <span className="text-lg font-normal text-zinc-400">dni</span>
           </div>
-          <p className="text-[11px] text-zinc-500 mt-1">Aktualny streak: {stats?.currentStreak} dni</p>
+          <p className="text-[11px] text-zinc-500 mt-1">Aktualny streak: {stats.currentStreak} dni</p>
         </div>
 
         {/* KARTA 4: ULUBIONE ĆWICZENIE */}
@@ -95,7 +73,7 @@ export default function StatsView({ token }) {
           <span className="text-2xl mb-2 block">👑</span>
           <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Najwyższa frekwencja</h3>
           
-          {stats?.favorite ? (
+          {stats.favorite ? (
             <>
               <div className="text-base font-black text-white mt-2 truncate max-w-full" title={stats.favorite.name}>
                 {stats.favorite.name}
