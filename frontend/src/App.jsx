@@ -57,14 +57,14 @@ function AppContent() {
     navigate('/')
   }
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     localStorage.removeItem('gp_token');
     localStorage.removeItem('gp_user');
-    setToken(null)
-    setUser(null)
-    setLocalSeriesList([])
-    navigate('/login')
-  }
+    setToken(null);
+    setUser(null);
+    setLocalSeriesList([]); // Pochodzi z destrukcji useWorkouts
+    navigate('/login');
+  }, [navigate, setLocalSeriesList]); // setToken i setUser są gwarantowane jako stabilne przez Reacta
 
   const fetchStatsData = useCallback(async () => {
   if (!token) return;
