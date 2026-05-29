@@ -59,6 +59,8 @@ frontend/index.html
 frontend/package.json
 frontend/public/favicon.svg
 frontend/public/icons.svg
+frontend/public/pwa-192x192.png
+frontend/public/pwa-512x512.png
 frontend/README.md
 frontend/src/App.css
 frontend/src/App.jsx
@@ -79,6 +81,7 @@ frontend/src/views/LoginView.jsx
 frontend/src/views/NewWorkout.jsx
 frontend/src/views/Social.jsx
 frontend/src/views/StatsView.jsx
+frontend/vercel.json
 frontend/vite.config.js
 init.sql
 </directory_structure>
@@ -398,6 +401,32 @@ router.post('/', authenticateToken, async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: "Błąd serwera podczas dodawania ćwiczenia", details: error.message });
+  }
+});
+
+// 3. Usuwanie własnego ćwiczenia przez użytkownika
+router.delete('/:id', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const exerciseId = req.params.id;
+
+  try {
+    // Klauzula WHERE chroni przed usunięciem ćwiczeń globalnych (NULL) lub innych userów
+    const deleteQuery = 'DELETE FROM exercises WHERE id = $1 AND user_id = $2 RETURNING *';
+    const result = await pool.query(deleteQuery, [exerciseId, userId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Nie znaleziono ćwiczenia lub nie masz uprawnień do jego usunięcia." });
+    }
+
+    res.json({ message: "Ćwiczenie zostało pomyślnie usunięte z Twojego atlasu." });
+  } catch (error) {
+    // Obsługa klucza obcego (Foreign Key Constraint) — ochrona integralności danych
+    if (error.code === '23503') {
+      return res.status(400).json({ 
+        error: "Nie można usunąć ćwiczenia, ponieważ zostało już użyte w zapisanych treningach! Usuń najpierw te treningi z historii." 
+      });
+    }
+    res.status(500).json({ error: "Błąd serwera podczas usuwania ćwiczenia", details: error.message });
   }
 });
 
@@ -754,7 +783,10 @@ router.post('/', authenticateToken, async (req, res) => {
       }
     }
 
-    await pool.query('UPDATE users SET current_streak = $1, last_workout_at = NOW() WHERE id = $2', [newStreak, userId]);
+    await pool.query(
+      'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
+      [newStreak, userId]
+    );
     await pool.query('COMMIT');
 
     res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
@@ -999,41 +1031,6 @@ export default defineConfig([
 </html>
 </file>
 
-<file path="frontend/package.json">
-{
-  "name": "frontend",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@tailwindcss/vite": "^4.3.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "react-router-dom": "^7.15.1"
-  },
-  "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "autoprefixer": "^10.5.0",
-    "eslint": "^10.3.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.6.0",
-    "postcss": "^8.5.15",
-    "tailwindcss": "^4.3.0",
-    "vite": "^8.0.12"
-  }
-}
-</file>
-
 <file path="frontend/public/favicon.svg">
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="46" fill="none" viewBox="0 0 48 46"><path fill="#863bff" d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" style="fill:#863bff;fill:color(display-p3 .5252 .23 1);fill-opacity:1"/><mask id="a" width="48" height="46" x="0" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M25.842 44.938c-.664.844-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.183c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.498 0-3.579-1.842-3.579H1.133c-.92 0-1.456-1.04-.92-1.787L9.91.473c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.578 1.842 3.578h11.377c.943 0 1.473 1.088.89 1.832L25.843 44.94z" style="fill:#000;fill-opacity:1"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#ede6ff" rx="5.508" ry="14.704" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -4.47 31.516)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#ede6ff" rx="10.399" ry="29.851" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -39.328 7.883)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#7e14ff" rx="5.508" ry="30.487" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -25.913 -14.639)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -32.644 -3.334)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -34.34 30.47)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#ede6ff" rx="14.072" ry="22.078" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="rotate(93.35 24.506 48.493)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx=".387" cy="8.972" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(39.51 .387 8.972)"/></g><g filter="url(#k)"><ellipse cx="47.523" cy="-6.092" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 47.523 -6.092)"/></g><g filter="url(#l)"><ellipse cx="41.412" cy="6.333" fill="#47bfff" rx="5.971" ry="9.665" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 41.412 6.333)"/></g><g filter="url(#m)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#n)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#o)"><ellipse cx="35.651" cy="29.907" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 35.651 29.907)"/></g><g filter="url(#p)"><ellipse cx="38.418" cy="32.4" fill="#47bfff" rx="5.971" ry="15.297" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 38.418 32.4)"/></g></g><defs><filter id="b" width="60.045" height="41.654" x="-19.77" y="16.149" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-54.613" y="-7.533" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-49.64" y="2.03" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-45.045" y="20.029" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-43.513" y="21.178" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="15.756" y="-17.901" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-27.636" y="-22.853" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="20.116" y="-38.415" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="24.641" y="-11.323" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="8.244" y="-2.416" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="18.713" y="10.588" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter></defs></svg>
 </file>
@@ -1097,333 +1094,6 @@ body {
   color: #ffffff;
   margin: 0;
   font-family: sans-serif;
-}
-</file>
-
-<file path="frontend/src/App.jsx">
-import { useState, useEffect, useCallback } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
-
-import LoginView from './views/LoginView'
-import Dashboard from './views/Dashboard'
-import ExercisesList from './views/ExercisesList'
-import NewWorkout from './views/NewWorkout'
-import History from './views/History'
-import Social from './views/Social'
-
-import { useWeightLogs } from './hooks/useWeightLogs'
-import { useFriends } from './hooks/useFriends'
-import { useWorkouts } from './hooks/useWorkouts'
-import { API_BASE_URL } from './config/api'
-import StatsView from './views/StatsView'
-
-function AppContent() {
-  const [token, setToken] = useState(() => localStorage.getItem('gp_token') || null);
-  const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('gp_user');
-    return savedUser ? JSON.parse(savedUser) : null;
-  });
-  const [exercises, setExercises] = useState([])
-  const [loadingData, setLoadingData] = useState(false)
-
-  const navigate = useNavigate()
-  const location = useLocation()
-
-  const [toast, setToast] = useState({ message: '', type: 'success' })
-  
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type })
-    setTimeout(() => setToast({ message: '', type: 'success' }), 3500)
-  }
-
-  // Integracja customowych hooków domenowych
-  const { weightLogs, weightInput, setWeightInput, handleAddWeight, fetchWeightLogs, handleDeleteWeight } = useWeightLogs(token, showToast)
-  const { 
-    friends, pendingRequests, friendNickInput, setFriendNickInput, 
-    handleSendFriendRequest, handleAcceptFriend, handleRejectFriend, fetchFriendsData 
-  } = useFriends(token)
-  
-  const {
-    workoutsHistory, workoutName, setWorkoutName, workoutComment, setWorkoutComment, 
-    currentSelectedExercise, setCurrentSelectedExercise, seriesWeight, setSeriesWeight, 
-    seriesReps, setSeriesReps, localSeriesList, setLocalSeriesList, addSeriesToLocalList, 
-    handleSaveWorkout, fetchWorkoutsData, removeSeriesFromLocalList, progressionData, 
-    fetchProgression, handleDeleteWorkout, hasMoreWorkouts, handleUpdateWorkout
-  } = useWorkouts(token, exercises)
-
-  const handleLoginSuccess = (userToken, userData) => {
-    localStorage.setItem('gp_token', userToken);
-    localStorage.setItem('gp_user', JSON.stringify(userData));
-    setToken(userToken)
-    setUser(userData)
-    navigate('/')
-  }
-
-  const handleLogout = () => {
-    localStorage.removeItem('gp_token');
-    localStorage.removeItem('gp_user');
-    setToken(null)
-    setUser(null)
-    setLocalSeriesList([])
-    navigate('/login')
-  }
-
-  // Globalny, zabezpieczony mechanizm synchronizacji stanów z bazą
-  const fetchAllData = useCallback(async () => {
-    if (!token) return;
-    setLoadingData(true);
-    
-    const protectedHeaders = { 
-      'Authorization': `Bearer ${token}` 
-    };
-
-    try {
-      const fetchExercises = fetch(`${API_BASE_URL}/api/exercises`, { 
-        method: 'GET',
-        headers: protectedHeaders 
-      })
-        .then(res => { 
-          if (!res.ok) throw new Error('Błąd atlasu ćwiczeń'); 
-          return res.json(); 
-        })
-        .then(data => {
-          setExercises(data);
-          if (data.length > 0) setCurrentSelectedExercise(data[0].id);
-        });
-
-      const fetchUserProfile = fetch(`${API_BASE_URL}/api/auth/me`, { 
-        headers: protectedHeaders 
-      })
-        .then(res => { if (!res.ok) throw new Error('Błąd profilu'); return res.json(); })
-        .then(data => setUser(data));
-
-      await Promise.all([
-        fetchExercises,
-        fetchUserProfile,
-        fetchWeightLogs(),
-        fetchWorkoutsData(),
-        fetchFriendsData()
-      ]);
-    } catch (error) {
-      console.error("❌ Błąd ładowania danych:", error.message);
-      showToast(`Nie udało się pobrać danych: ${error.message}`, 'error');
-    } finally {
-      setLoadingData(false);
-    }
-  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise]);
-
-  useEffect(() => {
-    fetchAllData()
-  }, [token, fetchAllData])
-
-  // --- HANDLERY OPERACJI INŻYNIERSKICH COMFORT-FLOW ---
-  const onUpdateWeeklyTarget = async (newTarget) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/auth/weekly-target`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ weeklyTarget: newTarget })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować celu.');
-      setUser(prev => ({ ...prev, weekly_target_workouts: data.weekly_target_workouts }));
-      showToast('Tygodniowy cel zaktualizowany! 🎯', 'success');
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const onDeleteWeightLog = async (logId) => {
-    try {
-      await handleDeleteWeight(logId);
-      showToast('Pomiar wagi został usunięty ⚖️', 'success');
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const onSaveWorkout = async () => {
-    try {
-      await handleSaveWorkout();
-      showToast('Trening zapisany pomyślnie! 🔥', 'success');
-      await fetchAllData();
-      navigate('/history');
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const onSendFriendRequest = async (e) => {
-    e.preventDefault();
-    try {
-      await handleSendFriendRequest(friendNickInput);
-      showToast('Zaproszenie wysłane pomyślnie! ✉️', 'success');
-      await fetchAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const onAcceptFriend = async (friendshipId) => {
-    try {
-      await handleAcceptFriend(friendshipId);
-      showToast('Zaproszenie zaakceptowane! 🤝', 'success');
-      await fetchAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const onRejectFriend = async (friendshipId) => {
-    try {
-      await handleRejectFriend(friendshipId);
-      showToast('Zaproszenie zostało odrzucone.', 'success');
-      await fetchAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const onDeleteWorkout = async (sessionId) => {
-    try {
-      await handleDeleteWorkout(sessionId);
-      showToast('Trening został usunięty.', 'success');
-      await fetchAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const onLoadMoreWorkouts = async () => {
-    await fetchWorkoutsData(workoutsHistory.length, true);
-  };
-
-  const onAddCustomExercise = async (name, muscleGroup) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/exercises`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ name, muscleGroup })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Nie udało się dodać ćwiczenia.');
-      
-      showToast('Nowe ćwiczenie dodane do Twojego atlasu! 📚', 'success');
-      await fetchAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const onUpdateWorkoutMetadata = async (sessionId, name, comment) => {
-    try {
-      await handleUpdateWorkout(sessionId, name, comment);
-      showToast('Trening został zaktualizowany! ✏️', 'success');
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  return (
-    // Główny kontener aplikacji zintegrowany z ciemnym tłem GymPatico
-    <div className="p-4 md:p-6 font-sans bg-gymDark text-white min-h-screen relative">
-
-      {token && (
-        <>
-          {/* GÓRNY HEADER GLOBALNY */}
-          <header className="flex justify-between items-center border-b border-zinc-800/80 pb-4 mb-6 md:mb-8 gap-4">
-            <div className="text-left">
-              <h1 className="text-xl md:text-2xl font-black text-gymRed tracking-tight">🏋️‍♂️ GymPatico</h1>
-              <p className="hidden md:block text-zinc-400 text-xs mt-0.5">Witaj, <strong className="text-zinc-200">{user?.nick}</strong>!</p>
-            </div>
-            
-            {/* Nawigacja stacjonarna (Ukrywana na smartfonach przez md:flex) */}
-            <nav className="hidden md:flex items-center gap-2">
-              <button onClick={() => navigate('/')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Panel</button>
-              <button onClick={() => navigate('/stats')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/stats' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Statystyki 📊</button>
-              <button onClick={() => navigate('/exercises')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/exercises' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Atlas 📚</button>
-              <button onClick={() => navigate('/new-workout')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/new-workout' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>+ Nowy Trening</button>
-              <button onClick={() => navigate('/history')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/history' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Historia</button>
-              <button onClick={() => navigate('/social')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/social' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Społeczność 👥</button>
-              <button onClick={handleLogout} className="px-4 py-2 text-xs font-semibold rounded-lg bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer transition-all ml-2">Wyloguj</button>
-            </nav>
-
-            {/* Przycisk wyjścia dla wersji mobilnej */}
-            <button onClick={handleLogout} className="block md:hidden px-3 py-1.5 bg-zinc-800 text-white border border-zinc-700 rounded-lg font-bold cursor-pointer text-xs transition-colors hover:bg-zinc-700">
-              Wyjdź 🚪
-            </button>
-          </header>
-
-          {/* ERGONOMICZNA DOLNA BELKA NAWIGACYJNA DLA MOBILE */}
-          <nav className="grid grid-cols-6 md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#1e1e1e] border-t border-zinc-800/80 shadow-2xl z-[999] py-1 px-0.5">
-            <button onClick={() => navigate('/')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-lg">📊</span><span>Panel</span>
-            </button>
-            <button onClick={() => navigate('/stats')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/stats' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-lg">📈</span><span>Stats</span>
-            </button>
-            <button onClick={() => navigate('/exercises')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/exercises' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-lg">📚</span><span>Atlas</span>
-            </button>
-            <button onClick={() => navigate('/new-workout')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/new-workout' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-lg">➕</span><span>Trening</span>
-            </button>
-            <button onClick={() => navigate('/history')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/history' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-xl">📅</span><span>Historia</span>
-            </button>
-            <button onClick={() => navigate('/social')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/social' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-xl">👥</span><span>Gang</span>
-            </button>
-          </nav>
-        </>
-      )}
-
-      {/* PASEK SYNCHRONIZACJI BACKENDU */}
-      {loadingData && token && (
-        <div className="text-gymRed text-left mb-4 font-bold text-xs md:text-sm animate-pulse flex items-center gap-1.5">
-          🔄 Synchronizacja z bazą danych...
-        </div>
-      )}
-
-      {/* STRUMIEŃ GŁÓWNY WIDOKÓW (Dopisany bezpieczny padding dolny na mobile pod belkę) */}
-      <main className="pb-20 md:pb-0">
-        <Routes>
-          <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
-          <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={handleAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} /> : <Navigate to="/login" />} />
-          
-          {/* URATOWANE: Dokładnie jedna, w pełni wyposażona trasa dla Atlasu z obsługą dodawania */}
-          <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} /> : <Navigate to="/login" />} />
-          
-          <Route path="/new-workout" element={token ? <NewWorkout workoutName={workoutName} setWorkoutName={setWorkoutName} workoutComment={workoutComment} setWorkoutComment={setWorkoutComment} currentSelectedExercise={currentSelectedExercise} setCurrentSelectedExercise={setCurrentSelectedExercise} seriesWeight={seriesWeight} setSeriesWeight={setSeriesWeight} seriesReps={seriesReps} setSeriesReps={setSeriesReps} exercises={exercises} localSeriesList={localSeriesList} addSeriesToLocalList={addSeriesToLocalList} handleSaveWorkout={onSaveWorkout} removeSeriesFromLocalList={removeSeriesFromLocalList} /> : <Navigate to="/login" />} />
-          <Route path="/history" element={token ? <History workoutsHistory={workoutsHistory} onDeleteWorkout={onDeleteWorkout} onLoadMoreWorkouts={onLoadMoreWorkouts} hasMoreWorkouts={hasMoreWorkouts} onUpdateWorkout={onUpdateWorkoutMetadata} /> : <Navigate to="/login" />} />
-          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} /> : <Navigate to="/login" />} />
-          <Route path="/stats" element={token ? <StatsView token={token} /> : <Navigate to="/login" />} />
-          <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
-        </Routes>
-      </main>
-
-      {/* UNIFORM TOAST NOTIFICATION BOX */}
-      {toast.message && (
-        <div 
-          className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-xl text-white font-bold text-xs md:text-sm shadow-2xl z-[1000] tracking-wide animate-in fade-in slide-in-from-bottom-4 duration-200
-            ${toast.type === 'error' ? 'bg-gymRed border border-red-600' : 'bg-emerald-500 border border-emerald-600'}`}
-        >
-          {toast.message}
-        </div>
-      )}
-    </div>
-  )
-}
-
-export default function App() {
-  return (
-    <BrowserRouter>
-      <AppContent />
-    </BrowserRouter>
-  )
 }
 </file>
 
@@ -2089,11 +1759,7 @@ export default function Dashboard({
                 >
                   {/* PRZYCISK USUWANIA (✕): Widoczny zawsze na mobile, na desktopie hover kafelka (sm:opacity-0 sm:group-hover:opacity-100) */}
                   <button
-                    onClick={() => {
-                      if(window.confirm('Usunąć ten pomiar wagi?')) {
-                        onDeleteWeight(log.id)
-                      }
-                    }}
+                    onClick={() => onDeleteWeight(log.id)} // <--- Czysty, bezkompromisowy i natychmiastowy strzał
                     className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-800 border border-zinc-700 rounded-full flex items-center justify-center text-[9px] font-black text-zinc-400 hover:text-gymRed hover:border-gymRed active:scale-90 transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer shadow-md"
                     title="Usuń pomiar"
                   >
@@ -2121,7 +1787,7 @@ export default function Dashboard({
 <file path="frontend/src/views/ExercisesList.jsx">
 import React, { useState } from 'react'
 
-export default function ExercisesList({ exercises, onAddExercise }) {
+export default function ExercisesList({ exercises, onAddExercise, onDeleteExercise }) {
   // Stany wyszukiwania i filtrowania
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState('all')
@@ -2269,11 +1935,18 @@ export default function ExercisesList({ exercises, onAddExercise }) {
                     {ex.muscle_group}
                   </span>
 
-                  {/* DYNAMICZNY BADGE DLA PRYWATNYCH ĆWICZEŃ (user_id !== null) */}
+                  {/* DYNAMICZNY BADGE DLA PRYWATNYCH ĆWICZEŃ + PRZYCISK USUWANIA */}
                   {ex.user_id && (
-                    <span className="inline-block bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider animate-pulse">
-                      ⭐ Własne
-                    </span>
+                    <div className="flex items-center gap-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider transition-colors hover:border-amber-500/40">
+                      <span>⭐ Własne</span>
+                      <button
+                        onClick={() => onDeleteExercise(ex.id)}
+                        className="text-amber-500/60 hover:text-gymRed transition-colors font-black ml-1 cursor-pointer text-xs"
+                        title="Usuń to ćwiczenie z atlasu"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -2964,37 +2637,519 @@ export default function Social({
 }
 </file>
 
-<file path="frontend/src/views/StatsView.jsx">
-import React, { useState, useEffect } from 'react'
-import { API_BASE_URL } from '../config/api'
+<file path="frontend/vercel.json">
+{
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
+</file>
 
-export default function StatsView({ token }) {
+<file path="init.sql">
+-- 1. Tabela Użytkowników
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    nick VARCHAR(55) UNIQUE NOT NULL,
+    weekly_target_workouts INT DEFAULT 3,
+    current_streak INT DEFAULT 0,
+    max_streak INT DEFAULT 0,
+    last_workout_at TIMESTAMP,
+    is_premium BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Tabela Logów Wagi
+CREATE TABLE weight_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    weight NUMERIC(5,2) NOT NULL,
+    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Tabela Ćwiczeń (Czysta kolumna name, bez starego ograniczenia UNIQUE)
+CREATE TABLE exercises (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    muscle_group VARCHAR(100) NOT NULL,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE DEFAULT NULL
+);
+
+-- 4. INDEKSY UNIKALNE (Muszą powstać natychmiast po tabeli exercises!)
+-- Zabezpieczenie ćwiczeń globalnych (brak wielokrotnych duplikatów o tej samej nazwie w atlasie systemowym)
+CREATE UNIQUE INDEX exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
+
+-- Zabezpieczenie ćwiczeń prywatnych (dany user nie doda u siebie dwóch tak samo nazwanych pozycji)
+CREATE UNIQUE INDEX exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
+
+-- 5. Tabela Znajomości
+CREATE TABLE friendships (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'PENDING',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_friendship UNIQUE (sender_id, receiver_id)
+);
+
+-- 6. Tabela Sesji Treningowych
+CREATE TABLE workout_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    comment TEXT,
+    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 7. Tabela Serii Treningowych
+CREATE TABLE log_series (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
+    exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE,
+    weight NUMERIC NOT NULL,
+    reps INT NOT NULL,
+    series_order INT NOT NULL,
+    estimated_one_rm NUMERIC,
+    is_alternative BOOLEAN DEFAULT FALSE,
+    comment TEXT
+);
+
+-- 8. SEEDOWANIE BAZY DANYCH (Teraz ON CONFLICT idealnie trafia w utworzony wyżej indeks globalny)
+INSERT INTO exercises (name, muscle_group) VALUES
+  -- Klatka piersiowa
+  ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),
+  ('Wyciskanie hantli na ławce skośnej dodatniej', 'Klatka piersiowa'),
+  ('Pompki na poręczach (Dips)', 'Klatka piersiowa'),
+  ('Rozpiętki z hantlami na ławce poziomej', 'Klatka piersiowa'),
+
+  -- Plecy
+  ('Martwy ciąg klasyczny', 'Plecy'),
+  ('Podciąganie na drążku (nachwytem)', 'Plecy'),
+  ('Wiosłowanie sztangą w opadzie tułowia', 'Plecy'),
+  ('Ściąganie drążka wyciągu górnego do klatki', 'Plecy'),
+  ('Wiosłowanie hantlem jednorącz w oparciu o ławkę', 'Plecy'),
+
+  -- Barki
+  ('Wyciskanie żołnierskie (OHP)', 'Barki'),
+  ('Wyciskanie hantli siedząc', 'Barki'),
+  ('Unoszenie hantli bokiem stojąc', 'Barki'),
+  ('Odwrotne rozpiętki na maszynie (Face pulls)', 'Barki'),
+
+  -- Nogi
+  ('Przysiad ze sztangą na plecach (Back squat)', 'Nogi'),
+  ('Wypychanie ciężaru na suwnicy (Leg press)', 'Nogi'),
+  ('Rumuński martwy ciąg (RDL)', 'Nogi'),
+  ('Prostowanie nóg na maszynie siedząc', 'Nogi'),
+  ('Uginanie nóg na maszynie leżąc', 'Nogi'),
+
+  -- Ramiona (Biceps i Triceps)
+  ('Uginanie przedramion ze sztangą łamaną stojąc', 'Biceps'),
+  ('Uginanie przedramion z hantlami z supinacją', 'Biceps'),
+  ('Wyciskanie francuskie ze sztangą łamaną leżąc', 'Triceps'),
+  ('Prostowanie przedramion na wyciągu (linki)', 'Triceps')
+ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
+</file>
+
+<file path="frontend/package.json">
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-router-dom": "^7.15.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "autoprefixer": "^10.5.0",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.0",
+    "vite": "^8.0.12",
+    "vite-plugin-pwa": "^1.3.0"
+  }
+}
+</file>
+
+<file path="frontend/src/App.jsx">
+import { useState, useEffect, useCallback } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+
+import LoginView from './views/LoginView'
+import Dashboard from './views/Dashboard'
+import ExercisesList from './views/ExercisesList'
+import NewWorkout from './views/NewWorkout'
+import History from './views/History'
+import Social from './views/Social'
+
+import { useWeightLogs } from './hooks/useWeightLogs'
+import { useFriends } from './hooks/useFriends'
+import { useWorkouts } from './hooks/useWorkouts'
+import { API_BASE_URL } from './config/api'
+import StatsView from './views/StatsView'
+
+function AppContent() {
+  const [token, setToken] = useState(() => localStorage.getItem('gp_token') || null);
+  const [user, setUser] = useState(() => {
+    const savedUser = localStorage.getItem('gp_user');
+    return savedUser ? JSON.parse(savedUser) : null;
+  });
+  const [exercises, setExercises] = useState([])
   const [stats, setStats] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [loadingData, setLoadingData] = useState(false)
+
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  const [toast, setToast] = useState({ message: '', type: 'success' })
+  
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast({ message: '', type: 'success' }), 3500)
+  }
+
+  // Integracja customowych hooków domenowych
+  const { weightLogs, weightInput, setWeightInput, handleAddWeight, fetchWeightLogs, handleDeleteWeight } = useWeightLogs(token, showToast)
+  const { 
+    friends, pendingRequests, friendNickInput, setFriendNickInput, 
+    handleSendFriendRequest, handleAcceptFriend, handleRejectFriend, fetchFriendsData 
+  } = useFriends(token)
+  
+  const {
+    workoutsHistory, workoutName, setWorkoutName, workoutComment, setWorkoutComment, 
+    currentSelectedExercise, setCurrentSelectedExercise, seriesWeight, setSeriesWeight, 
+    seriesReps, setSeriesReps, localSeriesList, setLocalSeriesList, addSeriesToLocalList, 
+    handleSaveWorkout, fetchWorkoutsData, removeSeriesFromLocalList, progressionData, 
+    fetchProgression, handleDeleteWorkout, hasMoreWorkouts, handleUpdateWorkout
+  } = useWorkouts(token, exercises)
+
+  const handleLoginSuccess = (userToken, userData) => {
+    localStorage.setItem('gp_token', userToken);
+    localStorage.setItem('gp_user', JSON.stringify(userData));
+    setToken(userToken)
+    setUser(userData)
+    navigate('/')
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('gp_token');
+    localStorage.removeItem('gp_user');
+    setToken(null)
+    setUser(null)
+    setLocalSeriesList([])
+    navigate('/login')
+  }
+
+  const fetchStatsData = useCallback(async () => {
+  if (!token) return;
+  const res = await fetch(`${API_BASE_URL}/api/stats`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error('Błąd pobierania statystyk');
+  const data = await res.json();
+  setStats(data);
+}, [token]);
+
+  // Globalny, zabezpieczony mechanizm synchronizacji stanów z bazą
+  const fetchAllData = useCallback(async () => {
+    if (!token) return;
+    setLoadingData(true);
+    
+    const protectedHeaders = { 
+      'Authorization': `Bearer ${token}` 
+    };
+
+    try {
+      const fetchExercises = fetch(`${API_BASE_URL}/api/exercises`, { 
+        method: 'GET',
+        headers: protectedHeaders 
+      })
+        .then(res => { 
+          if (!res.ok) throw new Error('Błąd atlasu ćwiczeń'); 
+          return res.json(); 
+        })
+        .then(data => {
+          setExercises(data);
+          if (data.length > 0) setCurrentSelectedExercise(data[0].id);
+        });
+
+      const fetchUserProfile = fetch(`${API_BASE_URL}/api/auth/me`, { 
+        headers: protectedHeaders 
+      })
+        .then(res => { if (!res.ok) throw new Error('Błąd profilu'); return res.json(); })
+        .then(data => setUser(data));
+
+      await Promise.all([
+        fetchExercises,
+        fetchUserProfile,
+        fetchWeightLogs(),
+        fetchWorkoutsData(),
+        fetchFriendsData(),
+        fetchStatsData()
+      ]);
+    } catch (error) {
+      console.error("❌ Błąd ładowania danych:", error.message);
+      showToast(`Nie udało się pobrać danych: ${error.message}`, 'error');
+    } finally {
+      setLoadingData(false);
+    }
+  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData]);
 
   useEffect(() => {
-    if (!token) return
-    
-    fetch(`${API_BASE_URL}/api/stats`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(async res => {
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Nie udało się pobrać statystyk.')
-        return data
-      })
-      .then(data => {
-        setStats(data)
-        setLoading(false)
-      })
-      .catch(err => {
-        setError(err.message)
-        setLoading(false)
-      })
-  }, [token])
+    fetchAllData()
+  }, [token, fetchAllData])
 
-  if (loading) {
+  // --- HANDLERY OPERACJI INŻYNIERSKICH COMFORT-FLOW ---
+  const onUpdateWeeklyTarget = async (newTarget) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/weekly-target`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ weeklyTarget: newTarget })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować celu.');
+      setUser(prev => ({ ...prev, weekly_target_workouts: data.weekly_target_workouts }));
+      showToast('Tygodniowy cel zaktualizowany! 🎯', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const onDeleteWeightLog = async (logId) => {
+    try {
+      await handleDeleteWeight(logId);
+      showToast('Pomiar wagi został usunięty ⚖️', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const onSaveWorkout = async () => {
+    try {
+      await handleSaveWorkout();
+      showToast('Trening zapisany pomyślnie! 🔥', 'success');
+      await fetchAllData();
+      navigate('/history');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const onSendFriendRequest = async (e) => {
+    e.preventDefault();
+    try {
+      await handleSendFriendRequest(friendNickInput);
+      showToast('Zaproszenie wysłane pomyślnie! ✉️', 'success');
+      await fetchAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const onAcceptFriend = async (friendshipId) => {
+    try {
+      await handleAcceptFriend(friendshipId);
+      showToast('Zaproszenie zaakceptowane! 🤝', 'success');
+      await fetchAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const onRejectFriend = async (friendshipId) => {
+    try {
+      await handleRejectFriend(friendshipId);
+      showToast('Zaproszenie zostało odrzucone.', 'success');
+      await fetchAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const onDeleteWorkout = async (sessionId) => {
+    try {
+      await handleDeleteWorkout(sessionId);
+      showToast('Trening został usunięty.', 'success');
+      await fetchAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const onLoadMoreWorkouts = async () => {
+    await fetchWorkoutsData(workoutsHistory.length, true);
+  };
+
+  const onAddCustomExercise = async (name, muscleGroup) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/exercises`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ name, muscleGroup })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Nie udało się dodać ćwiczenia.');
+      
+      showToast('Nowe ćwiczenie dodane do Twojego atlasu! 📚', 'success');
+      await fetchAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const onDeleteCustomExercise = async (exerciseId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/exercises/${exerciseId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć ćwiczenia.');
+
+      showToast('Ćwiczenie usunięte z atlasu! 🗑️', 'success');
+      await fetchAllData(); // Odświeżamy listę w locie
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const onUpdateWorkoutMetadata = async (sessionId, name, comment) => {
+    try {
+      await handleUpdateWorkout(sessionId, name, comment);
+      showToast('Trening został zaktualizowany! ✏️', 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  return (
+    // Główny kontener aplikacji zintegrowany z ciemnym tłem GymPatico
+    <div className="p-4 md:p-6 font-sans bg-gymDark text-white min-h-screen relative">
+
+      {token && (
+        <>
+          {/* GÓRNY HEADER GLOBALNY */}
+          <header className="flex justify-between items-center border-b border-zinc-800/80 pb-4 mb-6 md:mb-8 gap-4">
+            <div className="text-left">
+              <h1 className="text-xl md:text-2xl font-black text-gymRed tracking-tight">🏋️‍♂️ GymPatico</h1>
+              <p className="hidden md:block text-zinc-400 text-xs mt-0.5">Witaj, <strong className="text-zinc-200">{user?.nick}</strong>!</p>
+            </div>
+            
+            {/* Nawigacja stacjonarna (Ukrywana na smartfonach przez md:flex) */}
+            <nav className="hidden md:flex items-center gap-2">
+              <button onClick={() => navigate('/')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Panel</button>
+              <button onClick={() => navigate('/stats')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/stats' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Statystyki 📊</button>
+              <button onClick={() => navigate('/exercises')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/exercises' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Atlas 📚</button>
+              <button onClick={() => navigate('/new-workout')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/new-workout' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>+ Nowy Trening</button>
+              <button onClick={() => navigate('/history')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/history' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Historia</button>
+              <button onClick={() => navigate('/social')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/social' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Społeczność 👥</button>
+              <button onClick={handleLogout} className="px-4 py-2 text-xs font-semibold rounded-lg bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer transition-all ml-2">Wyloguj</button>
+            </nav>
+
+            {/* Przycisk wyjścia dla wersji mobilnej */}
+            <button onClick={handleLogout} className="block md:hidden px-3 py-1.5 bg-zinc-800 text-white border border-zinc-700 rounded-lg font-bold cursor-pointer text-xs transition-colors hover:bg-zinc-700">
+              Wyjdź 🚪
+            </button>
+          </header>
+
+          {/* ERGONOMICZNA DOLNA BELKA NAWIGACYJNA DLA MOBILE */}
+          <nav className="grid grid-cols-6 md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#1e1e1e] border-t border-zinc-800/80 shadow-2xl z-[999] py-1 px-0.5">
+            <button onClick={() => navigate('/')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/' ? 'text-gymRed' : 'text-zinc-500'}`}>
+              <span className="text-lg">📊</span><span>Panel</span>
+            </button>
+            <button onClick={() => navigate('/stats')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/stats' ? 'text-gymRed' : 'text-zinc-500'}`}>
+              <span className="text-lg">📈</span><span>Stats</span>
+            </button>
+            <button onClick={() => navigate('/exercises')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/exercises' ? 'text-gymRed' : 'text-zinc-500'}`}>
+              <span className="text-lg">📚</span><span>Atlas</span>
+            </button>
+            <button onClick={() => navigate('/new-workout')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/new-workout' ? 'text-gymRed' : 'text-zinc-500'}`}>
+              <span className="text-lg">➕</span><span>Trening</span>
+            </button>
+            <button onClick={() => navigate('/history')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/history' ? 'text-gymRed' : 'text-zinc-500'}`}>
+              <span className="text-xl">📅</span><span>Historia</span>
+            </button>
+            <button onClick={() => navigate('/social')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/social' ? 'text-gymRed' : 'text-zinc-500'}`}>
+              <span className="text-xl">👥</span><span>Gang</span>
+            </button>
+          </nav>
+        </>
+      )}
+
+      {/* PASEK SYNCHRONIZACJI BACKENDU */}
+      {loadingData && token && (
+        <div className="text-gymRed text-left mb-4 font-bold text-xs md:text-sm animate-pulse flex items-center gap-1.5">
+          🔄 Synchronizacja z bazą danych...
+        </div>
+      )}
+
+      {/* STRUMIEŃ GŁÓWNY WIDOKÓW (Dopisany bezpieczny padding dolny na mobile pod belkę) */}
+      <main className="pb-20 md:pb-0">
+        <Routes>
+          <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
+          <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={handleAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} /> : <Navigate to="/login" />} />
+          
+          {/* URATOWANE: Dokładnie jedna, w pełni wyposażona trasa dla Atlasu z obsługą dodawania */}
+          <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} onDeleteExercise={onDeleteCustomExercise} /> : <Navigate to="/login" />} />
+          
+          <Route path="/new-workout" element={token ? <NewWorkout workoutName={workoutName} setWorkoutName={setWorkoutName} workoutComment={workoutComment} setWorkoutComment={setWorkoutComment} currentSelectedExercise={currentSelectedExercise} setCurrentSelectedExercise={setCurrentSelectedExercise} seriesWeight={seriesWeight} setSeriesWeight={setSeriesWeight} seriesReps={seriesReps} setSeriesReps={setSeriesReps} exercises={exercises} localSeriesList={localSeriesList} addSeriesToLocalList={addSeriesToLocalList} handleSaveWorkout={onSaveWorkout} removeSeriesFromLocalList={removeSeriesFromLocalList} /> : <Navigate to="/login" />} />
+          <Route path="/history" element={token ? <History workoutsHistory={workoutsHistory} onDeleteWorkout={onDeleteWorkout} onLoadMoreWorkouts={onLoadMoreWorkouts} hasMoreWorkouts={hasMoreWorkouts} onUpdateWorkout={onUpdateWorkoutMetadata} /> : <Navigate to="/login" />} />
+          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} /> : <Navigate to="/login" />} />
+          <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
+          <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
+        </Routes>
+      </main>
+
+      {/* UNIFORM TOAST NOTIFICATION BOX */}
+      {toast.message && (
+        <div 
+          className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-xl text-white font-bold text-xs md:text-sm shadow-2xl z-[1000] tracking-wide animate-in fade-in slide-in-from-bottom-4 duration-200
+            ${toast.type === 'error' ? 'bg-gymRed border border-red-600' : 'bg-emerald-500 border border-emerald-600'}`}
+        >
+          {toast.message}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
+  )
+}
+</file>
+
+<file path="frontend/src/views/StatsView.jsx">
+import React from 'react'
+
+export default function StatsView({ stats, loading }) {
+  
+  // Ekran ładowania odpali się TYLKO przy pierwszym uruchomieniu aplikacji, gdy stan jest jeszcze pusty
+  if (loading && !stats) {
     return (
       <div className="text-center py-20 text-gymRed font-bold animate-pulse text-sm md:text-base">
         🔄 Kompilowanie raportu treningowego...
@@ -3002,16 +3157,18 @@ export default function StatsView({ token }) {
     )
   }
 
-  if (error) {
+  // Zabezpieczenie na wypadek, gdyby użytkownik nie miał jeszcze żadnej historii treningowej
+  if (!stats) {
     return (
-      <div className="bg-red-500/10 border border-red-500/20 text-gymRed font-bold text-center p-4 rounded-xl text-sm max-w-md mx-auto">
-        ⚠️ Błąd: {error}
+      <div className="bg-zinc-900 border border-zinc-800 text-zinc-400 font-medium text-center p-8 rounded-xl text-sm max-w-md mx-auto shadow-xl mt-10">
+        ⚠️ Brak dostępnych danych analitycznych.<br />
+        <span className="text-xs text-zinc-500 font-normal block mt-1">Zapisz swój pierwszy trening w kreatorze, aby wygenerować raport.</span>
       </div>
     )
   }
 
-  // Przelicznik tonażu na tony dla lepszego UX
-  const tonnageInTons = (stats?.totalTonnage / 1000).toFixed(2)
+  // Przelicznik tonażu na tony dla lepszego UX (używamy pewnych danych, bez znaku zapytania)
+  const tonnageInTons = (stats.totalTonnage / 1000).toFixed(2)
 
   return (
     <div className="space-y-6 text-left">
@@ -3029,7 +3186,7 @@ export default function StatsView({ token }) {
           <span className="text-2xl mb-2 block">🏋️‍♂️</span>
           <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Ukończone sesje</h3>
           <div className="text-4xl font-black text-white mt-2 font-mono tracking-tight group-hover:text-blue-400 transition-colors">
-            {stats?.totalWorkouts}
+            {stats.totalWorkouts}
           </div>
           <p className="text-[11px] text-zinc-500 mt-1">Wszystkie zarejestrowane dni treningowe</p>
         </div>
@@ -3042,7 +3199,7 @@ export default function StatsView({ token }) {
           <div className="text-4xl font-black text-emerald-400 mt-2 font-mono tracking-tight">
             {tonnageInTons} <span className="text-lg font-normal text-zinc-400">t</span>
           </div>
-          <p className="text-[11px] text-zinc-500 mt-1">Suma: {stats?.totalTonnage.toLocaleString()} kg</p>
+          <p className="text-[11px] text-zinc-500 mt-1">Suma: {stats.totalTonnage.toLocaleString()} kg</p>
         </div>
 
         {/* KARTA 3: ŻYCIOWY STREAK */}
@@ -3051,9 +3208,9 @@ export default function StatsView({ token }) {
           <span className="text-2xl mb-2 block">🔥</span>
           <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Życiowy rekord kontynuacji</h3>
           <div className="text-4xl font-black text-gymRed mt-2 font-mono tracking-tight">
-            {stats?.maxStreak} <span className="text-lg font-normal text-zinc-400">dni</span>
+            {stats.maxStreak} <span className="text-lg font-normal text-zinc-400">dni</span>
           </div>
-          <p className="text-[11px] text-zinc-500 mt-1">Aktualny streak: {stats?.currentStreak} dni</p>
+          <p className="text-[11px] text-zinc-500 mt-1">Aktualny streak: {stats.currentStreak} dni</p>
         </div>
 
         {/* KARTA 4: ULUBIONE ĆWICZENIE */}
@@ -3062,7 +3219,7 @@ export default function StatsView({ token }) {
           <span className="text-2xl mb-2 block">👑</span>
           <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Najwyższa frekwencja</h3>
           
-          {stats?.favorite ? (
+          {stats.favorite ? (
             <>
               <div className="text-base font-black text-white mt-2 truncate max-w-full" title={stats.favorite.name}>
                 {stats.favorite.name}
@@ -3101,115 +3258,42 @@ export default function StatsView({ token }) {
 <file path="frontend/vite.config.js">
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite' // <--- IMPORTUJEMY NOWY PLUGIN
+import tailwindcss from '@tailwindcss/vite'
+import { VitePWA } from 'vite-plugin-pwa' // <--- NOWY IMPORT
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
-    tailwindcss(), // <--- URUCHAMIAMY PLUGIN TAILWINDA
+    tailwindcss(),
+    VitePWA({ // <--- KONFIGURACJA PWA
+      registerType: 'autoUpdate', // Automatyczna aktualizacja plików w pamięci podręcznej
+      injectRegister: 'auto',
+      includeAssets: ['favicon.svg'], // Pliki do bezwzględnego cache'owania
+      manifest: {
+        name: 'GymPatico Trening',
+        short_name: 'GymPatico',
+        description: 'Twoja garażowa aplikacja treningowa i atlas ćwiczeń',
+        theme_color: '#121212',       // Kolor paska systemowego na telefonie
+        background_color: '#121212',  // Kolor ekranu powitalnego (Splash screen)
+        display: 'standalone',        // KLUCZOWE: Odpalanie bez paska przeglądarki!
+        orientation: 'portrait',
+        icons: [                      // Ikony wymagane przez Android/iOS do instalacji
+          {
+            src: 'pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png'
+          }
+        ]
+      }
+    })
   ],
 })
-</file>
-
-<file path="init.sql">
--- 1. Tabela Użytkowników
-CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    nick VARCHAR(55) UNIQUE NOT NULL,
-    weekly_target_workouts INT DEFAULT 3,
-    current_streak INT DEFAULT 0,
-    max_streak INT DEFAULT 0, -- <--- TUTAJ: zabezpieczenie pod nową analitykę
-    last_workout_at TIMESTAMP,
-    is_premium BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2. Tabela Logów Wagi
-CREATE TABLE IF NOT EXISTS weight_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    weight NUMERIC(5,2) NOT NULL, -- Zmiana z TEXT na NUMERIC(5,2) dla poprawnych obliczeń i sortowania
-    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 3. Tabela Ćwiczeń
-CREATE TABLE IF NOT EXISTS exercises (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255) UNIQUE NOT NULL,
-    muscle_group VARCHAR(100) NOT NULL,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE DEFAULT NULL -- <--- TUTAJ: obsługa prywatnego atlasu
-);
-
--- 4. Tabela Znajomości (wymagana przez backend/routes/friends.js)
-CREATE TABLE IF NOT EXISTS friendships (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    status VARCHAR(20) DEFAULT 'PENDING', -- PENDING, ACCEPTED
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_friendship UNIQUE (sender_id, receiver_id)
-);
-
--- 5. Tabela Sesji Treningowych (wymagana przez backend/routes/workouts.js)
-CREATE TABLE IF NOT EXISTS workout_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    comment TEXT,
-    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 6. Tabela Serii Treningowych (wymagana przez backend/routes/workouts.js)
-CREATE TABLE IF NOT EXISTS log_series (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
-    exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE,
-    weight NUMERIC NOT NULL,
-    reps INT NOT NULL,
-    series_order INT NOT NULL,
-    estimated_one_rm NUMERIC,
-    is_alternative BOOLEAN DEFAULT FALSE,
-    comment TEXT
-);
-
--- Wrzucamy na start kilka podstawowych ćwiczeń do bazy
-INSERT INTO exercises (name, muscle_group) VALUES
-  -- Klatka piersiowa
-  ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),
-  ('Wyciskanie hantli na ławce skośnej dodatniej', 'Klatka piersiowa'),
-  ('Pompki na poręczach (Dips)', 'Klatka piersiowa'),
-  ('Rozpiętki z hantlami na ławce poziomej', 'Klatka piersiowa'),
-
-  -- Plecy
-  ('Martwy ciąg klasyczny', 'Plecy'),
-  ('Podciąganie na drążku (nachwytem)', 'Plecy'),
-  ('Wiosłowanie sztangą w opadzie tułowia', 'Plecy'),
-  ('Ściąganie drążka wyciągu górnego do klatki', 'Plecy'),
-  ('Wiosłowanie hantlem jednorącz w oparciu o ławkę', 'Plecy'),
-
-  -- Barki
-  ('Wyciskanie żołnierskie (OHP)', 'Barki'),
-  ('Wyciskanie hantli siedząc', 'Barki'),
-  ('Unoszenie hantli bokiem stojąc', 'Barki'),
-  ('Odwrotne rozpiętki na maszynie (Face pulls)', 'Barki'),
-
-  -- Nogi
-  ('Przysiad ze sztangą na plecach (Back squat)', 'Nogi'),
-  ('Wypychanie ciężaru na suwnicy (Leg press)', 'Nogi'),
-  ('Rumuński martwy ciąg (RDL)', 'Nogi'),
-  ('Prostowanie nóg na maszynie siedząc', 'Nogi'),
-  ('Uginanie nóg na maszynie leżąc', 'Nogi'),
-
-  -- Ramiona (Biceps i Triceps)
-  ('Uginanie przedramion ze sztangą łamaną stojąc', 'Biceps'),
-  ('Uginanie przedramion z hantlami z supinacją', 'Biceps'),
-  ('Wyciskanie francuskie ze sztangą łamaną leżąc', 'Triceps'),
-  ('Prostowanie przedramion na wyciągu (linki)', 'Triceps')
-ON CONFLICT (name) DO NOTHING;
 </file>
 
 </files>

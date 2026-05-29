@@ -38,12 +38,17 @@ router.post('/request', authenticateToken, async (req, res) => {
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
+    // Dynamicznie zerujemy streak w rankingu, jeśli użytkownik opuścił cały tydzień treningowy
     const query = `
-      SELECT u.id, u.nick, u.current_streak, u.last_workout_at, u.is_premium
+      SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
+        CASE 
+          WHEN u.last_workout_at < NOW() - INTERVAL '12 days' THEN 0
+          ELSE u.current_streak
+        END as "current_streak"
       FROM friendships f
       JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1) OR (f.receiver_id = u.id AND f.sender_id = $1)
       WHERE f.status = 'ACCEPTED' AND u.id != $1
-      ORDER BY u.current_streak DESC
+      ORDER BY "current_streak" DESC
     `;
     const result = await pool.query(query, [userId]);
     res.json(result.rows);
@@ -107,16 +112,19 @@ router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => 
   const userId = req.user.userId;
 
   try {
-    // Sprawdzamy, czy zaproszenie istnieje i czy zalogowany user jest jego odbiorcą (receiver_id)
-    const checkQuery = 'SELECT * FROM friendships WHERE id = $1 AND receiver_id = $2 AND status = \'PENDING\''
-    const checkResult = await pool.query(checkQuery, [friendshipId, userId]);
+    // Pancerne i szybkie zapytanie: kasujemy tylko, jeśli ID się zgadza, status to PENDING i zalogowany user jest ODBIORCĄ
+    const deleteQuery = `
+      DELETE FROM friendships 
+      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING'
+    `;
+    const result = await pool.query(deleteQuery, [friendshipId, userId]);
 
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." });
+    // Jeśli baza danych nie usunęła żadnego wiersza (rowCount === 0), zwracamy błąd uprawnień lub braku rekordu
+    if (result.rowCount === 0) {
+      return res.status(404).json({ 
+        error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." 
+      });
     }
-
-    // Usuwamy rekord zaproszenia z bazy danych
-    await pool.query('DELETE FROM friendships WHERE id = $1', [friendshipId]);
 
     res.json({ message: "Zaproszenie zostało odrzucone. ✕" });
   } catch (error) {

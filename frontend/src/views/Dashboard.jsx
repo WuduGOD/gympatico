@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import WeightChart from '../components/WeightChart'
 
 export default function Dashboard({
   user, weightLogs, weightInput, setWeightInput, handleAddWeight,
@@ -209,6 +210,10 @@ export default function Dashboard({
           <div>
             <h2 className="text-base font-bold tracking-tight mb-1">Ostatnie pomiary wagi</h2>
             <p className="text-zinc-500 text-xs mb-4">Twoja oś czasu masy ciała (najnowsze pomiary).</p>
+          </div>
+
+          <div className="mb-4">
+            <WeightChart logs={weightLogs} />
           </div>
 
           {weightLogs.length === 0 ? (

@@ -100,7 +100,7 @@ export function useWorkouts(token, exercises) {
           exerciseId: s.exerciseId,
           weight: s.weight,
           reps: s.reps,
-          seriesOrder: s.order,
+          order: s.order,
           estimatedOneRm: s.estimatedOneRm
         }))
       })
