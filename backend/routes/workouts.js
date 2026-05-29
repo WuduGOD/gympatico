@@ -5,33 +5,23 @@ const authenticateToken = require('../middleware/auth');
 
 // Zapisanie treningu + wyliczenie streaka
 router.post('/', authenticateToken, async (req, res) => {
-  let { name, comment, series } = req.body;
+  const { name, comment, series } = req.body;
+  const userId = req.user.userId;
 
   if (!name || !series || !Array.isArray(series) || series.length === 0) {
     return res.status(400).json({ error: "Nazwa treningu oraz serie są wymagane!" });
   }
 
-  // 1. Sanitization & Trim
-  name = name.trim();
-  comment = comment ? comment.trim() : null;
-
-  // 2. Walidacja długości wejścia
-  if (name.length < 3 || name.length > 100) {
-    return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
-  }
-
-  // Zabezpieczenie pola TEXT przed potężnymi payloadami stringów
-  if (comment && comment.length > 500) {
-    return res.status(400).json({ error: "Komentarz do treningu może mieć maksymalnie 500 znaków!" });
-  }
+  // 1. Pobieramy dedykowanego, pojedynczego klienta z puli połączeń
+  const client = await pool.connect();
 
   try {
-    await pool.query('BEGIN');
+    // 2. Uruchamiamy transakcję na zabezpieczonym kliencie
+    await client.query('BEGIN');
 
-    // W zapytaniu przekazujemy już oczyszczone zmienne "name" oraz "comment"
-    const sessionResult = await pool.query(
+    const sessionResult = await client.query(
       "INSERT INTO workout_sessions (user_id, name, comment, started_at, ended_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id",
-      [userId, name, comment]
+      [userId, name, comment || null]
     );
     const sessionId = sessionResult.rows[0].id;
 
@@ -42,27 +32,25 @@ router.post('/', authenticateToken, async (req, res) => {
         estimatedOneRM = s.weight * (1 + s.reps / 30);
       }
 
-      await pool.query(
+      // Wszystkie zapytania w pętli lecą przez stałe połączenie "client"
+      await client.query(
         `INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [sessionId, s.exerciseId, s.weight, s.reps, s.order || (i + 1), estimatedOneRM, s.isAlternative || false, s.comment || null]
       );
     }
 
-    const userResult = await pool.query('SELECT current_streak, weekly_target_workouts FROM users WHERE id = $1', [userId]);
+    const userResult = await client.query('SELECT current_streak, weekly_target_workouts FROM users WHERE id = $1', [userId]);
     const { current_streak, weekly_target_workouts } = userResult.rows[0];
 
-    // Definiujemy bezpieczny cel (fallback na 3, jeśli w bazie siedzi NULL)
     const target = weekly_target_workouts ?? 3;
 
-    // 1. Pobieramy liczbę treningów z BIEŻĄCEGO tygodnia (wliczając ten właśnie zapisany)
-    const thisWeekResult = await pool.query(
+    const thisWeekResult = await client.query(
       `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 AND started_at >= date_trunc('week', NOW())`, [userId]
     );
     const workoutsThisWeek = parseInt(thisWeekResult.rows[0].count);
 
-    // 2. Pobieramy liczbę treningów z POPRZEDNIEGO tygodnia
-    const lastWeekResult = await pool.query(
+    const lastWeekResult = await client.query(
       `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
       AND started_at >= date_trunc('week', NOW() - INTERVAL '1 week') 
       AND started_at < date_trunc('week', NOW())`, [userId]
@@ -72,40 +60,38 @@ router.post('/', authenticateToken, async (req, res) => {
     let newStreak = current_streak;
     const didMeetGoalLastWeek = workoutsLastWeek >= target;
 
-    // LOGIKA AKTUALIZACJI Z WYKORZYSTANIEM ZMIENNEJ TARGET:
     if (workoutsThisWeek === target) {
-      // Użytkownik właśnie domknął cel w tym tygodniu!
       if (didMeetGoalLastWeek || current_streak === 0) {
-        // Jeśli poprzedni tydzień był zaliczony (lub dopiero zaczyna od zera), podbijamy streak
         newStreak = current_streak + 1;
       } else {
-        // Jeśli poprzedni tydzień zawalił, ale w tym właśnie zrobił cel – jego nowy streak to 1
         newStreak = 1;
       }
     } else if (workoutsThisWeek > target) {
-      // Każdy kolejny trening ponad cel w tym samym tygodniu tylko utrzymuje obecny (już podbity) streak
       newStreak = current_streak;
     } else {
-      // Użytkownik jest w trakcie robienia celu (workoutsThisWeek < target)
       if (didMeetGoalLastWeek) {
-        // Poprzedni tydzień był zielony, więc w trakcie tego tygodnia wciąż utrzymujemy jego dotychczasowy streak
         newStreak = current_streak;
       } else {
-        // Poprzedni tydzień był czerwony i w tym jeszcze nie osiągnął celu -> streak leci na 0
         newStreak = 0;
       }
     }
 
-    await pool.query(
+    await client.query(
       'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
       [newStreak, userId]
     );
-    await pool.query('COMMIT');
 
+    // 3. Jeśli wszystko przeszło bez błędów — zatwierdzamy zmiany w bazie danych
+    await client.query('COMMIT');
+    
     res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
   } catch (error) {
-    await pool.query('ROLLBACK');
+    // 4. W przypadku jakiegokolwiek niepowodzenia cofamy CAŁĄ transakcję
+    await client.query('ROLLBACK');
     res.status(500).json({ error: "Błąd transakcji", details: error.message });
+  } finally {
+    // 5. BEZWZGLĘDNIE zwalniamy klienta z powrotem do puli połączeń, aby nie zablokować bazy
+    client.release();
   }
 });
 
