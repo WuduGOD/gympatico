@@ -16,26 +16,16 @@ const PORT = process.env.PORT || 3000;
 
 // 1. Definiujemy bezpieczną listę zaufanych adresów (origins)
 const allowedOrigins = [
-  process.env.FRONTEND_URL,    // Twój produkcyjny adres z Vercela
-  'http://localhost:5173',     // Lokalny serwer deweloperski Vite (Desktop)
+  process.env.FRONTEND_URL,    // Adres z Vercela
+  'http://localhost:5173',     // Lokalny serwer Vite (Desktop)
   'http://127.0.0.1:5173'      // Alternatywny lokalny adres IP
-].filter(Boolean); // .filter(Boolean) automatycznie usunie undefined, jeśli FRONTEND_URL nie jest ustawiony lokalnie
+].filter(Boolean); // Usuwa undefined, jeśli FRONTEND_URL nie jest ustawiony lokalnie
 
 // Aktywacja podstawowych middleware
 app.use(cors({
-  origin: (origin, callback) => {
-    // Zezwalamy na zapytania bez nagłówka Origin (np. Postman, Insomnia czy wewnętrzne testy serwera)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true); // Adres jest na liście – zielone światło
-    } else {
-      // Adres zablokowany – serwer rzuci błąd sieciowy dla nieautoryzowanej domeny
-      return callback(new Error('Blokada CORS: Brak uprawnień do komunikacji z API GymPatico.'), false);
-    }
-  },
-  credentials: true, // Zabezpieczenie na przyszłość, jeśli zechcesz wdrożyć ciasteczka (cookies) lub sesje
-  optionsSuccessStatus: 200 // Obsługa starszych przeglądarek (np. IE11) przy zapytaniach typu OPTIONS
+  origin: allowedOrigins,
+  credentials: true,
+  optionsSuccessStatus: 200 // Kluczowe dla stabilizacji zapytań przedwstępnych
 }));
 app.use(express.json());
 
