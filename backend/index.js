@@ -23,9 +23,30 @@ const allowedOrigins = [
 
 // Aktywacja podstawowych middleware
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    // Zezwalamy na żądania bez nagłówka Origin (np. Postman, Insomnia czy skrypty serwerowe)
+    if (!origin) return callback(null, true);
+
+    // 1. Oczyszczamy adresy z ewentualnych spacji na końcach oraz ukośników (BHP stringów)
+    const cleanOrigin = origin.trim().replace(/\/$/, "");
+    const cleanFrontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim().replace(/\/$/, "") : "";
+
+    // 2. Definiujemy reguły dopasowania
+    const isLocalhost = cleanOrigin.startsWith('http://localhost') || cleanOrigin.startsWith('http://127.0.0.1');
+    const isMainVercel = cleanFrontendUrl && cleanOrigin === cleanFrontendUrl;
+    const isVercelSubdomain = cleanOrigin.endsWith('.vercel.app'); // Wpuszcza wszystkie produkcyjne i testowe aliasy Vercela
+
+    if (isLocalhost || isMainVercel || isVercelSubdomain) {
+      // Adres spełnia kryteria – wpuszczamy i generujemy poprawne nagłówki dla Preflight (OPTIONS)
+      return callback(null, true);
+    } else {
+      // Jeżeli adres zostanie odrzucony, serwer jawnie zapisze to w logach live na Renderze
+      console.error(`[CORS BLOKADA] Nieautoryzowany Origin: "${origin}". Oczekiwano FRONTEND_URL: "${process.env.FRONTEND_URL}"`);
+      return callback(null, false); // Blokujemy czysto, bez crashowania procesu Node
+    }
+  },
   credentials: true,
-  optionsSuccessStatus: 200 // Kluczowe dla stabilizacji zapytań przedwstępnych
+  optionsSuccessStatus: 200
 }));
 app.use(express.json());
 
