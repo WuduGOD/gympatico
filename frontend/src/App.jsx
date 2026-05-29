@@ -11,6 +11,7 @@ import Social from './views/Social'
 import { useWeightLogs } from './hooks/useWeightLogs'
 import { useFriends } from './hooks/useFriends'
 import { useWorkouts } from './hooks/useWorkouts'
+import { useTemplates } from './hooks/useTemplates';
 import { API_BASE_URL } from './config/api'
 import StatsView from './views/StatsView'
 
@@ -40,6 +41,8 @@ function AppContent() {
     friends, pendingRequests, friendNickInput, setFriendNickInput, 
     handleSendFriendRequest, handleAcceptFriend, handleRejectFriend, fetchFriendsData 
   } = useFriends(token)
+
+  const { templates, fetchTemplates, handleSaveTemplate, handleDeleteTemplate } = useTemplates(token, showToast);
   
   const {
     workoutsHistory, workoutName, setWorkoutName, workoutComment, setWorkoutComment, 
@@ -111,7 +114,8 @@ function AppContent() {
         fetchWeightLogs(),
         fetchWorkoutsData(),
         fetchFriendsData(),
-        fetchStatsData()
+        fetchStatsData(),
+        fetchTemplates()
       ]);
     } catch (error) {
       console.error("❌ Błąd ładowania danych:", error.message);
@@ -340,7 +344,7 @@ function AppContent() {
           
           <Route path="/new-workout" element={token ? <NewWorkout workoutName={workoutName} setWorkoutName={setWorkoutName} workoutComment={workoutComment} setWorkoutComment={setWorkoutComment} currentSelectedExercise={currentSelectedExercise} setCurrentSelectedExercise={setCurrentSelectedExercise} seriesWeight={seriesWeight} setSeriesWeight={setSeriesWeight} seriesReps={seriesReps} setSeriesReps={setSeriesReps} exercises={exercises} localSeriesList={localSeriesList} addSeriesToLocalList={addSeriesToLocalList} handleSaveWorkout={onSaveWorkout} removeSeriesFromLocalList={removeSeriesFromLocalList} /> : <Navigate to="/login" />} />
           <Route path="/history" element={token ? <History workoutsHistory={workoutsHistory} onDeleteWorkout={onDeleteWorkout} onLoadMoreWorkouts={onLoadMoreWorkouts} hasMoreWorkouts={hasMoreWorkouts} onUpdateWorkout={onUpdateWorkoutMetadata} /> : <Navigate to="/login" />} />
-          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} /> : <Navigate to="/login" />} />
+          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} /> : <Navigate to="/login" />} />
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>

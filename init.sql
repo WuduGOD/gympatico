@@ -68,6 +68,27 @@ CREATE TABLE log_series (
     comment TEXT
 );
 
+-- Tabela główna szablonów
+CREATE TABLE workout_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tabela przechowująca konfigurację serii w danym szablonie
+CREATE TABLE template_series (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
+    exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+    weight NUMERIC(6,2) NOT NULL,
+    reps INT NOT NULL,
+    series_order INT NOT NULL
+);
+
+CREATE INDEX idx_templates_user ON workout_templates(user_id);
+CREATE INDEX idx_template_series_template ON template_series(template_id);
+
 -- 8. SEEDOWANIE BAZY DANYCH (Teraz ON CONFLICT idealnie trafia w utworzony wyżej indeks globalny)
 INSERT INTO exercises (name, muscle_group) VALUES
   -- Klatka piersiowa

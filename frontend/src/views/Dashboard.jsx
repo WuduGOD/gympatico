@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom' // <--- NOWY IMPORT DLA ONBOARDINGU
 import WeightChart from '../components/WeightChart'
 
 export default function Dashboard({
   user, weightLogs, weightInput, setWeightInput, handleAddWeight,
   exercises, onUpdateWeeklyTarget, progressionData, fetchProgression, onDeleteWeight
 }) {
+  const navigate = useNavigate() // <--- INSTANCJA ROUTERA
   const [selectedExercise, setSelectedExercise] = useState(exercises[0]?.id || '')
   const [localTarget, setLocalTarget] = useState(user?.weekly_target_workouts || 3)
 
@@ -57,6 +59,9 @@ export default function Dashboard({
 
   const validData = progressionData.filter(d => !isNaN(d.oneRm))
 
+  // DYNAMICZNE WYKRYWANIE NOWEGO UŻYTKOWNIKA (Brak wagi i brak historii 1RM)
+  const isNewUser = weightLogs.length === 0 && validData.length === 0
+
   let pointsPath = ''
   let gradientPath = ''
   let pointsArray = []
@@ -85,6 +90,60 @@ export default function Dashboard({
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left relative">
       
+      {/* ONBOARDING BANNER: Wyświetla się tylko, gdy konto jest całkowicie puste */}
+      {isNewUser && (
+        <section className="col-span-1 md:col-span-2 lg:col-span-3 bg-gradient-to-br from-gymCard to-[#1a1a1a] p-5 md:p-6 rounded-2xl border border-gymRed/20 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gymRed/5 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="max-w-3xl">
+            <span className="inline-block bg-gymRed/10 text-gymRed text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider mb-3">
+              🚀 Witamy w Gangu GymPatico!
+            </span>
+            <h2 className="text-xl md:text-2xl font-black tracking-tight text-white mb-1.5">
+              Twój panel treningowy został zainicjalizowany 🛠️
+            </h2>
+            <p className="text-zinc-400 text-xs md:text-sm leading-relaxed mb-6">
+              Profil jest gotowy do pracy. Aby zdjąć blokadę pustych wykresów analitycznych i rozpocząć budowanie formy, wykonaj te proste kroki wstępne:
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* KROK 1 */}
+              <div className="bg-[#2d2d2d]/40 p-4 rounded-xl border border-zinc-800/60 flex flex-col justify-between">
+                <div>
+                  <span className="text-base mb-1 block">⚖️ Krok 1</span>
+                  <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wide">Zapisz wagę startową</h4>
+                  <p className="text-zinc-500 text-[11px] mt-1 leading-normal">Wpisz swoją obecną wagę w formularzu na samym dole tego panelu.</p>
+                </div>
+              </div>
+
+              {/* KROK 2 */}
+              <div className="bg-[#2d2d2d]/40 p-4 rounded-xl border border-zinc-800/60 flex flex-col justify-between">
+                <div>
+                  <span className="text-base mb-1 block">🎯 Krok 2</span>
+                  <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wide">Ustaw cel tygodniowy</h4>
+                  <p className="text-zinc-500 text-[11px] mt-1 leading-normal">Zadeklaruj suwakiem po lewej stronie, ile razy w tygodniu zamierzasz ćwiczyć.</p>
+                </div>
+              </div>
+
+              {/* KROK 3 - INTERAKTYWNY LINK DO KREATORA */}
+              <div 
+                onClick={() => navigate('/new-workout')}
+                className="bg-[#2d2d2d]/60 p-4 rounded-xl border border-gymRed/30 flex flex-col justify-between cursor-pointer hover:border-gymRed hover:bg-[#2d2d2d]/90 transition-all group shadow-md"
+              >
+                <div>
+                  <span className="text-base mb-1 block">🏋️‍♂️ Krok 3</span>
+                  <h4 className="text-xs font-bold text-gymRed uppercase tracking-wide group-hover:text-red-400 transition-colors">
+                    Zaloguj pierwszy trening
+                  </h4>
+                  <p className="text-zinc-300 text-[11px] mt-1 leading-normal font-medium">
+                    Kliknij tutaj, aby otworzyć kreator i zapisać pierwsze serie robocze!
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* LEWA KOLUMNA: STATYSTYKI I CEL TYGODNIOWY */}
       <div className="flex flex-col gap-6 lg:col-span-1">
         
@@ -233,7 +292,7 @@ export default function Dashboard({
                   className="bg-[#2d2d2d] border border-zinc-800/70 p-3 rounded-lg flex flex-col items-center min-w-[90px] shadow-sm transition-colors hover:border-zinc-700 relative group"
                 >
                   <button
-                    onClick={() => initiateDelete(log.id)} // <--- ZMIANA: wywołanie bezpiecznego modalu
+                    onClick={() => initiateDelete(log.id)}
                     className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-800 border border-zinc-700 rounded-full flex items-center justify-center text-[9px] font-black text-zinc-400 hover:text-gymRed hover:border-gymRed active:scale-90 transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer shadow-md"
                     title="Usuń pomiar"
                   >

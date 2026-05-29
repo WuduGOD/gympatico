@@ -38,7 +38,7 @@ router.post('/request', authenticateToken, async (req, res) => {
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
-    // Dynamicznie zerujemy streak w rankingu, jeśli użytkownik opuścił cały tydzień treningowy
+    // Łączymy wyniki znajomych z danymi zalogowanego usera przez UNION
     const query = `
       SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
         CASE 
@@ -48,7 +48,18 @@ router.get('/', authenticateToken, async (req, res) => {
       FROM friendships f
       JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1) OR (f.receiver_id = u.id AND f.sender_id = $1)
       WHERE f.status = 'ACCEPTED' AND u.id != $1
-      ORDER BY "current_streak" DESC
+
+      UNION
+
+      SELECT id, nick, last_workout_at, is_premium,
+        CASE 
+          WHEN last_workout_at < NOW() - INTERVAL '12 days' THEN 0
+          ELSE current_streak
+        END as "current_streak"
+      FROM users
+      WHERE id = $1
+
+      ORDER BY "current_streak" DESC, nick ASC
     `;
     const result = await pool.query(query, [userId]);
     res.json(result.rows);

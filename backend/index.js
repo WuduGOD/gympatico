@@ -11,6 +11,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const pool = require('./config/db');
+const templatesRouter = require('./routes/templates');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -60,6 +61,7 @@ app.use('/api/workouts', require('./routes/workouts'));
 app.use('/api/friends', require('./routes/friends'));
 app.use('/api/exercises', require('./routes/exercises'));
 app.use('/api/stats', require('./routes/stats'));
+app.use('/api/templates', templatesRouter);
 
 // [INFO] Stary, publiczny blok app.get('/api/exercises') został usunięty.
 // Wszystkie zapytania GET oraz POST dla ćwiczeń przetwarza teraz moduł powyżej.

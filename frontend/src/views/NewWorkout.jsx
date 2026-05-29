@@ -1,169 +1,237 @@
-import React from 'react'
+import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useWorkouts } from '../hooks/useWorkouts'
 
-export default function NewWorkout({
-  workoutName, setWorkoutName,
-  workoutComment, setWorkoutComment,
-  currentSelectedExercise, setCurrentSelectedExercise,
-  seriesWeight, setSeriesWeight,
-  seriesReps, setSeriesReps,
-  exercises, localSeriesList,
-  addSeriesToLocalList, handleSaveWorkout,
-  removeSeriesFromLocalList
-}) {
+export default function NewWorkout({ token, exercises, templates, onSaveTemplate, onDeleteTemplate }) {
+  const navigate = useNavigate()
+  const {
+    workoutName, setWorkoutName,
+    workoutComment, setWorkoutComment,
+    localSeriesList, setLocalSeriesList,
+    handleAddSeriesRow, handleRemoveSeriesRow, handleSeriesInputChange,
+    handleSaveWorkout
+  } = useWorkouts(token, () => navigate('/history'))
+
+  const [selectedExercise, setSelectedExercise] = useState('')
+  const [templateNameInput, setTemplateNameInput] = useState('')
+  const [saveAsTemplateCheckbox, setSaveAsTemplateCheckbox] = useState(false)
+
+  // ODPALENIE SZABLONU (Wstrzyknięcie danych do lokalnego stanu serii)
+  const handleLoadTemplate = (templateId) => {
+    if (!templateId) return
+    const tpl = templates.find(t => t.id === templateId)
+    if (!tpl) return
+
+    setWorkoutName(tpl.name)
+    // Mapujemy strukturę bazy danych na strukturę oczekiwaną przez frontendowy useWorkouts
+    const loadedSeries = tpl.series.map((s, idx) => ({
+      id: `tpl-${Date.now()}-${idx}-${Math.random()}`,
+      exerciseId: s.exerciseId,
+      weight: s.weight,
+      reps: s.reps,
+      order: s.order
+    }))
+    setLocalSeriesList(loadedSeries)
+  }
+
+  // WRAPPER ZAPISU (Łączy zapis treningu z ewentualnym zapisem szablonu)
+  const onSubmitWorkout = async (e) => {
+    e.preventDefault()
+    
+    if (saveAsTemplateCheckbox) {
+      const nameForTemplate = templateNameInput.trim() || workoutName.trim() || "Mój Szablon"
+      const success = await onSaveTemplate(nameForTemplate, localSeriesList)
+      if (!success) return // Jeśli walidacja szablonu wywali błąd, nie przerywamy i nie zapisujemy złego treningu
+    }
+
+    handleSaveWorkout(e)
+  }
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
-      
-      {/* LEWA STRONA: KREATOR */}
-      <div className="lg:col-span-2 flex flex-col gap-6">
-        
-        {/* KARTA A: METADANE TRENINGU */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-xl font-bold tracking-tight mb-4 flex items-center gap-2">
-            <span>📝</span> Szczegóły sesji treningowej
-          </h2>
-          
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 flex flex-col gap-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Nazwa treningu:</label>
-              <input 
-                type="text" 
-                placeholder="np. Push Day / Klatka + Barki" 
-                value={workoutName} 
-                onChange={e => setWorkoutName(e.target.value)} 
-                className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-              />
-            </div>
-            
-            <div className="flex-1 flex flex-col gap-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Komentarz / Notatki:</label>
-              <input 
-                type="text" 
-                placeholder="np. Dobra pompa, progres w ostatniej serii" 
-                value={workoutComment} 
-                onChange={e => setWorkoutComment(e.target.value)} 
-                className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* KARTA B: DODAWANIE SERII */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-xl font-bold tracking-tight mb-4 flex items-center gap-2">
-            <span>💪</span> Dodaj wykonaną serię
-          </h2>
-          
-          <form onSubmit={addSeriesToLocalList} className="flex flex-col gap-4">
-            
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Wybierz ćwiczenie:</label>
-              <select
-                value={currentSelectedExercise}
-                onChange={e => setCurrentSelectedExercise(e.target.value)}
-                className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed cursor-pointer"
-              >
-                {exercises.map(ex => (
-                  <option key={ex.id} value={ex.id} className="bg-[#2d2d2d]">
-                    {ex.name} ({ex.muscle_group})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Ciężar (kg):</label>
-                <input 
-                  type="number" 
-                  step="0.5"
-                  placeholder="0" 
-                  value={seriesWeight} 
-                  onChange={e => setSeriesWeight(e.target.value)} 
-                  className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed font-mono"
-                  required
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Powtórzenia:</label>
-                <input 
-                  type="number" 
-                  placeholder="0" 
-                  value={seriesReps} 
-                  onChange={e => setSeriesReps(e.target.value)} 
-                  className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed font-mono"
-                  required
-                />
-              </div>
-            </div>
-
-            <button 
-              type="submit"
-              className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-lg text-sm tracking-wide transition-all active:scale-[0.98] border border-zinc-700 cursor-pointer mt-2"
-            >
-              + Dodaj serię do listy
-            </button>
-          </form>
-        </section>
+    <div className="max-w-2xl mx-auto text-left space-y-6">
+      <div>
+        <h2 className="text-xl md:text-2xl font-black tracking-tight">Kreator Treningu 🏋️‍♂️</h2>
+        <p className="text-zinc-400 text-xs md:text-sm mt-0.5">Zaloguj dzisiejsze serie robocze lub wczytaj gotowy szablon.</p>
       </div>
 
-      {/* PRAWA STRONA: PODGLĄD KOSZYKA */}
-      <section className="lg:col-span-1 bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40 flex flex-col justify-between h-fit min-h-[350px]">
-        <div>
-          <div className="border-b border-zinc-800 pb-3 mb-4 flex justify-between items-center">
-            <h2 className="text-lg font-bold tracking-tight">Aktualny zestaw 🛒</h2>
-            <span className="bg-gymRed/10 text-gymRed text-xs px-2.5 py-0.5 rounded-full font-bold">
-              Serii: {localSeriesList.length}
-            </span>
+      {/* SEKCJA SZABLONÓW (WCZYTAJ / USUŃ) */}
+      <section className="bg-gymCard p-4 rounded-xl border border-zinc-800/40 shadow-md">
+        <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">Szybki Start z Szablonu</h3>
+        {templates.length === 0 ? (
+          <p className="text-zinc-600 italic text-xs">Brak zapisanych szablonów treningowych.</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {templates.map(tpl => (
+              <div key={tpl.id} className="flex justify-between items-center bg-[#2d2d2d]/50 p-2.5 rounded-lg border border-zinc-800/60 hover:border-zinc-700 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => handleLoadTemplate(tpl.id)}
+                  className="flex-1 text-left font-bold text-sm text-zinc-200 hover:text-gymRed transition-colors"
+                >
+                  📋 {tpl.name} <span className="text-[10px] text-zinc-500 font-normal ml-1">({tpl.series.length} serii)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeleteTemplate(tpl.id)}
+                  className="text-zinc-500 hover:text-gymRed text-xs px-2 py-1 transition-colors"
+                  title="Usuń szablon"
+                >
+                  Usuń ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <form onSubmit={onSubmitWorkout} className="space-y-6">
+        {/* METADANE TRENINGU */}
+        <div className="bg-gymCard p-4 md:p-5 rounded-xl border border-zinc-800/40 shadow-lg space-y-4">
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Nazwa treningu</label>
+            <input 
+              type="text" 
+              placeholder="np. Klatka + Ramiona (Push)" 
+              value={workoutName} 
+              onChange={e => setWorkoutName(e.target.value)}
+              className="w-full p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none focus:border-gymRed font-medium"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Notatki / Komentarz (Opcjonalnie)</label>
+            <textarea 
+              placeholder="np. Skupienie na fazie negatywnej, progres ciężaru w wyciskaniu" 
+              value={workoutComment} 
+              onChange={e => setWorkoutComment(e.target.value)}
+              className="w-full p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none focus:border-gymRed font-medium min-h-[70px] resize-none"
+            />
+          </div>
+        </div>
+
+        {/* LISTA SERII */}
+        <div className="bg-gymCard p-4 md:p-5 rounded-xl border border-zinc-800/40 shadow-lg space-y-4">
+          <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-300">Zestaw serii roboczych</h3>
+            <span className="text-xs text-zinc-500 font-mono">Łącznie serii: {localSeriesList.length}</span>
           </div>
 
           {localSeriesList.length === 0 ? (
-            <div className="text-center py-12 flex flex-col items-center gap-2">
-              <span className="text-3xl opacity-40">🏋️‍♂️</span>
-              <p className="text-zinc-500 italic text-sm">Lista jest pusta. Dodaj pierwszą serię powyżej, aby zacząć logowanie.</p>
-            </div>
+            <p className="text-zinc-500 italic text-center py-6 text-sm">Lista serii jest pusta. Wybierz ćwiczenie poniżej, aby zacząć.</p>
           ) : (
-            <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto pr-1">
-              {localSeriesList.map((s, idx) => (
-                <div 
-                  key={idx} 
-                  className="flex justify-between items-center bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800/60 shadow-sm text-xs md:text-sm group hover:border-zinc-700 transition-colors"
-                >
-                  <div className="flex flex-col gap-0.5 max-w-[75%]">
-                    <strong className="text-zinc-200 truncate">{s.exerciseName}</strong>
-                    <span className="text-zinc-400">
-                      Seria {s.order}: <span className="text-gymRed font-semibold">{s.weight} kg</span> × {s.reps} powt.
-                    </span>
+            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+              {localSeriesList.map((s, index) => {
+                const exObj = exercises.find(e => e.id === s.exerciseId)
+                return (
+                  <div key={s.id} className="flex flex-col sm:flex-row gap-3 p-3 bg-[#2d2d2d]/40 rounded-xl border border-zinc-800/60 relative group">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[10px] font-bold text-gymRed font-mono uppercase">Seria #{index + 1}</span>
+                      <h4 className="text-sm font-bold text-zinc-200 truncate">{exObj?.name || 'Nieznane ćwiczenie'}</h4>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <div className="w-24">
+                        <input 
+                          type="number" 
+                          step="0.25"
+                          placeholder="kg"
+                          value={s.weight}
+                          onChange={e => handleSeriesInputChange(s.id, 'weight', e.target.value)}
+                          className="w-full p-2 rounded border border-zinc-800 bg-[#2d2d2d] text-white text-center text-sm font-mono"
+                          required
+                        />
+                      </div>
+                      <span className="text-zinc-600 text-xs font-mono">x</span>
+                      <div className="w-16">
+                        <input 
+                          type="number" 
+                          placeholder="powt"
+                          value={s.reps}
+                          onChange={e => handleSeriesInputChange(s.id, 'reps', e.target.value)}
+                          className="w-full p-2 rounded border border-zinc-800 bg-[#2d2d2d] text-white text-center text-sm font-mono"
+                          required
+                        />
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => handleRemoveSeriesRow(s.id)}
+                        className="text-zinc-500 hover:text-gymRed text-sm p-1 transition-colors ml-1"
+                        title="Usuń serię"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
-                  
-                  <button 
-                    onClick={() => removeSeriesFromLocalList(idx)}
-                    className="p-2 text-zinc-500 hover:text-gymRed transition-colors rounded hover:bg-gymRed/10 cursor-pointer"
-                    title="Usuń serię"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
+
+          {/* DODAWANIE NOWEGO ĆWICZENIA DO LISTY */}
+          <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-zinc-800/60">
+            <select
+              value={selectedExercise}
+              onChange={e => setSelectedExercise(e.target.value)}
+              className="flex-1 p-2.5 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none focus:border-gymRed cursor-pointer"
+            >
+              <option value="" disabled>-- Wybierz ćwiczenie z atlasu --</option>
+              {exercises.map(ex => (
+                <option key={ex.id} value={ex.id}>{ex.name} ({ex.muscleGroup})</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedExercise) {
+                  handleAddSeriesRow(selectedExercise)
+                  setSelectedExercise('')
+                }
+              }}
+              disabled={!selectedExercise}
+              className="bg-[#333] hover:bg-zinc-700 disabled:opacity-40 text-white font-bold px-4 py-2.5 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
+            >
+              + Dodaj Serię
+            </button>
+          </div>
         </div>
 
-        <div className="mt-6 pt-4 border-t border-zinc-800/60">
-          <button 
-            onClick={handleSaveWorkout}
-            disabled={localSeriesList.length === 0}
-            className={`w-full py-4 text-white font-bold rounded-xl text-base tracking-wide transition-all shadow-md mt-auto
-              ${localSeriesList.length === 0 
-                ? 'bg-zinc-800 text-zinc-500 border border-zinc-900 opacity-50 cursor-not-allowed' 
-                : 'bg-gymRed hover:bg-red-600 active:scale-[0.98] cursor-pointer shadow-red-950/20'
-              }`}
-          >
-            🔥 ZAKOŃCZ I ZAPISZ TRENING
-          </button>
-        </div>
-      </section>
+        {/* PANEL ZAPISU JAKO SZABLON (ZABEZPIECZONY PRZED PAYLOADEM) */}
+        <section className="bg-gymCard p-4 md:p-5 rounded-xl border border-zinc-800/40 shadow-lg space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <input 
+              type="checkbox"
+              checked={saveAsTemplateCheckbox}
+              onChange={e => setSaveAsTemplateCheckbox(e.target.checked)}
+              className="w-4 h-4 rounded border-zinc-800 bg-[#2d2d2d] text-gymRed accent-gymRed cursor-pointer"
+            />
+            <span className="text-sm font-bold text-zinc-300 group-hover:text-white transition-colors">
+              Zapisz tę kompozycję jako szablon wielokrotnego użytku 💾
+            </span>
+          </label>
 
+          {saveAsTemplateCheckbox && (
+            <div className="pt-2 animate-in fade-in slide-in-from-top-2 duration-150">
+              <label className="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Nazwa nowego szablonu (Opcjonalnie)</label>
+              <input 
+                type="text" 
+                placeholder={workoutName.trim() || "np. Mój Nowy Szablon"}
+                value={templateNameInput}
+                onChange={e => setTemplateNameInput(e.target.value)}
+                className="w-full p-2.5 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-xs outline-none focus:border-gymRed font-medium"
+                maxLength={100}
+              />
+            </div>
+          )}
+        </section>
+
+        {/* PRZYCISK GŁÓWNY */}
+        <button
+          type="submit"
+          disabled={localSeriesList.length === 0}
+          className="w-full py-4 bg-gymRed hover:bg-red-600 disabled:opacity-40 text-white font-black text-center rounded-xl text-base shadow-xl transition-all active:scale-[0.98] cursor-pointer"
+        >
+          Zapisz i Zakończ Sesję Treningową 🚀
+        </button>
+      </form>
     </div>
   )
 }
