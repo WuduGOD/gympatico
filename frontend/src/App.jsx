@@ -125,6 +125,22 @@ function AppContent() {
     fetchAllData()
   }, [token, fetchAllData])
 
+  // --- POPRAWKA: AUTOMATYCZNE WYLOGOWANIE PO WYGAŚNIĘCIU TOKENU ---
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      handleLogout(); // Czyści token, profil i przekierowuje do /login
+      showToast('Twoja sesja wygasła. Zaloguj się ponownie! 🔐', 'error');
+    };
+
+    // Rejestracja nasłuchiwania na globalnej szynie zdarzeń
+    window.addEventListener('gympatico-unauthorized', handleSessionExpired);
+    
+    // Czyszczenie subskrypcji przy odmontowywaniu komponentu
+    return () => {
+      window.removeEventListener('gympatico-unauthorized', handleSessionExpired);
+    };
+  }, [handleLogout]);
+
   // --- HANDLERY OPERACJI INŻYNIERSKICH COMFORT-FLOW ---
   const onUpdateWeeklyTarget = async (newTarget) => {
     try {

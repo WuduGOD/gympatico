@@ -433,136 +433,6 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="backend/routes/friends.js">
-const express = require('express');
-const router = express.Router();
-const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
-
-// Wysyłanie zaproszenia
-router.post('/request', authenticateToken, async (req, res) => {
-  const { targetNick } = req.body;
-  const senderId = req.user.userId;
-
-  if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
-
-  try {
-    const userResult = await pool.query('SELECT id FROM users WHERE nick = $1', [targetNick]);
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
-    }
-
-    const receiverId = userResult.rows[0].id;
-    if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
-
-    const checkResult = await pool.query(
-      "SELECT * FROM friendships WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)",
-      [senderId, receiverId]
-    );
-    if (checkResult.rows.length > 0) {
-      return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
-    }
-
-    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1, $2, \'PENDING\')', [senderId, receiverId]);
-    res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
-  }
-});
-
-// Pobranie rankingu znajomych
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    const query = `
-      SELECT u.id, u.nick, u.current_streak, u.last_workout_at, u.is_premium
-      FROM friendships f
-      JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1) OR (f.receiver_id = u.id AND f.sender_id = $1)
-      WHERE f.status = 'ACCEPTED' AND u.id != $1
-      ORDER BY u.current_streak DESC
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd pobierania rankingu znajomych", details: error.message });
-  }
-});
-
-// Skrzynka odbiorcza zaproszeń
-router.get('/requests', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    const query = `
-      SELECT f.id as friendship_id, u.id as sender_id, u.nick 
-      FROM friendships f 
-      JOIN users u ON f.sender_id = u.id
-      WHERE f.receiver_id = $1 AND f.status = 'PENDING'
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd ładowania skrzynki", details: error.message });
-  }
-});
-
-// Akceptacja zaproszenia
-router.post('/accept', authenticateToken, async (req, res) => {
-  const { friendshipId } = req.body;
-  const userId = req.user.userId; // Wyciągamy ID zalogowanego użytkownika z tokenu
-
-  if (!friendshipId) {
-    return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
-  }
-
-  try {
-    // Dodajemy warunek: receiver_id = $2
-    const query = `
-      UPDATE friendships 
-      SET status = 'ACCEPTED' 
-      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING' 
-      RETURNING *
-    `;
-    
-    const result = await pool.query(query, [friendshipId, userId]);
-    
-    // Jeśli zaproszenie nie należało do usera, zapytanie nie zmodyfikuje żadnego wiersza
-    if (result.rows.length === 0) {
-      return res.status(404).json({ 
-        error: "Zaproszenie nie istnieje, zostało już przetworzone lub nie masz uprawnień do jego akceptacji." 
-      });
-    }
-    
-    res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
-  }
-});
-
-router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
-  const { friendshipId } = req.params;
-  const userId = req.user.userId;
-
-  try {
-    // Sprawdzamy, czy zaproszenie istnieje i czy zalogowany user jest jego odbiorcą (receiver_id)
-    const checkQuery = 'SELECT * FROM friendships WHERE id = $1 AND receiver_id = $2 AND status = \'PENDING\''
-    const checkResult = await pool.query(checkQuery, [friendshipId, userId]);
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." });
-    }
-
-    // Usuwamy rekord zaproszenia z bazy danych
-    await pool.query('DELETE FROM friendships WHERE id = $1', [friendshipId]);
-
-    res.json({ message: "Zaproszenie zostało odrzucone. ✕" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas odrzucania zaproszenia", details: error.message });
-  }
-});
-
-module.exports = router;
-</file>
-
 <file path="backend/routes/stats.js">
 const express = require('express');
 const router = express.Router();
@@ -1293,187 +1163,6 @@ export function useWeightLogs(token, showToast) {
 }
 </file>
 
-<file path="frontend/src/hooks/useWorkouts.js">
-import { useState, useCallback } from 'react'
-import { API_BASE_URL } from '../config/api'
-
-export function useWorkouts(token, exercises) {
-  const [workoutsHistory, setWorkoutsHistory] = useState([])
-  const [hasMoreWorkouts, setHasMoreWorkouts] = useState(true)
-  
-  // Stany formularza tworzenia nowego treningu
-  const [workoutName, setWorkoutName] = useState('')
-  const [workoutComment, setWorkoutComment] = useState('')
-  const [currentSelectedExercise, setCurrentSelectedExercise] = useState('')
-  const [seriesWeight, setSeriesWeight] = useState('')
-  const [seriesReps, setSeriesReps] = useState('')
-  const [localSeriesList, setLocalSeriesList] = useState([])
-
-  // Stan progresji 1RM do wykresu na Dashboardzie
-  const [progressionData, setProgressionData] = useState([])
-
-  // 1. Pobieranie historii treningów z paginacją (Limit 20)
-  const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
-    if (!token) return
-    const limit = 20
-    
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts?limit=${limit}&offset=${currentLength}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Błąd historii treningów')
-      const data = await res.json()
-      
-      if (isAppend) {
-        setWorkoutsHistory(prev => [...prev, ...data])
-      } else {
-        setWorkoutsHistory(data)
-      }
-
-      if (data.length < limit) {
-        setHasMoreWorkouts(false)
-      } else {
-        setHasMoreWorkouts(true)
-      }
-    } catch (err) {
-      console.error("❌ Błąd pobierania historii:", err.message)
-    }
-  }, [token])
-
-  // 2. Dodawanie serii do koszyka (Zoptymalizowane pod event onSubmit i relację exercises)
-  const addSeriesToLocalList = useCallback((e) => {
-    e.preventDefault()
-
-    if (!seriesWeight || !seriesReps || !currentSelectedExercise) {
-      alert("Wpisz wagę i powtórzenia!")
-      return
-    }
-
-    const ex = exercises.find(item => item.id === currentSelectedExercise)
-    if (!ex) {
-      alert("Wybrane ćwiczenie nie istnieje w bazie atlasu.")
-      return
-    }
-
-    const weight = parseFloat(seriesWeight)
-    const reps = parseInt(seriesReps)
-    const estimatedOneRm = reps === 1 ? weight : weight * (1 + reps / 30)
-
-    const newSeries = {
-      exerciseId: currentSelectedExercise,
-      exerciseName: ex.name,
-      weight,
-      reps,
-      order: localSeriesList.filter(s => s.exerciseId === currentSelectedExercise).length + 1,
-      estimatedOneRm
-    }
-
-    setLocalSeriesList(prev => [...prev, newSeries])
-    setSeriesWeight('')
-    setSeriesReps('')
-  }, [currentSelectedExercise, seriesWeight, seriesReps, localSeriesList, exercises])
-
-  // 3. Usuwanie pojedynczej serii z koszyka
-  const removeSeriesFromLocalList = useCallback((index) => {
-    setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
-  }, [])
-
-  // 4. Zapisywanie skompletowanego treningu do bazy danych
-  const handleSaveWorkout = useCallback(async () => {
-    if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
-    if (localSeriesList.length === 0) throw new Error('Nie można zapisać pustego treningu!')
-
-    const res = await fetch(`${API_BASE_URL}/api/workouts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        name: workoutName,
-        comment: workoutComment,
-        series: localSeriesList.map(s => ({
-          exerciseId: s.exerciseId,
-          weight: s.weight,
-          reps: s.reps,
-          seriesOrder: s.order,
-          estimatedOneRm: s.estimatedOneRm
-        }))
-      })
-    })
-
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Błąd zapisu treningu')
-
-    // Czyszczenie kreatora po udanym zapisie
-    setWorkoutName('')
-    setWorkoutComment('')
-    setLocalSeriesList([])
-    return data
-  }, [token, workoutName, workoutComment, localSeriesList])
-
-  // 5. Usuwanie całego treningu z bazy
-  const handleDeleteWorkout = useCallback(async (sessionId) => {
-    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć treningu.')
-    return data
-  }, [token])
-
-  // 6. Pobieranie danych do krzywej progresu siłowego
-  const fetchProgression = useCallback(async (exerciseId) => {
-    if (!token || !exerciseId) return
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts/progression/${exerciseId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Błąd pobierania danych progresji')
-      const data = await res.json()
-      setProgressionData(data)
-    } catch (err) {
-      console.error("❌ Błąd pobierania progresu siłowego:", err.message)
-    }
-  }, [token])
-
-  // Nowość: Aktualizacja nazwy i komentarza treningu w bazie oraz stanie
-  const handleUpdateWorkout = useCallback(async (sessionId, newName, newComment) => {
-    if (!token) return;
-
-    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ name: newName, comment: newComment })
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować treningu.');
-
-    // Błyskawiczna aktualizacja lokalnego stanu historii
-    setWorkoutsHistory(prev => prev.map(w => 
-      w.id === sessionId ? { ...w, name: newName, comment: newComment } : w
-    ));
-    
-    return data;
-  }, [token]);
-
-  return {
-    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, fetchWorkoutsData,
-    workoutName, setWorkoutName, workoutComment, setWorkoutComment,
-    currentSelectedExercise, setCurrentSelectedExercise,
-    seriesWeight, setSeriesWeight, seriesReps, setSeriesReps,
-    localSeriesList, setLocalSeriesList,
-    addSeriesToLocalList, removeSeriesFromLocalList, handleSaveWorkout, handleDeleteWorkout,
-    progressionData, fetchProgression, handleUpdateWorkout
-  }
-}
-</file>
-
 <file path="frontend/src/index.css">
 @import "tailwindcss";
 
@@ -1531,257 +1220,6 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>,
 )
-</file>
-
-<file path="frontend/src/views/Dashboard.jsx">
-import React, { useState, useEffect } from 'react'
-
-export default function Dashboard({
-  user, weightLogs, weightInput, setWeightInput, handleAddWeight,
-  exercises, onUpdateWeeklyTarget, progressionData, fetchProgression, onDeleteWeight
-}) {
-  const [selectedExercise, setSelectedExercise] = useState(exercises[0]?.id || '')
-  const [localTarget, setLocalTarget] = useState(user?.weekly_target_workouts || 3)
-
-  // Każdorazowa zmiana ćwiczenia w selektorze dzwoni do bazy po świeżą progresję 1RM
-  useEffect(() => {
-    if (selectedExercise) {
-      fetchProgression(selectedExercise)
-    }
-  }, [selectedExercise, fetchProgression])
-
-  // Automatyczne ustawienie pierwszego ćwiczenia, jeśli baza na starcie była pusta
-  useEffect(() => {
-    if (exercises.length > 0 && !selectedExercise) {
-      setSelectedExercise(exercises[0].id)
-    }
-  }, [exercises, selectedExercise])
-
-  useEffect(() => {
-    if (user?.weekly_target_workouts) {
-      setLocalTarget(user.weekly_target_workouts)
-    }
-  }, [user?.weekly_target_workouts])
-
-  // --- PARAMETRYZACJA GENEROWANIA WYKRESU SVG ---
-  const svgWidth = 500
-  const svgHeight = 200
-  const padding = 35
-
-  const validData = progressionData.filter(d => !isNaN(d.oneRm))
-
-  let pointsPath = ''
-  let gradientPath = ''
-  let pointsArray = []
-
-  if (validData.length > 1) {
-    const minX = 0
-    const maxX = validData.length - 1
-    const yValues = validData.map(d => d.oneRm)
-    const minY = Math.min(...yValues) * 0.9 // 10% bufora z dołu dla dynamiki linii
-    const maxY = Math.max(...yValues) * 1.1 // 10% bufora z góry
-
-    pointsArray = validData.map((d, index) => {
-      const x = padding + (index / maxX) * (svgWidth - padding * 2)
-  
-      // Jeśli Max i Min są równe (np. ta sama waga i reps), ustawiamy mianownik na 1, a linię centrujemy w pionie
-      const denominator = (maxY - minY) === 0 ? 1 : (maxY - minY);
-      const y = (maxY - minY) === 0 
-        ? svgHeight / 2 
-        : svgHeight - padding - ((d.oneRm - minY) / denominator) * (svgHeight - padding * 2);
-
-      return { x, y, oneRm: d.oneRm, date: d.date }
-    })
-
-    pointsPath = pointsArray.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-    gradientPath = `${pointsPath} L ${pointsArray[pointsArray.length - 1].x} ${svgHeight - padding} L ${pointsArray[0].x} ${svgHeight - padding} Z`
-  }
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left">
-      
-      {/* LEWA KOLUMNA: STATYSTYKI I CEL TYGODNIOWY */}
-      <div className="flex flex-col gap-6 lg:col-span-1">
-        
-        {/* WIDGET 1: PROFIL I AKTUALNY STREAK */}
-        <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gymRed/5 rounded-full blur-2xl transition-all group-hover:bg-gymRed/10"></div>
-          <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400 mb-1">Twój Profil</h2>
-          <div className="text-2xl font-black text-white tracking-tight">{user?.nick || 'Sportowiec'}</div>
-          
-          <div className="mt-4 flex items-center justify-between bg-[#2d2d2d] p-4 rounded-lg border border-zinc-800/60">
-            <span className="text-sm text-zinc-400 font-medium">Aktualny streak tygodniowy:</span>
-            <span className="text-2xl font-black text-gymRed drop-shadow-[0_2px_10px_rgba(255,71,87,0.2)] flex items-center gap-1 animate-pulse">
-              🔥 {user?.current_streak || 0}
-            </span>
-          </div>
-        </section>
-
-        {/* WIDGET 2: CEL TRENINGOWY (SUWAK ZOPTYMALIZOWANY POD KĄTEM SIECI) */}
-        <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400">Cel tygodniowy 🎯</h2>
-            {/* ZMIANA: Tekst czyta teraz z błyskawicznego stanu lokalnego */}
-            <span className="text-sm font-black text-gymRed bg-gymRed/10 px-2.5 py-0.5 rounded-full">
-              {localTarget} dni
-            </span>
-          </div>
-          <p className="text-zinc-500 text-xs mb-4">Zadeklaruj ile razy w tygodniu chcesz trenować w garażu.</p>
-          
-          <input 
-            type="range" 
-            min="1" 
-            max="7" 
-            value={localTarget} // ZMIANA: Spięte z lokalnym stanem
-            onChange={(e) => setLocalTarget(parseInt(e.target.value))} // ZMIANA: Aktualizuje TYLKO UI w locie
-            onMouseUp={() => onUpdateWeeklyTarget(localTarget)} // ZMIANA: Strzela do API dopiero po puszczeniu myszki (Desktop)
-            onTouchEnd={() => onUpdateWeeklyTarget(localTarget)} // ZMIANA: Strzela do API dopiero po podniesieniu palca (Mobile)
-            className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-gymRed transition-all"
-          />
-          <div className="flex justify-between text-[10px] font-bold text-zinc-600 mt-1 px-1">
-            <span>1 DZIEŃ</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7 DNI</span>
-          </div>
-        </section>
-      </div>
-
-      {/* ŚRODKOWA KOLUMNA: PROGRESJA 1RM (WYKRES SVG) - Na dużych ekranach zajmuje 2 kolumny */}
-      <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 md:col-span-2 flex flex-col justify-between">
-        <div>
-          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-zinc-800 pb-4 mb-4">
-            <div>
-              <h2 className="text-lg font-bold tracking-tight">Krzywa progresu siłowego (Est. 1RM) 📈</h2>
-              <p className="text-zinc-400 text-xs mt-0.5">Wykres generowany automatycznie na podstawie serii roboczych.</p>
-            </div>
-
-            {/* Selektor ćwiczenia z bazy dla wykresu */}
-            <select
-              value={selectedExercise}
-              onChange={(e) => setSelectedExercise(e.target.value)}
-              className="p-2 rounded-md border border-zinc-800 bg-[#2d2d2d] text-white text-xs md:text-sm outline-none focus:border-gymRed cursor-pointer max-w-[250px]"
-            >
-              <option value="" disabled>Wybierz ćwiczenie...</option>
-              {exercises.map(ex => (
-                <option key={ex.id} value={ex.id} className="bg-[#2d2d2d]">{ex.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* RENDEROWANIE WYKRESU PURE SVG */}
-          <div className="w-full overflow-hidden bg-zinc-900/50 p-2 rounded-xl border border-zinc-800/40 flex justify-center items-center">
-            {validData.length < 2 ? (
-              <div className="text-center py-16 text-zinc-500 italic text-sm flex flex-col items-center gap-1">
-                <span>📊</span> Zaloguj minimum 2 różne dni treningowe dla tego ćwiczenia, aby wygenerować linię progresu.
-              </div>
-            ) : (
-              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-[220px]">
-                <defs>
-                  {/* Profesjonalny gradient pod linią wykresu */}
-                  <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ff4757" stopOpacity="0.25"/>
-                    <stop offset="100%" stopColor="#ff4757" stopOpacity="0.00"/>
-                  </linearGradient>
-                </defs>
-                
-                {/* Siatka pozioma boczna */}
-                <line x1={padding} y1={padding} x2={svgWidth - padding} y2={padding} stroke="#2d2d2d" strokeWidth="1" strokeDasharray="4"/>
-                <line x1={padding} y1={svgHeight - padding} x2={svgWidth - padding} y2={svgHeight - padding} stroke="#333" strokeWidth="1"/>
-
-                {/* Ścieżka gradientu wypełniającego */}
-                <path d={gradientPath} fill="url(#chartGradient)" />
-
-                {/* Główna, neonowa linia wykresu */}
-                <path d={pointsPath} fill="none" stroke="#ff4757" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-
-                {/* Węzły (kropki) na wykresie z tooltipami osadzonymi w SVG */}
-                {pointsArray.map((p, i) => (
-                  <g key={i} className="group/node cursor-pointer">
-                    <circle cx={p.x} cy={p.y} r="5" fill="#121212" stroke="#ff4757" strokeWidth="2.5" className="transition-all hover:r-7 hover:fill-[#ff4757]"/>
-                    
-                    {/* Interaktywny mini-tooltip pojawiający się po najechaniu myszką */}
-                    <g className="opacity-0 group-hover/node:opacity-100 transition-opacity duration-150 pointer-events-none">
-                      <rect x={p.x - 40} y={p.y - 32} width="80" height="22" rx="4" fill="#1e1e1e" stroke="#ff4757" strokeWidth="1"/>
-                      <text x={p.x} y={p.y - 17} fill="white" fontSize="10" fontWeight="bold" textAnchor="middle">
-                        {p.oneRm.toFixed(1)} kg
-                      </text>
-                    </g>
-                  </g>
-                ))}
-              </svg>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* DOLNA SZEROKA SEKCJA: WAGA CAŁKOWITA (PŁYTKI DO WPISYWANIA I REJESTR LOGÓW) */}
-      <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 md:col-span-2 lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        {/* KARTA DODAWANIA WAGI */}
-        <div className="md:col-span-1 flex flex-col justify-between border-b md:border-b-0 md:border-r border-zinc-800 pb-4 md:pb-0 md:pr-6">
-          <div>
-            <h2 className="text-base font-bold tracking-tight mb-1">Zarejestruj wagę ciała ⚖️</h2>
-            <p className="text-zinc-500 text-xs mb-4">Wpisuj wagę poranną na czczo, aby monitorować trendy masowe.</p>
-          </div>
-          
-          <div className="flex gap-2 mt-auto">
-            <input 
-              type="number" 
-              step="0.1" 
-              placeholder="np. 84.5" 
-              value={weightInput}
-              onChange={(e) => setWeightInput(e.target.value)}
-              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none focus:border-gymRed font-mono"
-            />
-            <button 
-              onClick={handleAddWeight}
-              className="bg-gymRed hover:bg-red-600 text-white font-bold px-5 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
-            >
-              Dodaj
-            </button>
-          </div>
-        </div>
-
-        {/* LISTA LOGÓW WAGI (Z HORIZONTALNYM STRUMIENIEM DLA UX MOBILNEGO) */}
-        <div className="md:col-span-2 flex flex-col justify-between">
-          <div>
-            <h2 className="text-base font-bold tracking-tight mb-1">Ostatnie pomiary wagi</h2>
-            <p className="text-zinc-500 text-xs mb-4">Twoja oś czasu masy ciała (najnowsze pomiary).</p>
-          </div>
-
-          {weightLogs.length === 0 ? (
-            <p className="text-zinc-600 italic text-sm py-2">Brak zapisanych pomiarów wagi.</p>
-          ) : (
-            // Dodaliśmy klasę "group" do kontenera nadrzędnego, aby sterować widocznością dzieci
-            <div className="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2">
-              {weightLogs.slice(0, 7).map(log => (
-                <div 
-                  key={log.id} 
-                  className="bg-[#2d2d2d] border border-zinc-800/70 p-3 rounded-lg flex flex-col items-center min-w-[90px] shadow-sm transition-colors hover:border-zinc-700 relative group"
-                >
-                  {/* PRZYCISK USUWANIA (✕): Widoczny zawsze na mobile, na desktopie hover kafelka (sm:opacity-0 sm:group-hover:opacity-100) */}
-                  <button
-                    onClick={() => onDeleteWeight(log.id)} // <--- Czysty, bezkompromisowy i natychmiastowy strzał
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-800 border border-zinc-700 rounded-full flex items-center justify-center text-[9px] font-black text-zinc-400 hover:text-gymRed hover:border-gymRed active:scale-90 transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer shadow-md"
-                    title="Usuń pomiar"
-                  >
-                    ✕
-                  </button>
-
-                  <span className="text-base font-black text-zinc-100 font-mono">
-                    {parseFloat(log.weight).toFixed(1)} <span className="text-[10px] text-zinc-400 font-normal">kg</span>
-                  </span>
-                  <span className="text-[10px] text-zinc-400 font-medium mt-1 uppercase tracking-tighter">
-                    {new Date(log.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-    </div>
-  )
-}
 </file>
 
 <file path="frontend/src/views/ExercisesList.jsx">
@@ -2752,6 +2190,144 @@ INSERT INTO exercises (name, muscle_group) VALUES
 ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
 </file>
 
+<file path="backend/routes/friends.js">
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+
+// Wysyłanie zaproszenia
+router.post('/request', authenticateToken, async (req, res) => {
+  const { targetNick } = req.body;
+  const senderId = req.user.userId;
+
+  if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
+
+  try {
+    const userResult = await pool.query('SELECT id FROM users WHERE nick = $1', [targetNick]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
+    }
+
+    const receiverId = userResult.rows[0].id;
+    if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
+
+    const checkResult = await pool.query(
+      "SELECT * FROM friendships WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)",
+      [senderId, receiverId]
+    );
+    if (checkResult.rows.length > 0) {
+      return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
+    }
+
+    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1, $2, \'PENDING\')', [senderId, receiverId]);
+    res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
+  }
+});
+
+// Pobranie rankingu znajomych
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    // Dynamicznie zerujemy streak w rankingu, jeśli użytkownik opuścił cały tydzień treningowy
+    const query = `
+      SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
+        CASE 
+          WHEN u.last_workout_at < NOW() - INTERVAL '12 days' THEN 0
+          ELSE u.current_streak
+        END as "current_streak"
+      FROM friendships f
+      JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1) OR (f.receiver_id = u.id AND f.sender_id = $1)
+      WHERE f.status = 'ACCEPTED' AND u.id != $1
+      ORDER BY "current_streak" DESC
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania rankingu znajomych", details: error.message });
+  }
+});
+
+// Skrzynka odbiorcza zaproszeń
+router.get('/requests', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const query = `
+      SELECT f.id as friendship_id, u.id as sender_id, u.nick 
+      FROM friendships f 
+      JOIN users u ON f.sender_id = u.id
+      WHERE f.receiver_id = $1 AND f.status = 'PENDING'
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd ładowania skrzynki", details: error.message });
+  }
+});
+
+// Akceptacja zaproszenia
+router.post('/accept', authenticateToken, async (req, res) => {
+  const { friendshipId } = req.body;
+  const userId = req.user.userId; // Wyciągamy ID zalogowanego użytkownika z tokenu
+
+  if (!friendshipId) {
+    return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
+  }
+
+  try {
+    // Dodajemy warunek: receiver_id = $2
+    const query = `
+      UPDATE friendships 
+      SET status = 'ACCEPTED' 
+      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING' 
+      RETURNING *
+    `;
+    
+    const result = await pool.query(query, [friendshipId, userId]);
+    
+    // Jeśli zaproszenie nie należało do usera, zapytanie nie zmodyfikuje żadnego wiersza
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        error: "Zaproszenie nie istnieje, zostało już przetworzone lub nie masz uprawnień do jego akceptacji." 
+      });
+    }
+    
+    res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
+  }
+});
+
+router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
+  const { friendshipId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    // Pancerne i szybkie zapytanie: kasujemy tylko, jeśli ID się zgadza, status to PENDING i zalogowany user jest ODBIORCĄ
+    const deleteQuery = `
+      DELETE FROM friendships 
+      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING'
+    `;
+    const result = await pool.query(deleteQuery, [friendshipId, userId]);
+
+    // Jeśli baza danych nie usunęła żadnego wiersza (rowCount === 0), zwracamy błąd uprawnień lub braku rekordu
+    if (result.rowCount === 0) {
+      return res.status(404).json({ 
+        error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." 
+      });
+    }
+
+    res.json({ message: "Zaproszenie zostało odrzucone. ✕" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas odrzucania zaproszenia", details: error.message });
+  }
+});
+
+module.exports = router;
+</file>
+
 <file path="frontend/package.json">
 {
   "name": "frontend",
@@ -3139,6 +2715,443 @@ export default function App() {
     <BrowserRouter>
       <AppContent />
     </BrowserRouter>
+  )
+}
+</file>
+
+<file path="frontend/src/hooks/useWorkouts.js">
+import { useState, useCallback } from 'react'
+import { API_BASE_URL } from '../config/api'
+
+export function useWorkouts(token, exercises) {
+  const [workoutsHistory, setWorkoutsHistory] = useState([])
+  const [hasMoreWorkouts, setHasMoreWorkouts] = useState(true)
+  
+  // Stany formularza tworzenia nowego treningu
+  const [workoutName, setWorkoutName] = useState('')
+  const [workoutComment, setWorkoutComment] = useState('')
+  const [currentSelectedExercise, setCurrentSelectedExercise] = useState('')
+  const [seriesWeight, setSeriesWeight] = useState('')
+  const [seriesReps, setSeriesReps] = useState('')
+  const [localSeriesList, setLocalSeriesList] = useState([])
+
+  // Stan progresji 1RM do wykresu na Dashboardzie
+  const [progressionData, setProgressionData] = useState([])
+
+  // 1. Pobieranie historii treningów z paginacją (Limit 20)
+  const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
+    if (!token) return
+    const limit = 20
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts?limit=${limit}&offset=${currentLength}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Błąd historii treningów')
+      const data = await res.json()
+      
+      if (isAppend) {
+        setWorkoutsHistory(prev => [...prev, ...data])
+      } else {
+        setWorkoutsHistory(data)
+      }
+
+      if (data.length < limit) {
+        setHasMoreWorkouts(false)
+      } else {
+        setHasMoreWorkouts(true)
+      }
+    } catch (err) {
+      console.error("❌ Błąd pobierania historii:", err.message)
+    }
+  }, [token])
+
+  // 2. Dodawanie serii do koszyka (Zoptymalizowane pod event onSubmit i relację exercises)
+  const addSeriesToLocalList = useCallback((e) => {
+    e.preventDefault()
+
+    if (!seriesWeight || !seriesReps || !currentSelectedExercise) {
+      alert("Wpisz wagę i powtórzenia!")
+      return
+    }
+
+    const ex = exercises.find(item => item.id === currentSelectedExercise)
+    if (!ex) {
+      alert("Wybrane ćwiczenie nie istnieje w bazie atlasu.")
+      return
+    }
+
+    const weight = parseFloat(seriesWeight)
+    const reps = parseInt(seriesReps)
+    const estimatedOneRm = reps === 1 ? weight : weight * (1 + reps / 30)
+
+    const newSeries = {
+      exerciseId: currentSelectedExercise,
+      exerciseName: ex.name,
+      weight,
+      reps,
+      order: localSeriesList.filter(s => s.exerciseId === currentSelectedExercise).length + 1,
+      estimatedOneRm
+    }
+
+    setLocalSeriesList(prev => [...prev, newSeries])
+    setSeriesWeight('')
+    setSeriesReps('')
+  }, [currentSelectedExercise, seriesWeight, seriesReps, localSeriesList, exercises])
+
+  // 3. Usuwanie pojedynczej serii z koszyka
+  const removeSeriesFromLocalList = useCallback((index) => {
+    setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
+  }, [])
+
+  // 4. Zapisywanie skompletowanego treningu do bazy danych
+  const handleSaveWorkout = useCallback(async () => {
+    if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
+    if (localSeriesList.length === 0) throw new Error('Nie można zapisać pustego treningu!')
+
+    const res = await fetch(`${API_BASE_URL}/api/workouts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        name: workoutName,
+        comment: workoutComment,
+        series: localSeriesList.map(s => ({
+          exerciseId: s.exerciseId,
+          weight: s.weight,
+          reps: s.reps,
+          order: s.order,
+          estimatedOneRm: s.estimatedOneRm
+        }))
+      })
+    })
+
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Błąd zapisu treningu')
+
+    // Czyszczenie kreatora po udanym zapisie
+    setWorkoutName('')
+    setWorkoutComment('')
+    setLocalSeriesList([])
+    return data
+  }, [token, workoutName, workoutComment, localSeriesList])
+
+  // 5. Usuwanie całego treningu z bazy
+  const handleDeleteWorkout = useCallback(async (sessionId) => {
+    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć treningu.')
+    return data
+  }, [token])
+
+  // 6. Pobieranie danych do krzywej progresu siłowego
+  const fetchProgression = useCallback(async (exerciseId) => {
+    if (!token || !exerciseId) return
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts/progression/${exerciseId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Błąd pobierania danych progresji')
+      const data = await res.json()
+      setProgressionData(data)
+    } catch (err) {
+      console.error("❌ Błąd pobierania progresu siłowego:", err.message)
+    }
+  }, [token])
+
+  // Nowość: Aktualizacja nazwy i komentarza treningu w bazie oraz stanie
+  const handleUpdateWorkout = useCallback(async (sessionId, newName, newComment) => {
+    if (!token) return;
+
+    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ name: newName, comment: newComment })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować treningu.');
+
+    // Błyskawiczna aktualizacja lokalnego stanu historii
+    setWorkoutsHistory(prev => prev.map(w => 
+      w.id === sessionId ? { ...w, name: newName, comment: newComment } : w
+    ));
+    
+    return data;
+  }, [token]);
+
+  return {
+    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, fetchWorkoutsData,
+    workoutName, setWorkoutName, workoutComment, setWorkoutComment,
+    currentSelectedExercise, setCurrentSelectedExercise,
+    seriesWeight, setSeriesWeight, seriesReps, setSeriesReps,
+    localSeriesList, setLocalSeriesList,
+    addSeriesToLocalList, removeSeriesFromLocalList, handleSaveWorkout, handleDeleteWorkout,
+    progressionData, fetchProgression, handleUpdateWorkout
+  }
+}
+</file>
+
+<file path="frontend/src/views/Dashboard.jsx">
+import React, { useState, useEffect } from 'react'
+import WeightChart from '../components/WeightChart'
+
+export default function Dashboard({
+  user, weightLogs, weightInput, setWeightInput, handleAddWeight,
+  exercises, onUpdateWeeklyTarget, progressionData, fetchProgression, onDeleteWeight
+}) {
+  const [selectedExercise, setSelectedExercise] = useState(exercises[0]?.id || '')
+  const [localTarget, setLocalTarget] = useState(user?.weekly_target_workouts || 3)
+
+  // Każdorazowa zmiana ćwiczenia w selektorze dzwoni do bazy po świeżą progresję 1RM
+  useEffect(() => {
+    if (selectedExercise) {
+      fetchProgression(selectedExercise)
+    }
+  }, [selectedExercise, fetchProgression])
+
+  // Automatyczne ustawienie pierwszego ćwiczenia, jeśli baza na starcie była pusta
+  useEffect(() => {
+    if (exercises.length > 0 && !selectedExercise) {
+      setSelectedExercise(exercises[0].id)
+    }
+  }, [exercises, selectedExercise])
+
+  useEffect(() => {
+    if (user?.weekly_target_workouts) {
+      setLocalTarget(user.weekly_target_workouts)
+    }
+  }, [user?.weekly_target_workouts])
+
+  // --- PARAMETRYZACJA GENEROWANIA WYKRESU SVG ---
+  const svgWidth = 500
+  const svgHeight = 200
+  const padding = 35
+
+  const validData = progressionData.filter(d => !isNaN(d.oneRm))
+
+  let pointsPath = ''
+  let gradientPath = ''
+  let pointsArray = []
+
+  if (validData.length > 1) {
+    const minX = 0
+    const maxX = validData.length - 1
+    const yValues = validData.map(d => d.oneRm)
+    const minY = Math.min(...yValues) * 0.9 // 10% bufora z dołu dla dynamiki linii
+    const maxY = Math.max(...yValues) * 1.1 // 10% bufora z góry
+
+    pointsArray = validData.map((d, index) => {
+      const x = padding + (index / maxX) * (svgWidth - padding * 2)
+  
+      // Jeśli Max i Min są równe (np. ta sama waga i reps), ustawiamy mianownik na 1, a linię centrujemy w pionie
+      const denominator = (maxY - minY) === 0 ? 1 : (maxY - minY);
+      const y = (maxY - minY) === 0 
+        ? svgHeight / 2 
+        : svgHeight - padding - ((d.oneRm - minY) / denominator) * (svgHeight - padding * 2);
+
+      return { x, y, oneRm: d.oneRm, date: d.date }
+    })
+
+    pointsPath = pointsArray.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+    gradientPath = `${pointsPath} L ${pointsArray[pointsArray.length - 1].x} ${svgHeight - padding} L ${pointsArray[0].x} ${svgHeight - padding} Z`
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left">
+      
+      {/* LEWA KOLUMNA: STATYSTYKI I CEL TYGODNIOWY */}
+      <div className="flex flex-col gap-6 lg:col-span-1">
+        
+        {/* WIDGET 1: PROFIL I AKTUALNY STREAK */}
+        <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-gymRed/5 rounded-full blur-2xl transition-all group-hover:bg-gymRed/10"></div>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400 mb-1">Twój Profil</h2>
+          <div className="text-2xl font-black text-white tracking-tight">{user?.nick || 'Sportowiec'}</div>
+          
+          <div className="mt-4 flex items-center justify-between bg-[#2d2d2d] p-4 rounded-lg border border-zinc-800/60">
+            <span className="text-sm text-zinc-400 font-medium">Aktualny streak tygodniowy:</span>
+            <span className="text-2xl font-black text-gymRed drop-shadow-[0_2px_10px_rgba(255,71,87,0.2)] flex items-center gap-1 animate-pulse">
+              🔥 {user?.current_streak || 0}
+            </span>
+          </div>
+        </section>
+
+        {/* WIDGET 2: CEL TRENINGOWY (SUWAK ZOPTYMALIZOWANY POD KĄTEM SIECI) */}
+        <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400">Cel tygodniowy 🎯</h2>
+            {/* ZMIANA: Tekst czyta teraz z błyskawicznego stanu lokalnego */}
+            <span className="text-sm font-black text-gymRed bg-gymRed/10 px-2.5 py-0.5 rounded-full">
+              {localTarget} dni
+            </span>
+          </div>
+          <p className="text-zinc-500 text-xs mb-4">Zadeklaruj ile razy w tygodniu chcesz trenować w garażu.</p>
+          
+          <input 
+            type="range" 
+            min="1" 
+            max="7" 
+            value={localTarget} // ZMIANA: Spięte z lokalnym stanem
+            onChange={(e) => setLocalTarget(parseInt(e.target.value))} // ZMIANA: Aktualizuje TYLKO UI w locie
+            onMouseUp={() => onUpdateWeeklyTarget(localTarget)} // ZMIANA: Strzela do API dopiero po puszczeniu myszki (Desktop)
+            onTouchEnd={() => onUpdateWeeklyTarget(localTarget)} // ZMIANA: Strzela do API dopiero po podniesieniu palca (Mobile)
+            className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-gymRed transition-all"
+          />
+          <div className="flex justify-between text-[10px] font-bold text-zinc-600 mt-1 px-1">
+            <span>1 DZIEŃ</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7 DNI</span>
+          </div>
+        </section>
+      </div>
+
+      {/* ŚRODKOWA KOLUMNA: PROGRESJA 1RM (WYKRES SVG) - Na dużych ekranach zajmuje 2 kolumny */}
+      <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 md:col-span-2 flex flex-col justify-between">
+        <div>
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-zinc-800 pb-4 mb-4">
+            <div>
+              <h2 className="text-lg font-bold tracking-tight">Krzywa progresu siłowego (Est. 1RM) 📈</h2>
+              <p className="text-zinc-400 text-xs mt-0.5">Wykres generowany automatycznie na podstawie serii roboczych.</p>
+            </div>
+
+            {/* Selektor ćwiczenia z bazy dla wykresu */}
+            <select
+              value={selectedExercise}
+              onChange={(e) => setSelectedExercise(e.target.value)}
+              className="p-2 rounded-md border border-zinc-800 bg-[#2d2d2d] text-white text-xs md:text-sm outline-none focus:border-gymRed cursor-pointer max-w-[250px]"
+            >
+              <option value="" disabled>Wybierz ćwiczenie...</option>
+              {exercises.map(ex => (
+                <option key={ex.id} value={ex.id} className="bg-[#2d2d2d]">{ex.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* RENDEROWANIE WYKRESU PURE SVG */}
+          <div className="w-full overflow-hidden bg-zinc-900/50 p-2 rounded-xl border border-zinc-800/40 flex justify-center items-center">
+            {validData.length < 2 ? (
+              <div className="text-center py-16 text-zinc-500 italic text-sm flex flex-col items-center gap-1">
+                <span>📊</span> Zaloguj minimum 2 różne dni treningowe dla tego ćwiczenia, aby wygenerować linię progresu.
+              </div>
+            ) : (
+              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-[220px]">
+                <defs>
+                  {/* Profesjonalny gradient pod linią wykresu */}
+                  <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ff4757" stopOpacity="0.25"/>
+                    <stop offset="100%" stopColor="#ff4757" stopOpacity="0.00"/>
+                  </linearGradient>
+                </defs>
+                
+                {/* Siatka pozioma boczna */}
+                <line x1={padding} y1={padding} x2={svgWidth - padding} y2={padding} stroke="#2d2d2d" strokeWidth="1" strokeDasharray="4"/>
+                <line x1={padding} y1={svgHeight - padding} x2={svgWidth - padding} y2={svgHeight - padding} stroke="#333" strokeWidth="1"/>
+
+                {/* Ścieżka gradientu wypełniającego */}
+                <path d={gradientPath} fill="url(#chartGradient)" />
+
+                {/* Główna, neonowa linia wykresu */}
+                <path d={pointsPath} fill="none" stroke="#ff4757" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+
+                {/* Węzły (kropki) na wykresie z tooltipami osadzonymi w SVG */}
+                {pointsArray.map((p, i) => (
+                  <g key={i} className="group/node cursor-pointer">
+                    <circle cx={p.x} cy={p.y} r="5" fill="#121212" stroke="#ff4757" strokeWidth="2.5" className="transition-all hover:r-7 hover:fill-[#ff4757]"/>
+                    
+                    {/* Interaktywny mini-tooltip pojawiający się po najechaniu myszką */}
+                    <g className="opacity-0 group-hover/node:opacity-100 transition-opacity duration-150 pointer-events-none">
+                      <rect x={p.x - 40} y={p.y - 32} width="80" height="22" rx="4" fill="#1e1e1e" stroke="#ff4757" strokeWidth="1"/>
+                      <text x={p.x} y={p.y - 17} fill="white" fontSize="10" fontWeight="bold" textAnchor="middle">
+                        {p.oneRm.toFixed(1)} kg
+                      </text>
+                    </g>
+                  </g>
+                ))}
+              </svg>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* DOLNA SZEROKA SEKCJA: WAGA CAŁKOWITA (PŁYTKI DO WPISYWANIA I REJESTR LOGÓW) */}
+      <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 md:col-span-2 lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        {/* KARTA DODAWANIA WAGI */}
+        <div className="md:col-span-1 flex flex-col justify-between border-b md:border-b-0 md:border-r border-zinc-800 pb-4 md:pb-0 md:pr-6">
+          <div>
+            <h2 className="text-base font-bold tracking-tight mb-1">Zarejestruj wagę ciała ⚖️</h2>
+            <p className="text-zinc-500 text-xs mb-4">Wpisuj wagę poranną na czczo, aby monitorować trendy masowe.</p>
+          </div>
+          
+          <div className="flex gap-2 mt-auto">
+            <input 
+              type="number" 
+              step="0.1" 
+              placeholder="np. 84.5" 
+              value={weightInput}
+              onChange={(e) => setWeightInput(e.target.value)}
+              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none focus:border-gymRed font-mono"
+            />
+            <button 
+              onClick={handleAddWeight}
+              className="bg-gymRed hover:bg-red-600 text-white font-bold px-5 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
+            >
+              Dodaj
+            </button>
+          </div>
+        </div>
+
+        {/* LISTA LOGÓW WAGI (Z HORIZONTALNYM STRUMIENIEM DLA UX MOBILNEGO) */}
+        <div className="md:col-span-2 flex flex-col justify-between">
+          <div>
+            <h2 className="text-base font-bold tracking-tight mb-1">Ostatnie pomiary wagi</h2>
+            <p className="text-zinc-500 text-xs mb-4">Twoja oś czasu masy ciała (najnowsze pomiary).</p>
+          </div>
+
+          <div className="mb-4">
+            <WeightChart logs={weightLogs} />
+          </div>
+
+          {weightLogs.length === 0 ? (
+            <p className="text-zinc-600 italic text-sm py-2">Brak zapisanych pomiarów wagi.</p>
+          ) : (
+            // Dodaliśmy klasę "group" do kontenera nadrzędnego, aby sterować widocznością dzieci
+            <div className="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2">
+              {weightLogs.slice(0, 7).map(log => (
+                <div 
+                  key={log.id} 
+                  className="bg-[#2d2d2d] border border-zinc-800/70 p-3 rounded-lg flex flex-col items-center min-w-[90px] shadow-sm transition-colors hover:border-zinc-700 relative group"
+                >
+                  {/* PRZYCISK USUWANIA (✕): Widoczny zawsze na mobile, na desktopie hover kafelka (sm:opacity-0 sm:group-hover:opacity-100) */}
+                  <button
+                    onClick={() => onDeleteWeight(log.id)} // <--- Czysty, bezkompromisowy i natychmiastowy strzał
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-800 border border-zinc-700 rounded-full flex items-center justify-center text-[9px] font-black text-zinc-400 hover:text-gymRed hover:border-gymRed active:scale-90 transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer shadow-md"
+                    title="Usuń pomiar"
+                  >
+                    ✕
+                  </button>
+
+                  <span className="text-base font-black text-zinc-100 font-mono">
+                    {parseFloat(log.weight).toFixed(1)} <span className="text-[10px] text-zinc-400 font-normal">kg</span>
+                  </span>
+                  <span className="text-[10px] text-zinc-400 font-medium mt-1 uppercase tracking-tighter">
+                    {new Date(log.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+    </div>
   )
 }
 </file>
