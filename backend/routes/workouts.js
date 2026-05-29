@@ -5,19 +5,33 @@ const authenticateToken = require('../middleware/auth');
 
 // Zapisanie treningu + wyliczenie streaka
 router.post('/', authenticateToken, async (req, res) => {
-  const { name, comment, series } = req.body;
-  const userId = req.user.userId;
+  let { name, comment, series } = req.body;
 
   if (!name || !series || !Array.isArray(series) || series.length === 0) {
     return res.status(400).json({ error: "Nazwa treningu oraz serie są wymagane!" });
   }
 
+  // 1. Sanitization & Trim
+  name = name.trim();
+  comment = comment ? comment.trim() : null;
+
+  // 2. Walidacja długości wejścia
+  if (name.length < 3 || name.length > 100) {
+    return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
+  }
+
+  // Zabezpieczenie pola TEXT przed potężnymi payloadami stringów
+  if (comment && comment.length > 500) {
+    return res.status(400).json({ error: "Komentarz do treningu może mieć maksymalnie 500 znaków!" });
+  }
+
   try {
     await pool.query('BEGIN');
 
+    // W zapytaniu przekazujemy już oczyszczone zmienne "name" oraz "comment"
     const sessionResult = await pool.query(
       "INSERT INTO workout_sessions (user_id, name, comment, started_at, ended_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id",
-      [userId, name, comment || null]
+      [userId, name, comment]
     );
     const sessionId = sessionResult.rows[0].id;
 
@@ -211,11 +225,22 @@ router.delete('/:sessionId', authenticateToken, async (req, res) => {
 router.patch('/:sessionId', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   const { sessionId } = req.params;
-  const { name, comment } = req.body;
+  let { name, comment } = req.body;
 
-  // Walidacja obecności nazwy (nie pozwalamy na wyczyszczenie nazwy sesji)
   if (!name || !name.trim()) {
     return res.status(400).json({ error: "Nazwa treningu jest wymagana!" });
+  }
+
+  name = name.trim();
+  comment = comment ? comment.trim() : null;
+
+  // Identyczne limity znaków jak przy tworzeniu sesji
+  if (name.length < 3 || name.length > 100) {
+    return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
+  }
+
+  if (comment && comment.length > 500) {
+    return res.status(400).json({ error: "Komentarz może mieć maksymalnie 500 znaków!" });
   }
 
   try {

@@ -22,14 +22,28 @@ const authLimiter = rateLimit({
 
 // Rejestracja
 router.post('/register', authLimiter, async (req, res) => {
-  const { email, password, nick } = req.body;
+  let { email, password, nick } = req.body;
 
+  // 1. Wstępna walidacja obecności pól
   if (!email || !password || !nick) {
     return res.status(400).json({ error: "Wszystkie pola (email, password, nick) są wymagane!" });
   }
 
-  if (password.length < 8) {
-    return res.status(400).json({ error: "Hasło musi składać się z co najmniej 8 znaków!" });
+  // 2. Sanitization & Trim (oczyszczanie ze skrajnych spacji)
+  email = email.trim();
+  nick = nick.trim();
+
+  // 3. Twarda walidacja długości (Input Length Validation)
+  if (nick.length < 2 || nick.length > 50) {
+    return res.status(400).json({ error: "Nick musi mieć od 2 do 50 znaków!" });
+  }
+
+  if (email.length > 254) {
+    return res.status(400).json({ error: "Adres e-mail jest zbyt długi!" });
+  }
+
+  if (password.length < 8 || password.length > 100) {
+    return res.status(400).json({ error: "Hasło musi mieć od 8 do 100 znaków!" });
   }
 
   try {

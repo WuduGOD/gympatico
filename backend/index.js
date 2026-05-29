@@ -9,10 +9,13 @@ if (!process.env.JWT_SECRET) {
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const pool = require('./config/db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+app.use(helmet());
 
 // 1. Definiujemy bezpieczną listę zaufanych adresów (origins)
 const allowedOrigins = [
