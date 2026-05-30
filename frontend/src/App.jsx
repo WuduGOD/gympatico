@@ -351,7 +351,24 @@ function AppContent() {
           <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
           <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={handleAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} /> : <Navigate to="/login" />} />
           <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} onDeleteExercise={onDeleteCustomExercise} /> : <Navigate to="/login" />} />
-          <Route path="/new-workout" element={token ? <NewWorkout workoutName={workoutName} setWorkoutName={setWorkoutName} workoutComment={workoutComment} setWorkoutComment={setWorkoutComment} currentSelectedExercise={currentSelectedExercise} setCurrentSelectedExercise={setCurrentSelectedExercise} seriesWeight={seriesWeight} setSeriesWeight={setSeriesWeight} seriesReps={seriesReps} setSeriesReps={setSeriesReps} exercises={exercises} localSeriesList={localSeriesList} addSeriesToLocalList={addSeriesToLocalList} handleSaveWorkout={onSaveWorkout} removeSeriesFromLocalList={removeSeriesFromLocalList} templates={templates} onSaveTemplate={handleSaveTemplate} onDeleteTemplate={handleDeleteTemplate} /> : <Navigate to="/login" />} />
+          
+          {/* ZAKTUALIZOWANA ŚCIEŻKA KREATORA TRENINGU — ODCHUDZONA Z PROPSÓW STRUKTURALNYCH */}
+          <Route path="/new-workout" element={token ? (
+            <NewWorkout
+              exercises={exercises}
+              templates={templates}
+              onSaveTemplate={handleSaveTemplate}
+              onDeleteTemplate={handleDeleteTemplate}
+              workoutName={workoutName}
+              setWorkoutName={setWorkoutName}
+              workoutComment={workoutComment}
+              setWorkoutComment={setWorkoutComment}
+              localSeriesList={localSeriesList}
+              setLocalSeriesList={setLocalSeriesList}
+              handleSaveWorkout={onSaveWorkout}
+            />
+          ) : <Navigate to="/login" />} />
+          
           <Route path="/history" element={token ? <History workoutsHistory={workoutsHistory} onDeleteWorkout={onDeleteWorkout} onLoadMoreWorkouts={onLoadMoreWorkouts} hasMoreWorkouts={hasMoreWorkouts} onUpdateWorkout={onUpdateWorkoutMetadata} user={user} token={token} /> : <Navigate to="/login" />} />
           <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} /> : <Navigate to="/login" />} />
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
