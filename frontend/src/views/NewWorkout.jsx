@@ -14,34 +14,21 @@ export default function NewWorkout({
   setLocalSeriesList,
   handleSaveWorkout,
 }) {
-  // Ćwiczenia aktywne w tej sesji — lista budowana ręcznie lub z szablonu
   const [sessionExercises, setSessionExercises] = useState([])
   const [activeExId, setActiveExId] = useState(null)
-
-  // Szybki input — waga i powtórzenia z podpowiedzią z poprzedniej serii
   const [weight, setWeight] = useState('60')
   const [reps, setReps] = useState('8')
-
-  // Szablon
   const [templateNameInput, setTemplateNameInput] = useState('')
   const [saveAsTemplateCheckbox, setSaveAsTemplateCheckbox] = useState(false)
-
-  // Widok — 'builder' (dodawanie ćwiczeń) lub 'logger' (logowanie serii)
   const [view, setView] = useState('logger')
-
-  // Filtr atlasu przy dodawaniu ćwiczeń
   const [searchQuery, setSearchQuery] = useState('')
-
-  // Rest timer — hook zwracający { start, stop, TimerUI }
   const [timerKey, setTimerKey] = useState(0)
   const timerRef = useRef(null)
 
-  // Grupowanie serii po ćwiczeniu dla widoku chipów
   const getSeriesForExercise = useCallback((exId) =>
     localSeriesList.filter(s => s.exerciseId === exId),
   [localSeriesList])
 
-  // Aktualizuj wagę/powtórzenia gdy zmienia się aktywne ćwiczenie — podpowiedź z ostatniej serii
   useEffect(() => {
     if (!activeExId) return
     const lastSeries = localSeriesList.filter(s => s.exerciseId === activeExId).at(-1)
@@ -49,7 +36,7 @@ export default function NewWorkout({
       setWeight(String(lastSeries.weight))
       setReps(String(lastSeries.reps))
     }
-  }, [activeExId]) // celowo tylko activeExId — nie chcemy resetować przy każdym zapisie
+  }, [activeExId])
 
   const adjustWeight = (delta) => {
     setWeight(prev => {
@@ -62,7 +49,6 @@ export default function NewWorkout({
     setReps(prev => String(Math.max(1, parseInt(prev || 1) + delta)))
   }
 
-  // Zapisanie serii + natychmiastowy start timera
   const confirmSeries = useCallback(() => {
     if (!activeExId) return
     const ex = exercises.find(e => e.id === activeExId)
@@ -73,8 +59,8 @@ export default function NewWorkout({
     if (isNaN(w) || isNaN(r) || r < 1) return
 
     const estimatedOneRm = r >= 1 && r <= 12 ? w * (1 + r / 30) : null
-
     const seriesForEx = localSeriesList.filter(s => s.exerciseId === activeExId)
+    
     const newSeries = {
       exerciseId: activeExId,
       exerciseName: ex.name,
@@ -86,13 +72,11 @@ export default function NewWorkout({
 
     setLocalSeriesList(prev => [...prev, newSeries])
 
-    // Twardy autostart timera — zawsze, bez pytania
     if (timerRef.current?.start) {
       timerRef.current.start()
     }
   }, [activeExId, weight, reps, exercises, localSeriesList, setLocalSeriesList])
 
-  // Usunięcie ostatniej serii danego ćwiczenia
   const removeLastSeries = (exId) => {
     setLocalSeriesList(prev => {
       const idx = [...prev].reverse().findIndex(s => s.exerciseId === exId)
@@ -102,7 +86,6 @@ export default function NewWorkout({
     })
   }
 
-  // Dodanie ćwiczenia do sesji
   const addExerciseToSession = (exId) => {
     if (sessionExercises.includes(exId)) return
     setSessionExercises(prev => [...prev, exId])
@@ -110,7 +93,6 @@ export default function NewWorkout({
     setView('logger')
     setSearchQuery('')
 
-    // Ustaw domyślne wartości przy pierwszym dodaniu
     const lastSeries = localSeriesList.filter(s => s.exerciseId === exId).at(-1)
     setWeight(lastSeries ? String(lastSeries.weight) : '60')
     setReps(lastSeries ? String(lastSeries.reps) : '8')
@@ -125,13 +107,11 @@ export default function NewWorkout({
     }
   }
 
-  // Załadowanie szablonu
   const handleLoadTemplate = (templateId) => {
     const tpl = templates?.find(t => t.id === templateId)
     if (!tpl) return
 
     setWorkoutName(tpl.name)
-
     const exIds = [...new Set(tpl.series.map(s => s.exerciseId))]
     setSessionExercises(exIds)
     setActiveExId(exIds[0] ?? null)
@@ -180,7 +160,6 @@ export default function NewWorkout({
     e.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  // Grupuj po muscle_group
   const grouped = filteredExercises.reduce((acc, ex) => {
     const g = ex.muscle_group || 'Inne'
     if (!acc[g]) acc[g] = []
@@ -189,87 +168,36 @@ export default function NewWorkout({
   }, {})
 
   return (
-    <div style={{ maxWidth: '640px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-
-      {/* NAGŁÓWEK + przycisk zakończenia */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+    <div className="max-w-[640px] mx-auto flex flex-col gap-4 text-left">
+      
+      {/* NAGŁÓWEK */}
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 style={{ fontSize: '20px', fontWeight: '500', margin: 0 }}>Kreator treningu</h2>
-          <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0' }}>
-            {totalSeries > 0 ? `${totalSeries} ${totalSeries === 1 ? 'seria' : 'serii'} zapisanych` : 'Brak serii — dodaj ćwiczenia poniżej'}
+          <h2 className="text-xl font-bold tracking-tight text-white">Kreator treningu 🏋️‍♂️</h2>
+          <p className="text-xs text-textSecondary mt-0.5">
+            {totalSeries > 0 ? `${totalSeries} ${totalSeries === 1 ? 'seria zapisana' : 'serii zapisanych'}` : 'Brak serii — dodaj ćwiczenia poniżej'}
           </p>
         </div>
         {totalSeries > 0 && (
-          <button
-            onClick={onSubmitWorkout}
-            style={{
-              padding: '8px 16px',
-              borderRadius: 'var(--border-radius-md)',
-              background: '#e63946',
-              color: 'white',
-              border: 'none',
-              fontSize: '13px',
-              fontWeight: '500',
-              cursor: 'pointer',
-              flexShrink: 0
-            }}
-          >
-            Zakończ sesję
+          <button onClick={onSubmitWorkout} className="px-4 py-2 bg-gymRed hover:bg-gymRedHover text-white font-bold text-sm rounded-gp-md cursor-pointer transition-all active:scale-95 shadow-lg shadow-red-950/20 shrink-0">
+            Zakończ sesję ✓
           </button>
         )}
       </div>
 
       {/* SZABLONY */}
       {templates?.length > 0 && (
-        <div style={{
-          background: 'var(--color-background-secondary)',
-          borderRadius: 'var(--border-radius-lg)',
-          border: '0.5px solid var(--color-border-tertiary)',
-          padding: '12px'
-        }}>
-          <div style={{ fontSize: '11px', fontWeight: '500', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-            Wczytaj szablon
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div className="bg-gymCardSecondary border border-zinc-800/40 rounded-gp-lg p-3">
+          <div className="text-[10px] font-bold text-textSecondary uppercase tracking-wider mb-2">Wczytaj gotowy plan:</div>
+          <div className="flex flex-col gap-1.5">
             {templates.map(tpl => (
-              <div key={tpl.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button
-                  onClick={() => handleLoadTemplate(tpl.id)}
-                  style={{
-                    flex: 1,
-                    textAlign: 'left',
-                    padding: '7px 10px',
-                    borderRadius: 'var(--border-radius-md)',
-                    border: '0.5px solid var(--color-border-secondary)',
-                    background: 'var(--color-background-primary)',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: 'var(--color-text-primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}
-                >
+              <div key={tpl.id} className="flex items-center gap-2">
+                <button onClick={() => handleLoadTemplate(tpl.id)} className="flex-1 text-left px-3 py-2.5 rounded-gp-md border border-zinc-800 bg-gymCard hover:border-zinc-700 cursor-pointer text-sm font-semibold flex items-center justify-between text-textPrimary transition-all">
                   <span>{tpl.name}</span>
-                  <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', fontWeight: '400' }}>
-                    {tpl.series.length} serii
-                  </span>
+                  <span className="text-xs text-textSecondary font-normal">{tpl.series.length} serii</span>
                 </button>
-                <button
-                  onClick={() => onDeleteTemplate(tpl.id)}
-                  title="Usuń szablon"
-                  style={{
-                    padding: '7px 8px',
-                    borderRadius: 'var(--border-radius-md)',
-                    border: '0.5px solid var(--color-border-tertiary)',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    color: 'var(--color-text-secondary)',
-                    lineHeight: 1
-                  }}
-                >
-                  <i className="ti ti-trash" aria-hidden="true" style={{ fontSize: '14px' }} />
+                <button onClick={() => onDeleteTemplate(tpl.id)} title="Usuń szablon" className="p-2.5 rounded-gp-md border border-zinc-800 hover:border-gymRed hover:text-gymRed text-textSecondary bg-transparent cursor-pointer transition-colors">
+                  <i className="ti ti-trash text-sm" />
                 </button>
               </div>
             ))}
@@ -280,209 +208,83 @@ export default function NewWorkout({
       {/* NAZWA TRENINGU */}
       <input
         type="text"
-        placeholder="Nazwa treningu (np. Push — klatka + ramiona)"
+        placeholder="Nazwa treningu (np. Push A — Klatka + Barki)"
         value={workoutName}
         onChange={e => setWorkoutName(e.target.value)}
-        style={{ width: '100%', boxSizing: 'border-box' }}
+        className="w-full p-3 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm font-medium outline-none transition-all focus:border-gymRed"
         required
       />
 
-      {/* REST TIMER */}
+      {/* MINUTNIK */}
       <RestTimerWrapper timerRef={timerRef} key={timerKey} />
 
-      {/* GŁÓWNY PANEL — lista ćwiczeń + input serii */}
+      {/* KARTOTEKA SESJI */}
       {sessionExercises.length > 0 && (
-        <div style={{
-          background: 'var(--color-background-primary)',
-          border: '0.5px solid var(--color-border-tertiary)',
-          borderRadius: 'var(--border-radius-lg)',
-          overflow: 'hidden'
-        }}>
-          {/* Lista ćwiczeń */}
-          <div style={{ borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+        <div className="bg-gymCard border border-zinc-800/40 rounded-gp-lg overflow-hidden shadow-lg">
+          <div className="divide-y divide-zinc-800/50">
             {sessionExercises.map(exId => {
               const ex = exercises.find(e => e.id === exId)
               if (!ex) return null
               const series = getSeriesForExercise(exId)
               const isActive = exId === activeExId
-              const isDone = series.length > 0
 
               return (
-                <div
-                  key={exId}
-                  onClick={() => {
-                    setActiveExId(exId)
-                    const last = series.at(-1)
-                    if (last) {
-                      setWeight(String(last.weight))
-                      setReps(String(last.reps))
-                    }
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '10px 12px',
-                    gap: '10px',
-                    cursor: 'pointer',
-                    borderBottom: '0.5px solid var(--color-border-tertiary)',
-                    background: isActive ? 'var(--color-background-info)' : 'transparent',
-                    transition: 'background 0.1s'
-                  }}
-                >
-                  <div style={{
-                    width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
-                    background: isDone
-                      ? 'var(--color-text-success)'
-                      : isActive
-                        ? 'var(--color-text-info)'
-                        : 'var(--color-border-secondary)'
-                  }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: '13px',
-                      fontWeight: isActive ? '500' : '400',
-                      color: isActive ? 'var(--color-text-info)' : 'var(--color-text-primary)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      {ex.name}
-                    </div>
+                <div key={exId} onClick={() => { setActiveExId(exId); const last = series.at(-1); if (last) { setWeight(String(last.weight)); setReps(String(last.reps)); } }} className={`flex items-center p-3 gap-3 cursor-pointer transition-colors ${isActive ? 'bg-gymRed/5' : 'hover:bg-zinc-800/20'}`}>
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${series.length > 0 ? 'bg-gymSuccess' : isActive ? 'bg-gymRed' : 'bg-zinc-700'}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-sm truncate ${isActive ? 'text-gymRed font-bold' : 'text-textPrimary'}`}>{ex.name}</div>
                     {series.length > 0 && (
-                      <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '1px' }}>
-                        {series.map(s => `${s.weight}×${s.reps}`).join('  ·  ')}
-                      </div>
+                      <div className="text-xs text-textSecondary font-mono mt-0.5">{series.map(s => `${s.weight}×${s.reps}`).join('  ·  ')}</div>
                     )}
                   </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); removeExerciseFromSession(exId) }}
-                    title="Usuń ćwiczenie z sesji"
-                    style={{
-                      padding: '4px 6px',
-                      borderRadius: '5px',
-                      border: 'none',
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      color: 'var(--color-text-secondary)',
-                      lineHeight: 1,
-                      opacity: 0.6
-                    }}
-                  >
-                    <i className="ti ti-x" aria-hidden="true" style={{ fontSize: '13px' }} />
+                  <button onClick={e => { e.stopPropagation(); removeExerciseFromSession(exId) }} className="p-1 text-textSecondary hover:text-gymDanger opacity-60 hover:opacity-100 transition-all cursor-pointer">
+                    <i className="ti ti-x text-sm" />
                   </button>
                 </div>
               )
             })}
           </div>
 
-          {/* Panel szybkiego zapisu aktywnego ćwiczenia */}
+          {/* LOGGER SERII (TOUCH-TARGET FRIENDLY) */}
           {activeEx && (
-            <div style={{ padding: '12px' }}>
-              <div style={{ fontSize: '11px', fontWeight: '500', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
-                {activeEx.name} — seria #{activeSeriesList.length + 1}
-              </div>
+            <div className="p-4 border-t border-zinc-800 bg-gymCardSecondary/40">
+              <div className="text-xs font-bold text-gymRed uppercase tracking-wider mb-3">{activeEx.name} — SERIA #{activeSeriesList.length + 1}</div>
 
-              {/* Waga */}
-              <div style={{ marginBottom: '8px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Ciężar (kg)</div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <button onClick={() => adjustWeight(-2.5)} style={{ width: '44px', height: '44px', borderRadius: 'var(--border-radius-md)', border: '0.5px solid var(--color-border-secondary)', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '300' }}>−</button>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={weight}
-                    onChange={e => setWeight(e.target.value)}
-                    style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '20px', fontWeight: '500', height: '44px' }}
-                  />
-                  <button onClick={() => adjustWeight(2.5)} style={{ width: '44px', height: '44px', borderRadius: 'var(--border-radius-md)', border: '0.5px solid var(--color-border-secondary)', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '300' }}>+</button>
+              {/* CIĘŻAR */}
+              <div className="mb-3">
+                <label className="text-[11px] font-semibold text-textSecondary block mb-1">Ciężar (kg):</label>
+                <div className="flex gap-2 items-center">
+                  <button onClick={() => adjustWeight(-2.5)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer select-none text-textPrimary active:scale-95 transition-transform">−</button>
+                  <input type="number" step="0.5" value={weight} onChange={e => setWeight(e.target.value)} className="flex-1 h-11 text-center font-mono text-xl font-bold bg-gymCard border border-zinc-800 rounded-gp-md text-white outline-none focus:border-gymRed" />
+                  <button onClick={() => adjustWeight(2.5)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer select-none text-textPrimary active:scale-95 transition-transform">+</button>
                 </div>
               </div>
 
-              {/* Powtórzenia */}
-              <div style={{ marginBottom: '12px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Powtórzenia</div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <button onClick={() => adjustReps(-1)} style={{ width: '44px', height: '44px', borderRadius: 'var(--border-radius-md)', border: '0.5px solid var(--color-border-secondary)', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '300' }}>−</button>
-                  <input
-                    type="number"
-                    value={reps}
-                    onChange={e => setReps(e.target.value)}
-                    style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '20px', fontWeight: '500', height: '44px' }}
-                  />
-                  <button onClick={() => adjustReps(1)} style={{ width: '44px', height: '44px', borderRadius: 'var(--border-radius-md)', border: '0.5px solid var(--color-border-secondary)', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '300' }}>+</button>
+              {/* POWTÓRZENIA */}
+              <div className="mb-3">
+                <label className="text-[11px] font-semibold text-textSecondary block mb-1">Powtórzenia:</label>
+                <div className="flex gap-2 items-center">
+                  <button onClick={() => adjustReps(-1)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer select-none text-textPrimary active:scale-95 transition-transform">−</button>
+                  <input type="number" value={reps} onChange={e => setReps(e.target.value)} className="flex-1 h-11 text-center font-mono text-xl font-bold bg-gymCard border border-zinc-800 rounded-gp-md text-white outline-none focus:border-gymRed" />
+                  <button onClick={() => adjustReps(1)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer select-none text-textPrimary active:scale-95 transition-transform">+</button>
                 </div>
               </div>
 
-              {/* Szybkie presety powtórzeń */}
-              <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
+              {/* SZYBKIE PRESETY */}
+              <div className="flex gap-1 mb-4">
                 {[5, 6, 8, 10, 12, 15].map(r => (
-                  <button
-                    key={r}
-                    onClick={() => setReps(String(r))}
-                    style={{
-                      flex: 1,
-                      fontSize: '12px',
-                      padding: '5px 0',
-                      borderRadius: '5px',
-                      border: `0.5px solid ${reps === String(r) ? 'var(--color-border-info)' : 'var(--color-border-tertiary)'}`,
-                      background: reps === String(r) ? 'var(--color-background-info)' : 'transparent',
-                      cursor: 'pointer',
-                      color: reps === String(r) ? 'var(--color-text-info)' : 'var(--color-text-secondary)',
-                      fontFamily: 'var(--font-mono)'
-                    }}
-                  >
-                    {r}
-                  </button>
+                  <button key={r} onClick={() => setReps(String(r))} className={`flex-1 py-1.5 rounded-gp-sm text-xs font-mono font-bold border transition-all cursor-pointer ${reps === String(r) ? 'border-gymRed text-gymRed bg-gymRed/5' : 'border-zinc-800 text-textSecondary bg-transparent hover:text-white'}`}>{r}</button>
                 ))}
               </div>
 
-              {/* PRZYCISK — zapisz i start timera */}
-              <button
-                onClick={confirmSeries}
-                disabled={!weight || !reps}
-                style={{
-                  width: '100%',
-                  padding: '13px',
-                  borderRadius: 'var(--border-radius-md)',
-                  background: '#e63946',
-                  color: 'white',
-                  border: 'none',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  opacity: (!weight || !reps) ? 0.4 : 1
-                }}
-              >
-                <i className="ti ti-check" aria-hidden="true" style={{ fontSize: '16px' }} />
-                Zapisz serię
+              {/* ZAPISZ */}
+              <button onClick={confirmSeries} disabled={!weight || !reps} className="w-full py-3 bg-gymRed hover:bg-gymRedHover disabled:opacity-40 text-white font-bold text-sm rounded-gp-md cursor-pointer flex items-center justify-center gap-2 transition-all active:scale-[0.99] shadow-md">
+                <i className="ti ti-check text-base" /> Zapisz serię roboczą
               </button>
 
-              {/* Ostatnie serie — cofnij */}
               {activeSeriesList.length > 0 && (
-                <button
-                  onClick={() => removeLastSeries(activeExId)}
-                  style={{
-                    width: '100%',
-                    marginTop: '6px',
-                    padding: '6px',
-                    borderRadius: 'var(--border-radius-md)',
-                    border: '0.5px solid var(--color-border-tertiary)',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    fontSize: '11px',
-                    color: 'var(--color-text-secondary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <i className="ti ti-arrow-back" aria-hidden="true" style={{ fontSize: '13px' }} />
-                  Cofnij ostatnią serię
+                <button onClick={() => removeLastSeries(activeExId)} className="w-full mt-2 py-1.5 border border-zinc-800 hover:border-zinc-700 bg-transparent text-textSecondary text-[11px] font-semibold rounded-gp-md cursor-pointer flex items-center justify-center gap-1 transition-colors">
+                  <i className="ti ti-arrow-back" /> Cofnij ostatnią serię
                 </button>
               )}
             </div>
@@ -490,121 +292,49 @@ export default function NewWorkout({
         </div>
       )}
 
-      {/* DODAJ ĆWICZENIE — przycisk przełączający widok */}
-      <button
-        onClick={() => setView(v => v === 'builder' ? 'logger' : 'builder')}
-        style={{
-          width: '100%',
-          padding: '10px',
-          borderRadius: 'var(--border-radius-md)',
-          border: '0.5px dashed var(--color-border-secondary)',
-          background: 'transparent',
-          cursor: 'pointer',
-          fontSize: '13px',
-          color: 'var(--color-text-secondary)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '6px'
-        }}
-      >
-        <i className={`ti ti-${view === 'builder' ? 'x' : 'plus'}`} aria-hidden="true" style={{ fontSize: '16px' }} />
-        {view === 'builder' ? 'Zamknij atlas' : 'Dodaj ćwiczenie'}
+      {/* PRZYCISK OD ATLASU */}
+      <button onClick={() => setView(v => v === 'builder' ? 'logger' : 'builder')} className="w-full py-2.5 border border-dashed border-zinc-800 hover:border-zinc-600 bg-transparent text-textSecondary hover:text-white text-xs font-bold rounded-gp-md cursor-pointer flex items-center justify-center gap-1.5 transition-colors">
+        <i className={`ti ti-${view === 'builder' ? 'x' : 'plus'} text-base`} />
+        {view === 'builder' ? 'Zamknij atlas ćwiczeń' : 'Dodaj ćwiczenie do dzisiejszej sesji'}
       </button>
 
-      {/* ATLAS ĆWICZEŃ */}
+      {/* SEKCJA ATLASU */}
       {view === 'builder' && (
-        <div style={{
-          background: 'var(--color-background-primary)',
-          border: '0.5px solid var(--color-border-tertiary)',
-          borderRadius: 'var(--border-radius-lg)',
-          overflow: 'hidden'
-        }}>
-          <div style={{ padding: '10px 12px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-            <input
-              type="search"
-              placeholder="Szukaj ćwiczenia..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              autoFocus
-              style={{ width: '100%', boxSizing: 'border-box' }}
-            />
+        <div className="bg-gymCard border border-zinc-800/40 rounded-gp-lg overflow-hidden shadow-xl animate-in fade-in duration-150">
+          <div className="p-3 border-b border-zinc-800">
+            <input type="search" placeholder="Wpisz nazwę ćwiczenia..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} autoFocus className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-sm outline-none focus:border-gymRed" />
           </div>
-          <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+          <div className="max-h-[320px] overflow-y-auto divide-y divide-zinc-800/40">
             {Object.entries(grouped).map(([group, exList]) => (
-              <div key={group}>
-                <div style={{ padding: '6px 12px', fontSize: '10px', fontWeight: '500', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--color-background-secondary)', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-                  {group}
-                </div>
+              <div key={group} className="text-left">
+                <div className="px-3 py-1 text-[10px] font-bold text-textSecondary uppercase tracking-wider bg-gymCardSecondary/60 border-b border-zinc-800/30">{group}</div>
                 {exList.map(ex => (
-                  <div
-                    key={ex.id}
-                    onClick={() => addExerciseToSession(ex.id)}
-                    style={{
-                      padding: '10px 12px',
-                      cursor: 'pointer',
-                      borderBottom: '0.5px solid var(--color-border-tertiary)',
-                      fontSize: '13px',
-                      color: 'var(--color-text-primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      transition: 'background 0.1s'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--color-background-secondary)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    {ex.name}
-                    <i className="ti ti-plus" aria-hidden="true" style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }} />
+                  <div key={ex.id} onClick={() => addExerciseToSession(ex.id)} className="px-3 py-2.5 text-sm text-textPrimary hover:bg-zinc-800/30 cursor-pointer flex items-center justify-between transition-colors">
+                    <span>{ex.name}</span>
+                    <i className="ti ti-plus text-textMuted" />
                   </div>
                 ))}
               </div>
             ))}
             {filteredExercises.length === 0 && (
-              <div style={{ padding: '20px 12px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                Brak wyników dla &quot;{searchQuery}&quot;
-              </div>
+              <div className="p-6 text-center text-textSecondary text-xs italic">Brak wyników dla frazy "{searchQuery}"</div>
             )}
           </div>
         </div>
       )}
 
-      {/* KOMENTARZ */}
-      <textarea
-        placeholder="Notatki do treningu (opcjonalnie)"
-        value={workoutComment}
-        onChange={e => setWorkoutComment(e.target.value)}
-        style={{ width: '100%', boxSizing: 'border-box', minHeight: '60px', resize: 'none' }}
-      />
+      {/* NOTATKI */}
+      <textarea placeholder="Komentarz lub notatki do dzisiejszego treningu (opcjonalnie)..." value={workoutComment} onChange={e => setWorkoutComment(e.target.value)} className="w-full p-3 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed min-h-[64px] resize-none" />
 
-      {/* ZAPISZ JAKO SZABLON */}
+      {/* UTWORZ SZABLON */}
       {localSeriesList.length > 0 && (
-        <div style={{
-          background: 'var(--color-background-secondary)',
-          borderRadius: 'var(--border-radius-lg)',
-          border: '0.5px solid var(--color-border-tertiary)',
-          padding: '12px'
-        }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={saveAsTemplateCheckbox}
-              onChange={e => setSaveAsTemplateCheckbox(e.target.checked)}
-              style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#e63946' }}
-            />
-            <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-primary)' }}>
-              Zapisz jako szablon
-            </span>
+        <div className="bg-gymCardSecondary border border-zinc-800/40 rounded-gp-lg p-3 shadow-md">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" checked={saveAsTemplateCheckbox} onChange={e => setSaveAsTemplateCheckbox(e.target.checked)} className="w-4 h-4 rounded border-zinc-800 bg-gymCard accent-gymRed cursor-pointer" />
+            <span className="text-xs font-bold text-textPrimary">Zapisz tę sesję jako stały szablon</span>
           </label>
           {saveAsTemplateCheckbox && (
-            <input
-              type="text"
-              placeholder={workoutName.trim() || 'Nazwa szablonu'}
-              value={templateNameInput}
-              onChange={e => setTemplateNameInput(e.target.value)}
-              maxLength={100}
-              style={{ width: '100%', boxSizing: 'border-box', marginTop: '10px' }}
-            />
+            <input type="text" placeholder={workoutName.trim() || 'Nazwa nowego szablonu'} value={templateNameInput} onChange={e => setTemplateNameInput(e.target.value)} maxLength={100} className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm font-medium outline-none focus:border-gymRed mt-2 animate-in slide-in-from-top-2 duration-150" />
           )}
         </div>
       )}
@@ -612,7 +342,6 @@ export default function NewWorkout({
   )
 }
 
-// Wrapper komponent — mostuje ref do imperatywnego API timera
 function RestTimerWrapper({ timerRef }) {
   const timer = RestTimer({ onFinish: () => {} })
   timerRef.current = { start: timer.start, stop: timer.stop }

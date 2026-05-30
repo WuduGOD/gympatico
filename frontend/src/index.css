@@ -1,43 +1,35 @@
 @import "tailwindcss";
 
-/* Konfiguracja motywu w stylu Tailwind v4 */
+/* Komercyjny Design System GymPatico zmapowany na silnik Tailwind v4 */
 @theme {
-  --color-gymRed: #ef4444;
-  --color-gymDark: #0c0e12;
-  --color-gymCard: #1a1f27;
+  --color-gymDark: #0c0e12;           /* Głębokie, eleganckie tło aplikacji */
+  --color-gymCard: #1a1f27;           /* Powierzchnia głównych sekcji i kart */
+  --color-gymCardSecondary: #222833;  /* Tło dla inputów, selektorów i wierszy list */
+  --color-gymRed: #ef4444;            /* Główny kolor akcji i CTA */
+  --color-gymRedHover: #dc2626;       /* Stan hover dla przycisków */
+  
+  --color-gymSuccess: #22c55e;
+  --color-gymWarning: #f59e0b;
+  --color-gymDanger: #ef4444;
+  --color-gymPremium: #d4a853;        /* Prestiżowe złoto subskrypcji premium */
+
+  --color-textPrimary: #f4f6f9;       /* Czytelny biało-szary tekst główny */
+  --color-textSecondary: #9aa3b2;     /* Tekst pomocniczy i opisy */
+  --color-textMuted: #6b7280;         /* Wygaszone labele i placeholder */
+
+  /* Zaokrąglenia interfejsu mobilnego */
+  --radius-gp-sm: 6px;
+  --radius-gp-md: 10px;
+  --radius-gp-lg: 14px;
+  --radius-gp-xl: 20px;
 }
 
-/* Globalne reguły dla aplikacji GymPatico */
 @layer base {
   html, body {
     background-color: var(--color-gymDark);
-    color: white;
-    margin: 0;
-    padding: 0;
-    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--color-textPrimary);
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
-  }
-
-  input[type="number"]::-webkit-inner-spin-button,
-  input[type="number"]::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-}
-
-/* Szybkie klasy komponentowe w v4 */
-@utility btn-primary {
-  background-color: var(--color-gymRed);
-  color: white;
-  font-weight: bold;
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  transition: all 0.2s;
-  
-  &:hover {
-    opacity: 0.9;
-  }
-  &:active {
-    transform: scale(0.95);
+    padding-bottom: env(safe-area-inset-bottom, 0); /* Bezpieczna strefa dla iPhone'ów */
   }
 }

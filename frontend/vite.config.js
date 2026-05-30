@@ -1,26 +1,25 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { VitePWA } from 'vite-plugin-pwa' // <--- NOWY IMPORT
+import { VitePWA } from 'vite-plugin-pwa'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    VitePWA({ // <--- KONFIGURACJA PWA
-      registerType: 'autoUpdate', // Automatyczna aktualizacja plików w pamięci podręcznej
+    VitePWA({
+      registerType: 'autoUpdate',
       injectRegister: 'auto',
-      includeAssets: ['favicon.svg'], // Pliki do bezwzględnego cache'owania
+      includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'GymPatico Trening',
+        name: 'GymPatico - Profesjonalny Dziennik Treningowy',
         short_name: 'GymPatico',
-        description: 'Twoja garażowa aplikacja treningowa i atlas ćwiczeń',
-        theme_color: '#121212',       // Kolor paska systemowego na telefonie
-        background_color: '#121212',  // Kolor ekranu powitalnego (Splash screen)
-        display: 'standalone',        // KLUCZOWE: Odpalanie bez paska przeglądarki!
+        description: 'Zaawansowany dziennik treningowy, analityka progresu siłowego oraz kompletny atlas ćwiczeń dla kulturystów i amatorów sportów siłowych.',
+        theme_color: '#0c0e12',       /* Kolor systemowy dopasowany do gymDark */
+        background_color: '#0c0e12',  /* Ekran powitalny PWA */
+        display: 'standalone',
         orientation: 'portrait',
-        icons: [                      // Ikony wymagane przez Android/iOS do instalacji
+        icons: [
           {
             src: 'pwa-192x192.png',
             sizes: '192x192',

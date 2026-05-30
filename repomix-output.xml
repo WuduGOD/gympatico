@@ -78,6 +78,7 @@ frontend/src/hooks/useWeightLogs.js
 frontend/src/hooks/useWorkouts.js
 frontend/src/index.css
 frontend/src/main.jsx
+frontend/src/styles.css
 frontend/src/views/Dashboard.jsx
 frontend/src/views/ExercisesList.jsx
 frontend/src/views/History.jsx
@@ -294,22 +295,6 @@ export default defineConfig([
     },
   },
 ])
-</file>
-
-<file path="frontend/index.html">
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GymPatico</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
-</html>
 </file>
 
 <file path="frontend/public/favicon.svg">
@@ -641,48 +626,1089 @@ export function useWeightLogs(token, showToast) {
 }
 </file>
 
-<file path="frontend/src/index.css">
-@import "tailwindcss";
+<file path="frontend/src/styles.css">
+/* =============================================================================
+   GymPatico — Design System (styles.css)
+   Wersja: 1.0 — propozycja do akceptacji (nie wdrożona)
 
-/* Konfiguracja motywu w stylu Tailwind v4 */
-@theme {
-  --color-gymRed: #ff4757;
-  --color-gymDark: #121212;
-  --color-gymCard: #1e1e1e;
+   Cel: spójny, profesjonalny wygląd dla każdego użytkownika siłowni
+   (komercyjna, domowa, klub fitness — bez estetyki „garażowej”).
+
+   Integracja (później):
+   1. <link> fontów w index.html (patrz komentarz na końcu)
+   2. import w main.jsx: import './styles.css' PRZED lub PO index.css
+   3. W index.css @theme — mapowanie aliasów gymRed/gymDark/gymCard (sekcja 2)
+   ============================================================================= */
+
+/* -----------------------------------------------------------------------------
+   1. DESIGN TOKENS
+   ----------------------------------------------------------------------------- */
+:root {
+  /* —— Brand —— */
+  --gp-brand-50: #fff1f0;
+  --gp-brand-100: #ffe0de;
+  --gp-brand-400: #f87171;
+  --gp-brand-500: #ef4444;   /* główny CTA */
+  --gp-brand-600: #dc2626;   /* hover CTA */
+  --gp-brand-700: #b91c1c;
+
+  /* —— Accent secondary (progres, linki, info) —— */
+  --gp-accent-400: #38bdf8;
+  --gp-accent-500: #0ea5e9;
+  --gp-accent-600: #0284c7;
+
+  /* —— Neutrals (warstwy tła) —— */
+  --gp-bg-base: #0c0e12;       /* tło aplikacji */
+  --gp-bg-elevated: #13161c;   /* header / nav */
+  --gp-bg-surface: #1a1f27;     /* karty */
+  --gp-bg-surface-2: #222833;   /* inputy, wiersze list */
+  --gp-bg-overlay: rgba(0, 0, 0, 0.72);
+
+  /* —— Tekst —— */
+  --gp-text-primary: #f4f6f9;
+  --gp-text-secondary: #9aa3b2;
+  --gp-text-muted: #6b7280;
+  --gp-text-inverse: #0c0e12;
+
+  /* —— Obramowania —— */
+  --gp-border-subtle: rgba(255, 255, 255, 0.06);
+  --gp-border-default: rgba(255, 255, 255, 0.1);
+  --gp-border-strong: rgba(255, 255, 255, 0.16);
+  --gp-border-focus: var(--gp-brand-500);
+
+  /* —— Semantyka —— */
+  --gp-success: #22c55e;
+  --gp-success-muted: rgba(34, 197, 94, 0.12);
+  --gp-warning: #f59e0b;
+  --gp-warning-muted: rgba(245, 158, 11, 0.14);
+  --gp-danger: #ef4444;
+  --gp-danger-muted: rgba(239, 68, 68, 0.12);
+  --gp-info: var(--gp-accent-500);
+  --gp-info-muted: rgba(14, 165, 233, 0.12);
+  --gp-premium: #d4a853;
+  --gp-premium-muted: rgba(212, 168, 83, 0.14);
+
+  /* —— Typografia —— */
+  --gp-font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --gp-font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+
+  --gp-text-xs: 0.6875rem;   /* 11px */
+  --gp-text-sm: 0.8125rem;  /* 13px */
+  --gp-text-base: 0.9375rem; /* 15px */
+  --gp-text-lg: 1.125rem;
+  --gp-text-xl: 1.25rem;
+  --gp-text-2xl: 1.5rem;
+  --gp-text-3xl: 1.875rem;
+
+  --gp-leading-tight: 1.2;
+  --gp-leading-normal: 1.5;
+  --gp-tracking-tight: -0.02em;
+  --gp-tracking-wide: 0.06em;
+
+  /* —— Odstępy —— */
+  --gp-space-1: 0.25rem;
+  --gp-space-2: 0.5rem;
+  --gp-space-3: 0.75rem;
+  --gp-space-4: 1rem;
+  --gp-space-5: 1.25rem;
+  --gp-space-6: 1.5rem;
+  --gp-space-8: 2rem;
+
+  /* —— Zaokrąglenia —— */
+  --gp-radius-sm: 6px;
+  --gp-radius-md: 10px;
+  --gp-radius-lg: 14px;
+  --gp-radius-xl: 20px;
+  --gp-radius-full: 9999px;
+
+  /* Aliasy używane w NewWorkout / RestTimer (inline styles) */
+  --border-radius-sm: var(--gp-radius-sm);
+  --border-radius-md: var(--gp-radius-md);
+  --border-radius-lg: var(--gp-radius-lg);
+  --border-radius-xl: var(--gp-radius-xl);
+
+  /* —— Cienie —— */
+  --gp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --gp-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --gp-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --gp-shadow-glow-brand: 0 0 24px rgba(239, 68, 68, 0.2);
+  --gp-shadow-glow-accent: 0 0 20px rgba(14, 165, 233, 0.15);
+
+  /* —— Ruch —— */
+  --gp-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --gp-duration-fast: 120ms;
+  --gp-duration-normal: 200ms;
+  --gp-duration-slow: 320ms;
+
+  /* —— Layout —— */
+  --gp-header-height: 56px;
+  --gp-bottom-nav-height: 64px;
+  --gp-content-max: 720px;      /* kreator treningu */
+  --gp-content-wide: 1200px;   /* dashboard desktop */
+
+  /* —— Wykresy —— */
+  --gp-chart-line: var(--gp-brand-500);
+  --gp-chart-fill-start: rgba(239, 68, 68, 0.28);
+  --gp-chart-fill-end: rgba(239, 68, 68, 0);
+  --gp-chart-grid: rgba(255, 255, 255, 0.06);
+  --gp-chart-weight-line: var(--gp-accent-400);
+
+  /* =========================================================================
+     2. ALIASY — kompatybilność z obecnym kodem
+     (Tailwind: gymRed / gymDark / gymCard + inline var(--color-*))
+     ========================================================================= */
+
+  /* Tailwind @theme (index.css) — po akceptacji zaktualizuj tam też */
+  --color-gymRed: var(--gp-brand-500);
+  --color-gymDark: var(--gp-bg-base);
+  --color-gymCard: var(--gp-bg-surface);
+
+  /* NewWorkout / RestTimer — semantyczne tokeny */
+  --color-background-primary: var(--gp-bg-surface);
+  --color-background-secondary: var(--gp-bg-surface-2);
+  --color-background-info: var(--gp-info-muted);
+  --color-background-warning: var(--gp-warning-muted);
+  --color-background-success: var(--gp-success-muted);
+  --color-background-danger: var(--gp-danger-muted);
+
+  --color-text-primary: var(--gp-text-primary);
+  --color-text-secondary: var(--gp-text-secondary);
+  --color-text-info: var(--gp-accent-400);
+  --color-text-success: var(--gp-success);
+  --color-text-warning: var(--gp-warning);
+  --color-text-danger: var(--gp-danger);
+
+  --color-border-primary: var(--gp-border-default);
+  --color-border-secondary: var(--gp-border-strong);
+  --color-border-tertiary: var(--gp-border-subtle);
+  --color-border-info: rgba(14, 165, 233, 0.45);
+  --color-border-warning: rgba(245, 158, 11, 0.45);
+  --color-border-success: rgba(34, 197, 94, 0.4);
+
+  --font-mono: var(--gp-font-mono);
 }
 
-/* Globalne reguły dla aplikacji GymPatico */
-@layer base {
-  html, body {
-    background-color: var(--color-gymDark);
-    color: white;
+/* -----------------------------------------------------------------------------
+   3. RESET & BAZA
+   ----------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--gp-font-sans);
+  font-size: var(--gp-text-base);
+  line-height: var(--gp-leading-normal);
+  color: var(--gp-text-primary);
+  background-color: var(--gp-bg-base);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(239, 68, 68, 0.08), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(14, 165, 233, 0.05), transparent);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Bezpieczne strefy (PWA / iPhone) */
+body {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Liczby w formularzach treningu — bez strzałek spinnerów */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+::selection {
+  background: rgba(239, 68, 68, 0.35);
+  color: var(--gp-text-primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--gp-border-focus);
+  outline-offset: 2px;
+}
+
+/* -----------------------------------------------------------------------------
+   4. TYPOGRAFIA
+   ----------------------------------------------------------------------------- */
+.gp-display {
+  font-size: var(--gp-text-3xl);
+  font-weight: 800;
+  letter-spacing: var(--gp-tracking-tight);
+  line-height: var(--gp-leading-tight);
+}
+
+.gp-h1 {
+  font-size: var(--gp-text-2xl);
+  font-weight: 700;
+  letter-spacing: var(--gp-tracking-tight);
+}
+
+.gp-h2 {
+  font-size: var(--gp-text-xl);
+  font-weight: 700;
+  letter-spacing: var(--gp-tracking-tight);
+}
+
+.gp-h3 {
+  font-size: var(--gp-text-lg);
+  font-weight: 600;
+}
+
+.gp-label {
+  font-size: var(--gp-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--gp-tracking-wide);
+  color: var(--gp-text-secondary);
+}
+
+.gp-body {
+  font-size: var(--gp-text-base);
+  color: var(--gp-text-primary);
+}
+
+.gp-caption {
+  font-size: var(--gp-text-sm);
+  color: var(--gp-text-secondary);
+}
+
+.gp-mono {
+  font-family: var(--gp-font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* -----------------------------------------------------------------------------
+   5. KARTY & POWIERZCHNIE
+   ----------------------------------------------------------------------------- */
+.gp-card {
+  background: var(--gp-bg-surface);
+  border: 1px solid var(--gp-border-subtle);
+  border-radius: var(--gp-radius-lg);
+  box-shadow: var(--gp-shadow-sm);
+}
+
+.gp-card--elevated {
+  box-shadow: var(--gp-shadow-md);
+}
+
+.gp-card__header {
+  padding: var(--gp-space-5) var(--gp-space-5) var(--gp-space-3);
+  border-bottom: 1px solid var(--gp-border-subtle);
+}
+
+.gp-card__body {
+  padding: var(--gp-space-5);
+}
+
+.gp-card__footer {
+  padding: var(--gp-space-4) var(--gp-space-5);
+  border-top: 1px solid var(--gp-border-subtle);
+}
+
+/* Panel z delikatnym akcentem (KPI, streak) */
+.gp-card--accent {
+  border-color: rgba(239, 68, 68, 0.2);
+  background: linear-gradient(
+    145deg,
+    var(--gp-bg-surface) 0%,
+    rgba(239, 68, 68, 0.04) 100%
+  );
+}
+
+/* -----------------------------------------------------------------------------
+   6. PRZYCISKI
+   ----------------------------------------------------------------------------- */
+.gp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gp-space-2);
+  min-height: 44px; /* touch target */
+  padding: 0 var(--gp-space-5);
+  font-size: var(--gp-text-sm);
+  font-weight: 700;
+  border-radius: var(--gp-radius-md);
+  border: 1px solid transparent;
+  transition:
+    background var(--gp-duration-normal) var(--gp-ease-out),
+    border-color var(--gp-duration-normal) var(--gp-ease-out),
+    transform var(--gp-duration-fast) var(--gp-ease-out),
+    box-shadow var(--gp-duration-normal) var(--gp-ease-out);
+}
+
+.gp-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.gp-btn--primary {
+  background: linear-gradient(180deg, var(--gp-brand-500) 0%, var(--gp-brand-600) 100%);
+  color: #fff;
+  box-shadow: var(--gp-shadow-sm), var(--gp-shadow-glow-brand);
+}
+
+.gp-btn--primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--gp-brand-400) 0%, var(--gp-brand-500) 100%);
+}
+
+.gp-btn--secondary {
+  background: var(--gp-bg-surface-2);
+  color: var(--gp-text-primary);
+  border-color: var(--gp-border-default);
+}
+
+.gp-btn--secondary:hover:not(:disabled) {
+  background: #2a3140;
+  border-color: var(--gp-border-strong);
+}
+
+.gp-btn--ghost {
+  background: transparent;
+  color: var(--gp-text-secondary);
+  border-color: var(--gp-border-subtle);
+}
+
+.gp-btn--ghost:hover:not(:disabled) {
+  color: var(--gp-text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gp-btn--danger {
+  background: transparent;
+  color: var(--gp-danger);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.gp-btn--danger:hover:not(:disabled) {
+  background: var(--gp-danger-muted);
+}
+
+.gp-btn--success {
+  background: var(--gp-success);
+  color: var(--gp-text-inverse);
+}
+
+.gp-btn--block {
+  width: 100%;
+}
+
+.gp-btn--sm {
+  min-height: 36px;
+  padding: 0 var(--gp-space-3);
+  font-size: var(--gp-text-xs);
+}
+
+.gp-btn--lg {
+  min-height: 52px;
+  font-size: var(--gp-text-base);
+  border-radius: var(--gp-radius-lg);
+}
+
+/* Sticky CTA na dole ekranu (kreator treningu) */
+.gp-action-bar {
+  position: sticky;
+  bottom: calc(var(--gp-bottom-nav-height) + env(safe-area-inset-bottom, 0) + var(--gp-space-3));
+  z-index: 50;
+  padding: var(--gp-space-4);
+  margin: var(--gp-space-4) calc(-1 * var(--gp-space-4)) 0;
+  background: linear-gradient(to top, var(--gp-bg-base) 70%, transparent);
+}
+
+@media (min-width: 768px) {
+  .gp-action-bar {
+    bottom: var(--gp-space-4);
+  }
+}
+
+/* -----------------------------------------------------------------------------
+   7. POLA FORMULARZY
+   ----------------------------------------------------------------------------- */
+.gp-input,
+.gp-select,
+.gp-textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--gp-space-3) var(--gp-space-4);
+  font-size: var(--gp-text-sm);
+  color: var(--gp-text-primary);
+  background: var(--gp-bg-surface-2);
+  border: 1px solid var(--gp-border-subtle);
+  border-radius: var(--gp-radius-md);
+  transition: border-color var(--gp-duration-normal), box-shadow var(--gp-duration-normal);
+}
+
+.gp-input::placeholder,
+.gp-textarea::placeholder {
+  color: var(--gp-text-muted);
+}
+
+.gp-input:hover,
+.gp-select:hover,
+.gp-textarea:hover {
+  border-color: var(--gp-border-default);
+}
+
+.gp-input:focus,
+.gp-select:focus,
+.gp-textarea:focus {
+  outline: none;
+  border-color: var(--gp-border-focus);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+}
+
+.gp-textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+/* Duże pole liczbowe — waga / powtórzenia */
+.gp-input--metric {
+  font-family: var(--gp-font-mono);
+  font-size: var(--gp-text-2xl);
+  font-weight: 600;
+  text-align: center;
+  min-height: 52px;
+  letter-spacing: 0.04em;
+}
+
+/* Stepper ± obok metryki */
+.gp-stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--gp-space-2);
+}
+
+.gp-stepper__btn {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: 300;
+  color: var(--gp-text-primary);
+  background: var(--gp-bg-surface-2);
+  border: 1px solid var(--gp-border-default);
+  border-radius: var(--gp-radius-md);
+  transition: background var(--gp-duration-fast), border-color var(--gp-duration-fast);
+}
+
+.gp-stepper__btn:hover {
+  background: #2a3140;
+  border-color: var(--gp-border-strong);
+}
+
+.gp-stepper__btn:active {
+  transform: scale(0.96);
+}
+
+/* Chipy presetów (np. 8, 10, 12 reps) */
+.gp-chip-row {
+  display: flex;
+  gap: var(--gp-space-1);
+}
+
+.gp-chip {
+  flex: 1;
+  min-height: 36px;
+  font-family: var(--gp-font-mono);
+  font-size: var(--gp-text-sm);
+  font-weight: 500;
+  color: var(--gp-text-secondary);
+  background: transparent;
+  border: 1px solid var(--gp-border-subtle);
+  border-radius: var(--gp-radius-sm);
+  transition: all var(--gp-duration-fast);
+}
+
+.gp-chip:hover {
+  border-color: var(--gp-border-default);
+  color: var(--gp-text-primary);
+}
+
+.gp-chip--active {
+  color: var(--gp-accent-400);
+  background: var(--gp-info-muted);
+  border-color: var(--color-border-info);
+}
+
+/* Suwak celu tygodniowego */
+.gp-range {
+  width: 100%;
+  height: 6px;
+  border-radius: var(--gp-radius-full);
+  background: var(--gp-bg-surface-2);
+  accent-color: var(--gp-brand-500);
+  cursor: pointer;
+}
+
+/* -----------------------------------------------------------------------------
+   8. NAWIGACJA
+   ----------------------------------------------------------------------------- */
+.gp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gp-space-4);
+  min-height: var(--gp-header-height);
+  padding-bottom: var(--gp-space-4);
+  margin-bottom: var(--gp-space-6);
+  border-bottom: 1px solid var(--gp-border-subtle);
+}
+
+.gp-logo {
+  font-size: var(--gp-text-xl);
+  font-weight: 800;
+  letter-spacing: var(--gp-tracking-tight);
+  color: var(--gp-text-primary);
+}
+
+.gp-logo span {
+  color: var(--gp-brand-500);
+}
+
+.gp-nav-desktop {
+  display: none;
+  align-items: center;
+  gap: var(--gp-space-2);
+}
+
+@media (min-width: 768px) {
+  .gp-nav-desktop {
+    display: flex;
+  }
+}
+
+.gp-nav-link {
+  padding: var(--gp-space-2) var(--gp-space-4);
+  font-size: var(--gp-text-xs);
+  font-weight: 700;
+  color: var(--gp-text-secondary);
+  background: var(--gp-bg-surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--gp-radius-md);
+  transition: all var(--gp-duration-fast);
+}
+
+.gp-nav-link:hover {
+  color: var(--gp-text-primary);
+  background: #2a3140;
+}
+
+.gp-nav-link--active {
+  color: #fff;
+  background: var(--gp-brand-500);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: var(--gp-shadow-glow-brand);
+}
+
+/* Dolna nawigacja mobile */
+.gp-bottom-nav {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 900;
+  height: var(--gp-bottom-nav-height);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  background: rgba(19, 22, 28, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--gp-border-subtle);
+}
+
+@media (min-width: 768px) {
+  .gp-bottom-nav {
+    display: none;
+  }
+}
+
+.gp-bottom-nav__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 0.5625rem; /* 9px */
+  font-weight: 700;
+  color: var(--gp-text-muted);
+  background: transparent;
+  border: none;
+  transition: color var(--gp-duration-fast);
+}
+
+.gp-bottom-nav__item--active {
+  color: var(--gp-brand-500);
+}
+
+.gp-bottom-nav__icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+/* -----------------------------------------------------------------------------
+   9. BADGES & STATUS
+   ----------------------------------------------------------------------------- */
+.gp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gp-space-1);
+  padding: 0.2rem 0.5rem;
+  font-size: var(--gp-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: var(--gp-radius-sm);
+}
+
+.gp-badge--brand {
+  color: var(--gp-brand-400);
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.gp-badge--muscle {
+  color: var(--gp-accent-400);
+  background: var(--gp-info-muted);
+  border: 1px solid rgba(14, 165, 233, 0.25);
+}
+
+.gp-badge--custom {
+  color: var(--gp-premium);
+  background: var(--gp-premium-muted);
+  border: 1px solid rgba(212, 168, 83, 0.3);
+}
+
+.gp-badge--premium {
+  color: var(--gp-premium);
+  background: var(--gp-premium-muted);
+  border: 1px solid rgba(212, 168, 83, 0.35);
+}
+
+/* -----------------------------------------------------------------------------
+   10. TOAST, MODAL, ALERTY
+   ----------------------------------------------------------------------------- */
+.gp-toast {
+  position: fixed;
+  right: var(--gp-space-4);
+  bottom: calc(var(--gp-bottom-nav-height) + env(safe-area-inset-bottom, 0) + var(--gp-space-5));
+  z-index: 1100;
+  max-width: min(360px, calc(100vw - 2rem));
+  padding: var(--gp-space-4) var(--gp-space-5);
+  font-size: var(--gp-text-sm);
+  font-weight: 700;
+  color: #fff;
+  border-radius: var(--gp-radius-lg);
+  box-shadow: var(--gp-shadow-lg);
+  animation: gp-toast-in var(--gp-duration-slow) var(--gp-ease-out);
+}
+
+@media (min-width: 768px) {
+  .gp-toast {
+    bottom: var(--gp-space-6);
+  }
+}
+
+.gp-toast--success {
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.gp-toast--error {
+  background: linear-gradient(135deg, var(--gp-brand-600), var(--gp-brand-500));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+@keyframes gp-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.gp-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: var(--gp-bg-overlay);
+  backdrop-filter: blur(4px);
+}
+
+.gp-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--gp-space-4);
+}
+
+.gp-modal__panel {
+  width: 100%;
+  max-width: 400px;
+  padding: var(--gp-space-6);
+  text-align: center;
+  background: var(--gp-bg-surface);
+  border: 1px solid var(--gp-border-default);
+  border-radius: var(--gp-radius-xl);
+  box-shadow: var(--gp-shadow-lg);
+  animation: gp-modal-in var(--gp-duration-slow) var(--gp-ease-out);
+}
+
+@keyframes gp-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.gp-alert {
+  padding: var(--gp-space-3) var(--gp-space-4);
+  font-size: var(--gp-text-sm);
+  font-weight: 600;
+  text-align: center;
+  border-radius: var(--gp-radius-md);
+}
+
+.gp-alert--error {
+  color: #fecaca;
+  background: var(--gp-danger-muted);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.gp-alert--success {
+  color: #bbf7d0;
+  background: var(--gp-success-muted);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+/* -----------------------------------------------------------------------------
+   11. LISTY & RANKING (historia, social, atlas)
+   ----------------------------------------------------------------------------- */
+.gp-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gp-space-3);
+  padding: var(--gp-space-3) var(--gp-space-4);
+  background: var(--gp-bg-surface-2);
+  border: 1px solid var(--gp-border-subtle);
+  border-radius: var(--gp-radius-md);
+  transition: border-color var(--gp-duration-fast), background var(--gp-duration-fast);
+}
+
+.gp-list-item:hover {
+  border-color: var(--gp-border-default);
+}
+
+.gp-list-item--me {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.gp-list-item--leader {
+  border-color: rgba(212, 168, 83, 0.3);
+  background: rgba(212, 168, 83, 0.05);
+}
+
+.gp-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 calc(-1 * var(--gp-space-4));
+  padding: 0 var(--gp-space-4);
+}
+
+@media (min-width: 640px) {
+  .gp-table-wrap {
     margin: 0;
     padding: 0;
-    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-
-  input[type="number"]::-webkit-inner-spin-button,
-  input[type="number"]::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
   }
 }
 
-/* Szybkie klasy komponentowe w v4 */
-@utility btn-primary {
-  background-color: var(--color-gymRed);
-  color: white;
-  font-weight: bold;
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  transition: all 0.2s;
-  
-  &:hover {
-    opacity: 0.9;
+.gp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--gp-text-sm);
+}
+
+.gp-table th {
+  padding-bottom: var(--gp-space-2);
+  font-size: var(--gp-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--gp-tracking-wide);
+  color: var(--gp-text-secondary);
+  text-align: left;
+  border-bottom: 1px solid var(--gp-border-default);
+}
+
+.gp-table td {
+  padding: var(--gp-space-3) var(--gp-space-2);
+  border-bottom: 1px solid var(--gp-border-subtle);
+}
+
+.gp-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* -----------------------------------------------------------------------------
+   12. WYKRESY (SVG — Dashboard, WeightChart)
+   ----------------------------------------------------------------------------- */
+.gp-chart {
+  width: 100%;
+  padding: var(--gp-space-3);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--gp-border-subtle);
+  border-radius: var(--gp-radius-lg);
+}
+
+.gp-chart svg {
+  width: 100%;
+  height: auto;
+  max-height: 220px;
+}
+
+.gp-chart__empty {
+  padding: var(--gp-space-8) var(--gp-space-4);
+  text-align: center;
+  font-size: var(--gp-text-sm);
+  font-style: italic;
+  color: var(--gp-text-muted);
+}
+
+/* -----------------------------------------------------------------------------
+   13. KREATOR TRENINGU — kontener
+   ----------------------------------------------------------------------------- */
+.gp-workout {
+  max-width: var(--gp-content-max);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gp-space-4);
+}
+
+.gp-workout__exercise-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gp-space-3);
+  padding: var(--gp-space-3) var(--gp-space-4);
+  cursor: pointer;
+  border-bottom: 1px solid var(--gp-border-subtle);
+  transition: background var(--gp-duration-fast);
+}
+
+.gp-workout__exercise-row--active {
+  background: var(--gp-info-muted);
+}
+
+.gp-workout__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--gp-border-strong);
+}
+
+.gp-workout__dot--done {
+  background: var(--gp-success);
+}
+
+.gp-workout__dot--active {
+  background: var(--gp-accent-400);
+}
+
+/* Timer przerwy — opakowanie (RestTimer root) */
+.gp-rest-timer {
+  border-radius: var(--gp-radius-lg);
+  border: 1px solid var(--gp-border-subtle);
+  background: var(--gp-bg-surface-2);
+  overflow: hidden;
+  transition: border-color var(--gp-duration-normal), background var(--gp-duration-normal);
+}
+
+.gp-rest-timer--running {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: var(--gp-warning-muted);
+}
+
+.gp-rest-timer__bar {
+  height: 3px;
+  background: var(--gp-border-subtle);
+}
+
+.gp-rest-timer__bar-fill {
+  height: 100%;
+  background: var(--gp-warning);
+  transition: width 1s linear;
+}
+
+/* -----------------------------------------------------------------------------
+   14. KPI / STATYSTYKI
+   ----------------------------------------------------------------------------- */
+.gp-kpi-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--gp-space-4);
+}
+
+@media (min-width: 640px) {
+  .gp-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
-  &:active {
-    transform: scale(0.95);
+}
+
+@media (min-width: 1024px) {
+  .gp-kpi-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.gp-kpi {
+  position: relative;
+  padding: var(--gp-space-5);
+  overflow: hidden;
+  background: var(--gp-bg-surface);
+  border: 1px solid var(--gp-border-subtle);
+  border-radius: var(--gp-radius-lg);
+}
+
+.gp-kpi__value {
+  font-family: var(--gp-font-mono);
+  font-size: 2.25rem;
+  font-weight: 800;
+  letter-spacing: var(--gp-tracking-tight);
+  line-height: 1;
+}
+
+.gp-kpi__label {
+  margin-top: var(--gp-space-2);
+  font-size: var(--gp-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--gp-tracking-wide);
+  color: var(--gp-text-secondary);
+}
+
+/* -----------------------------------------------------------------------------
+   15. UTILITIES
+   ----------------------------------------------------------------------------- */
+.gp-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.gp-text-brand { color: var(--gp-brand-500); }
+.gp-text-muted { color: var(--gp-text-muted); }
+.gp-text-success { color: var(--gp-success); }
+.gp-text-center { text-align: center; }
+.gp-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gp-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gp-space-2);
+  font-size: var(--gp-text-sm);
+  font-weight: 700;
+  color: var(--gp-brand-500);
+  animation: gp-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes gp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.gp-page {
+  padding: var(--gp-space-4);
+  padding-bottom: calc(var(--gp-bottom-nav-height) + env(safe-area-inset-bottom, 0) + var(--gp-space-6));
+}
+
+@media (min-width: 768px) {
+  .gp-page {
+    padding: var(--gp-space-6);
+    padding-bottom: var(--gp-space-6);
+  }
+}
+
+/* -----------------------------------------------------------------------------
+   16. REDUCED MOTION
+   ----------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 </file>
@@ -1658,6 +2684,32 @@ router.get('/', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
+<file path="frontend/index.html">
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GymPatico</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+</file>
+
 <file path="frontend/package.json">
 {
   "name": "frontend",
@@ -1694,36 +2746,50 @@ module.exports = router;
 }
 </file>
 
-<file path="frontend/src/main.jsx">
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
+<file path="frontend/src/index.css">
+@import "tailwindcss";
 
-// --- GLOBALNY INTERCEPTOR SIECIOWY (FAIL-SAFE FOR JWT EXPIRATION) ---
-const { fetch: originalFetch } = window;
-window.fetch = async (...args) => {
-  const response = await originalFetch(...args);
-  
-  // Jeśli serwer odbił nas z powodu braku lub wygaśnięcia tokenu
-  if (response.status === 401 || response.status === 403) {
-    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
-    
-    // BEZPIECZNIK: Ignorujemy próby autoryzacji (złe hasło nie może triggerować globalnego wylogowania)
-    if (url && !url.includes('/api/auth/login') && !url.includes('/api/auth/register')) {
-      // Emitujemy globalne zdarzenie w oknie przeglądarki
-      window.dispatchEvent(new Event('gympatico-unauthorized'));
-    }
+/* Konfiguracja motywu w stylu Tailwind v4 */
+@theme {
+  --color-gymRed: #ef4444;
+  --color-gymDark: #0c0e12;
+  --color-gymCard: #1a1f27;
+}
+
+/* Globalne reguły dla aplikacji GymPatico */
+@layer base {
+  html, body {
+    background-color: var(--color-gymDark);
+    color: white;
+    margin: 0;
+    padding: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  
-  return response;
-};
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
+/* Szybkie klasy komponentowe w v4 */
+@utility btn-primary {
+  background-color: var(--color-gymRed);
+  color: white;
+  font-weight: bold;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  transition: all 0.2s;
+  
+  &:hover {
+    opacity: 0.9;
+  }
+  &:active {
+    transform: scale(0.95);
+  }
+}
 </file>
 
 <file path="frontend/src/views/History.jsx">
@@ -2451,6 +3517,39 @@ export function useWorkouts(token, exercises) {
     handleUpdateWorkout
   }
 }
+</file>
+
+<file path="frontend/src/main.jsx">
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import './styles.css'
+import App from './App.jsx'
+
+// --- GLOBALNY INTERCEPTOR SIECIOWY (FAIL-SAFE FOR JWT EXPIRATION) ---
+const { fetch: originalFetch } = window;
+window.fetch = async (...args) => {
+  const response = await originalFetch(...args);
+  
+  // Jeśli serwer odbił nas z powodu braku lub wygaśnięcia tokenu
+  if (response.status === 401 || response.status === 403) {
+    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+    
+    // BEZPIECZNIK: Ignorujemy próby autoryzacji (złe hasło nie może triggerować globalnego wylogowania)
+    if (url && !url.includes('/api/auth/login') && !url.includes('/api/auth/register')) {
+      // Emitujemy globalne zdarzenie w oknie przeglądarki
+      window.dispatchEvent(new Event('gympatico-unauthorized'));
+    }
+  }
+  
+  return response;
+};
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
 </file>
 
 <file path="backend/routes/friends.js">
