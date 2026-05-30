@@ -2,9 +2,9 @@
 
 /* Konfiguracja motywu w stylu Tailwind v4 */
 @theme {
-  --color-gymRed: #ff4757;
-  --color-gymDark: #121212;
-  --color-gymCard: #1e1e1e;
+  --color-gymRed: #ef4444;
+  --color-gymDark: #0c0e12;
+  --color-gymCard: #1a1f27;
 }
 
 /* Globalne reguły dla aplikacji GymPatico */
