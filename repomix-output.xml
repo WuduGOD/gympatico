@@ -44,6 +44,7 @@ The content is organized as follows:
 backend/config/db.js
 backend/index.js
 backend/middleware/auth.js
+backend/middleware/checkLimits.js
 backend/package.json
 backend/routes/auth.js
 backend/routes/exercises.js
@@ -125,91 +126,87 @@ const authenticateToken = (req, res, next) => {
 module.exports = authenticateToken;
 </file>
 
-<file path="backend/routes/exercises.js">
-const express = require('express');
-const router = express.Router();
+<file path="backend/middleware/checkLimits.js">
+// backend/middleware/checkLimits.js
 const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth'); // Twoje middleware do weryfikacji JWT
 
-// 1. Pobieranie atlasu ćwiczeń (Globalne + Prywatne zalogowanego użytkownika)
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
+/**
+ * Fabryka middleware do twardej weryfikacji limitów biznesowych planu FREE
+ * @param {('workouts'|'templates'|'exercises'|'friends')} resourceType - Typ sprawdzanego zasobu
+ */
+const checkLimits = (resourceType) => {
+  return async (req, res, next) => {
+    const userId = req.user.userId;
 
-  try {
-    // Pobieramy ćwiczenia, gdzie user_id jest NULL (systemowe) LUB należy do zalogowanego usera
-    const query = `
-      SELECT id, name, muscle_group as "muscle_group", user_id as "user_id"
-      FROM exercises
-      WHERE user_id IS NULL OR user_id = $1
-      ORDER BY name ASC
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas pobierania atlasu ćwiczeń", details: error.message });
-  }
-});
+    try {
+      // 1. Pobieramy aktualną rolę i status premium bezpośrednio z bazy danych (Fail-Safe)
+      const userCheck = await pool.query(
+        'SELECT is_premium as "isPremium", role FROM users WHERE id = $1',
+        [userId]
+      );
 
-// 2. Dodawanie własnego ćwiczenia przez użytkownika
-router.post('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { name, muscleGroup } = req.body;
+      if (userCheck.rowCount === 0) {
+        return res.status(404).json({ error: "Użytkownik nie istnieje." });
+      }
 
-  if (!name || !muscleGroup) {
-    return res.status(400).json({ error: "Nazwa ćwiczenia oraz grupa mięśniowa są wymagane!" });
-  }
+      const { isPremium, role } = userCheck.rows[0];
 
-  try {
-    // Sprawdzamy duplikaty w zakresie globalnym oraz prywatnym tego użytkownika
-    const checkQuery = `
-      SELECT id FROM exercises 
-      WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2)
-    `;
-    const checkResult = await pool.query(checkQuery, [name.trim(), userId]);
-    if (checkResult.rows.length > 0) {
-      return res.status(400).json({ error: "Ćwiczenie o takiej nazwie już istnieje w Twoim atlasie!" });
+      // BEZPIECZNIK: Konta Premium oraz konta klasy TRAINER mają całkowicie zniesione limity
+      if (isPremium || role === 'TRAINER') {
+        return next();
+      }
+
+      // 2. WERYFIKACJA LIMITÓW DLA UŻYTKOWNIKÓW Z POZIOMU FREE
+      
+      // A. Limit Treningów (Max 10)
+      if (resourceType === 'workouts') {
+        const countRes = await pool.query('SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1', [userId]);
+        if (parseInt(countRes.rows[0].count, 10) >= 10) {
+          return res.status(403).json({ error: "Osiągnięto limit planu darmowego (maksymalnie 10 treningów). Odblokuj wersję Premium 🦾 lub usuń stare sesje, aby zapisać nową!" });
+        }
+      }
+
+      // B. Limit Szablonów (Max 3)
+      if (resourceType === 'templates') {
+        const countRes = await pool.query('SELECT COUNT(*) FROM workout_templates WHERE user_id = $1', [userId]);
+        if (parseInt(countRes.rows[0].count, 10) >= 3) {
+          return res.status(403).json({ error: "Osiągnięto limit planu darmowego (maksymalnie 3 szablony). Przejdź na wersję Premium 💾, aby tworzyć nieograniczone plany!" });
+        }
+      }
+
+      // C. Limit Własnych Ćwiczeń (Max 5)
+      if (resourceType === 'exercises') {
+        const countRes = await pool.query('SELECT COUNT(*) FROM exercises WHERE user_id = $1', [userId]);
+        if (parseInt(countRes.rows[0].count, 10) >= 5) {
+          return res.status(403).json({ error: "Osiągnięto limit planu darmowego (maksymalnie 5 własnych ćwiczeń). Przejdź na wersję Premium 📚, aby rozbudowywać atlas!" });
+        }
+      }
+
+      // --- POPRAWKA: D. Limit Znajomych (Maksymalnie 5 zaakceptowanych znajomości w gangu) ---
+      if (resourceType === 'friends') {
+        const countQuery = `
+          SELECT COUNT(*) FROM friendships 
+          WHERE status = 'ACCEPTED' AND (sender_id = $1 OR receiver_id = $1)
+        `;
+        const countRes = await pool.query(countQuery, [userId]);
+        const currentFriendsCount = parseInt(countRes.rows[0].count, 10);
+
+        if (currentFriendsCount >= 5) {
+          return res.status(403).json({
+            error: "Osiągnięto limit planu darmowego (maksymalnie 5 znajomych w gangu). Odblokuj wersję Premium 👥, aby móc zapraszać kolejnych deweloperów do wspólnej rywalizacji!"
+          });
+        }
+      }
+
+      // Jeśli użytkownik mieści się w limitach — puszczamy żądanie dalej
+      next();
+    } catch (error) {
+      res.status(500).json({ error: "Błąd serwera podczas weryfikacji limitów konta", details: error.message });
     }
+  };
+};
 
-    const insertQuery = `
-      INSERT INTO exercises (name, muscle_group, user_id)
-      VALUES ($1, $2, $3)
-      RETURNING id, name, muscle_group as "muscle_group", user_id as "user_id"
-    `;
-    const result = await pool.query(insertQuery, [name.trim(), muscleGroup, userId]);
-    
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas dodawania ćwiczenia", details: error.message });
-  }
-});
-
-// 3. Usuwanie własnego ćwiczenia przez użytkownika
-router.delete('/:id', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const exerciseId = req.params.id;
-
-  try {
-    // Klauzula WHERE chroni przed usunięciem ćwiczeń globalnych (NULL) lub innych userów
-    const deleteQuery = 'DELETE FROM exercises WHERE id = $1 AND user_id = $2 RETURNING *';
-    const result = await pool.query(deleteQuery, [exerciseId, userId]);
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Nie znaleziono ćwiczenia lub nie masz uprawnień do jego usunięcia." });
-    }
-
-    res.json({ message: "Ćwiczenie zostało pomyślnie usunięte z Twojego atlasu." });
-  } catch (error) {
-    // Obsługa klucza obcego (Foreign Key Constraint) — ochrona integralności danych
-    if (error.code === '23503') {
-      return res.status(400).json({ 
-        error: "Nie można usunąć ćwiczenia, ponieważ zostało już użyte w zapisanych treningach! Usuń najpierw te treningi z historii." 
-      });
-    }
-    res.status(500).json({ error: "Błąd serwera podczas usuwania ćwiczenia", details: error.message });
-  }
-});
-
-module.exports = router;
+module.exports = checkLimits;
 </file>
 
 <file path="backend/routes/stats.js">
@@ -283,121 +280,14 @@ router.get('/', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="backend/routes/templates.js">
-const express = require('express');
-const router = express.Router();
-const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth'); // Zakładam, że tam masz middleware auth
-
-// 1. POBRANIE WSZYSTKICH SZABLONÓW UŻYTKOWNIKA
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-
-  try {
-    // Agregujemy serie bezpośrednio w bazie za pomocą json_agg, oszczędzając pamięć RAM serwera
-    const query = `
-      SELECT wt.id, wt.name, wt.created_at,
-             COALESCE(
-               json_agg(
-                 json_build_object(
-                   'exerciseId', ts.exercise_id,
-                   'weight', ts.weight,
-                   'reps', ts.reps,
-                   'order', ts.series_order
-                 ) ORDER BY ts.series_order ASC
-               ) FILTER (WHERE ts.id IS NOT NULL), '[]'
-             ) as series
-      FROM workout_templates wt
-      LEFT JOIN template_series ts ON wt.id = ts.template_id
-      WHERE wt.user_id = $1
-      GROUP BY wt.id
-      ORDER BY wt.name ASC
-    `;
-    const { rows } = await pool.query(query, [userId]);
-    res.json(rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd pobierania szablonów", details: error.message });
-  }
-});
-
-// 2. TWORZENIE NOWEGO SZABLONU (TRANSAKCYJNE)
-router.post('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  let { name, series } = req.body;
-
-  // Walidacja Fail-Fast
-  if (!name || !name.trim() || !Array.isArray(series) || series.length === 0) {
-    return res.status(400).json({ error: "Nazwa szablonu oraz zestaw serii są wymagane!" });
-  }
-
-  name = name.trim();
-  if (name.length < 3 || name.length > 100) {
-    return res.status(400).json({ error: "Nazwa szablonu musi mieć od 3 do 100 znaków!" });
-  }
-
-  try {
-    await pool.query('BEGIN');
-
-    // Wstawienie nagłówka szablonu
-    const templateResult = await pool.query(
-      "INSERT INTO workout_templates (user_id, name) VALUES ($1, $2) RETURNING id, name",
-      [userId, name]
-    );
-    const templateId = templateResult.rows[0].id;
-
-    // Masowe wstawianie serii w pętli
-    for (let i = 0; i < series.length; i++) {
-      const s = series[i];
-      if (!s.exerciseId || s.weight === undefined || !s.reps) {
-        throw new Error("Niekompletne dane serii w szablonie.");
-      }
-
-      await pool.query(
-        `INSERT INTO template_series (template_id, exercise_id, weight, reps, series_order)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [templateId, s.exerciseId, s.weight, s.reps, s.order || (i + 1)]
-      );
-    }
-
-    await pool.query('COMMIT');
-    res.status(201).json({ message: "Szablon treningowy został zapisany! 💾", templateId });
-  } catch (error) {
-    await pool.query('ROLLBACK');
-    res.status(500).json({ error: "Błąd podczas zapisu szablonu", details: error.message });
-  }
-});
-
-// 3. USUNIĘCIE SZABLONU (KASKADOWE PRZEZ BAZĘ)
-router.delete('/:id', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { id } = req.params;
-
-  try {
-    const result = await pool.query(
-      "DELETE FROM workout_templates WHERE id = $1 AND user_id = $2",
-      [id, userId]
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Nie znaleziono szablonu lub brak uprawnień." });
-    }
-
-    res.json({ message: "Szablon usunięty pomyślnie. ✕" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd usuwania szablonu", details: error.message });
-  }
-});
-
-module.exports = router;
-</file>
-
 <file path="backend/routes/weight.js">
+// backend/routes/weight.js
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
 
-// Dodanie wagi
+// 1. DODAWANIE POMIARU WAGI
 router.post('/', authenticateToken, async (req, res) => {
   const { weight } = req.body;
   const userId = req.user.userId;
@@ -414,7 +304,6 @@ router.post('/', authenticateToken, async (req, res) => {
 
   try {
     const query = 'INSERT INTO weight_logs (user_id, weight) VALUES ($1, $2) RETURNING *';
-    // Przekazujemy czystą liczbę zamiast .toString()
     const result = await pool.query(query, [userId, numericWeight]); 
     res.status(201).json({ message: "Waga zapisana! 📉", log: result.rows[0] });
   } catch (error) {
@@ -422,17 +311,45 @@ router.post('/', authenticateToken, async (req, res) => {
   }
 });
 
-// Pobranie historii wagi
+// 2. POBIERANIE HISTORII WAGI (ZABEZPIECZONY LIMIT DLA PLANU FREE)
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
+  
   try {
-    const result = await pool.query('SELECT * FROM weight_logs WHERE user_id = $1 ORDER BY date DESC', [userId]);
+    // Sprawdzamy status premium bezpośrednio w bazie danych (Fail-Safe)
+    const userCheck = await pool.query(
+      'SELECT is_premium as "isPremium", role FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userCheck.rowCount === 0) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    const { isPremium, role } = userCheck.rows[0];
+
+    // Budujemy dynamiczny filtr LIMIT - użytkownicy FREE widzą tylko 7 ostatnich punktów
+    let sqlLimitFilter = '';
+    if (!isPremium && role !== 'TRAINER') {
+      sqlLimitFilter = 'LIMIT 7';
+    }
+
+    const query = `
+      SELECT id, user_id, weight, date 
+      FROM weight_logs 
+      WHERE user_id = $1 
+      ORDER BY date DESC 
+      ${sqlLimitFilter}
+    `;
+    
+    const result = await pool.query(query, [userId]);
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: "Błąd pobierania wagi", details: error.message });
   }
 });
 
+// 3. USUWANIE POMIARU WAGI
 router.delete('/:id', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   const logId = req.params.id;
@@ -448,7 +365,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 
     res.json({ message: "Pomiar wagi został pomyślnie usunięty." });
   } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas usuwania wpisu wagi", details: error.message });
+    res.status(500).json({ error: "Błąd serwera podczas neuromapowania i usuwania wpisu wagi", details: error.message });
   }
 });
 
@@ -1096,205 +1013,6 @@ export default function ExercisesList({ exercises, onAddExercise, onDeleteExerci
 }
 </file>
 
-<file path="frontend/src/views/History.jsx">
-import React, { useState } from 'react'
-
-export default function History({ workoutsHistory, onDeleteWorkout, onLoadMoreWorkouts, hasMoreWorkouts, onUpdateWorkout }) {
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [workoutToDelete, setWorkoutToDelete] = useState(null)
-
-  // STANY DLA OBSŁUGI INLINE EDIT
-  const [editingSessionId, setEditingSessionId] = useState(null)
-  const [editName, setEditName] = useState('')
-  const [editComment, setEditComment] = useState('')
-
-  const initiateDelete = (id) => {
-    setWorkoutToDelete(id)
-    setIsModalOpen(true)
-  }
-
-  const confirmDelete = () => {
-    if (workoutToDelete) {
-      onDeleteWorkout(workoutToDelete)
-    }
-    closeModal()
-  }
-
-  const closeModal = () => {
-    setIsModalOpen(false)
-    setWorkoutToDelete(null)
-  }
-
-  // Aktywacja trybu edycji dla konkretnej karty sesji
-  const startEditing = (w) => {
-    setEditingSessionId(w.id)
-    setEditName(w.name)
-    setEditComment(w.comment || '')
-  }
-
-  // Wyłączenie trybu edycji bez zapisu danych
-  const cancelEditing = () => {
-    setEditingSessionId(null)
-    setEditName('')
-    setEditComment('')
-  }
-
-  // Zapisanie zmian i przesłanie żądania do bazy
-  const saveEditing = (id) => {
-    if (!editName.trim()) return
-    onUpdateWorkout(id, editName.trim(), editComment.trim())
-    setEditingSessionId(null)
-  }
-
-  return (
-    <section className="bg-gymCard p-4 md:p-6 rounded-xl text-left shadow-lg relative">
-      <h2 className="text-xl md:text-2xl font-bold mb-4 tracking-tight">Twoja historia aktywności 📅</h2>
-      
-      {workoutsHistory.length === 0 ? (
-        <p className="text-zinc-500 italic mt-4 text-center py-6">Brak wpisów w historii.</p>
-      ) : (
-        <div className="flex flex-col gap-4 mt-4">
-          {workoutsHistory.map(w => {
-            const isEditing = w.id === editingSessionId
-
-            return (
-              <div key={w.id} className="bg-[#2d2d2d] p-4 md:p-5 rounded-lg border-l-4 border-gymRed shadow-md transition-all hover:border-l-6">
-                
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 sm:gap-4">
-                  
-                  {/* WARUNKOWY RENDERER: TRYB EDYCJI VS TRYB PODGLĄDU */}
-                  <div className="flex-1 flex flex-col gap-2">
-                    {isEditing ? (
-                      <div className="flex flex-col gap-2 max-w-md w-full">
-                        <input
-                          type="text"
-                          value={editName}
-                          onChange={e => setEditName(e.target.value)}
-                          className="p-2 text-sm font-bold text-white bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
-                          placeholder="Nazwa treningu"
-                          required
-                        />
-                        <input
-                          type="text"
-                          value={editComment}
-                          onChange={e => setEditComment(e.target.value)}
-                          className="p-2 text-xs text-zinc-300 bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
-                          placeholder="Dodaj komentarz (opcjonalnie)..."
-                        />
-                      </div>
-                    ) : (
-                      <>
-                        <h3 className="text-base md:text-lg font-bold text-gymRed leading-tight">{w.name}</h3>
-                        <span className="text-zinc-400 text-xs">{new Date(w.startedAt).toLocaleString()}</span>
-                      </>
-                    )}
-                  </div>
-                  
-                  {/* ZESTAW PRZYCISKÓW AKCJI */}
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    {isEditing ? (
-                      <>
-                        <button 
-                          onClick={cancelEditing} 
-                          className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white cursor-pointer"
-                        >
-                          Anuluj
-                        </button>
-                        <button 
-                          onClick={() => saveEditing(w.id)} 
-                          className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-bold transition-all hover:bg-emerald-500 active:scale-95 cursor-pointer shadow-md"
-                        >
-                          Zapisz ✓
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button 
-                          onClick={() => startEditing(w)} 
-                          className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white active:scale-95 cursor-pointer"
-                        >
-                          Edytuj ✏️
-                        </button>
-                        <button 
-                          onClick={() => initiateDelete(w.id)} 
-                          className="px-3 py-1.5 rounded border border-gymRed text-gymRed text-xs font-bold bg-transparent transition-all hover:bg-gymRed hover:text-white active:scale-95 cursor-pointer"
-                        >
-                          Usuń ✕
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* NOTATKA KOMENTARZA (Renderowana warunkowo poza trybem edycji) */}
-                {!isEditing && w.comment && (
-                  <p className="text-zinc-400 italic mt-3 text-xs md:text-sm bg-zinc-800/40 p-2 rounded border-l border-zinc-700">
-                    "{w.comment}"
-                  </p>
-                )}
-                
-                {/* TABELA SERII TRENINGOWYCH */}
-                <div className="overflow-x-auto mt-4 -mx-4 px-4 sm:mx-0 sm:px-0">
-                  <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
-                    <thead>
-                      <tr className="text-left border-b border-zinc-700 text-zinc-400 text-xs font-semibold uppercase tracking-wider">
-                        <th className="pb-2">Ćwiczenie</th>
-                        <th className="pb-2 text-center">Seria</th>
-                        <th className="pb-2 text-center">Obciążenie</th>
-                        <th className="pb-2 text-center">Reps</th>
-                        <th className="pb-2 text-right">Est. 1RM</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-800 text-xs md:text-sm">
-                      {w.series.map(s => (
-                        <tr key={s.id} className="hover:bg-zinc-800/30 transition-colors">
-                          <td className="py-2.5 font-medium pr-2 text-zinc-200">{s.exerciseName}</td>
-                          <td className="py-2.5 text-center text-zinc-400">{s.order}</td>
-                          <td className="py-2.5 text-center text-zinc-200 font-semibold">{s.weight} kg</td>
-                          <td className="py-2.5 text-center text-zinc-400">{s.reps}</td>
-                          <td className="py-2.5 text-right text-gymRed font-bold">
-                            {s.estimatedOneRM ? `${s.estimatedOneRM.toFixed(1)} kg` : '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )
-          })}
-
-          {hasMoreWorkouts && (
-            <button 
-              onClick={onLoadMoreWorkouts} 
-              className="w-full py-3.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white border border-zinc-800 rounded-lg font-bold text-sm transition-all active:scale-[0.99] cursor-pointer mt-2"
-            >
-              Załaduj starsze treningi 🔄
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* --- AUTORSKI MODAL POTWIERDZENIA USUWANIA --- */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity"></div>
-          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
-            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Usunąć ten trening?</h3>
-            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja jest bezpowrotna. Dane o serii oraz rekordy 1RM znikną z profilu.</p>
-            <div className="flex gap-3">
-              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm transition-all active:scale-95 cursor-pointer border border-zinc-800">Anuluj</button>
-              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm transition-all active:scale-95 cursor-pointer shadow-lg shadow-red-950/20">Tak, usuń</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
-  )
-}
-</file>
-
 <file path="frontend/src/views/LoginView.jsx">
 import React, { useState } from 'react'
 import { API_BASE_URL } from '../config/api'
@@ -1532,155 +1250,212 @@ module.exports = pool;
 }
 </file>
 
-<file path="backend/routes/auth.js">
+<file path="backend/routes/exercises.js">
 const express = require('express');
 const router = express.Router();
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
-const rateLimit = require('express-rate-limit');
+const authenticateToken = require('../middleware/auth'); // Twoje middleware do weryfikacji JWT
+const checkLimits = require('../middleware/checkLimits');
 
-// KONFIGURACJA RATE LIMITERA DLA STRONY AUTH
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // Okno czasowe: 15 minut
-  max: 10, // Maksymalnie 10 prób z jednego adresu IP w danym oknie
-  
-  // Format odpowiedzi dopasowany do frontendu (obsługa catch(err) i showToast)
-  message: { 
-    error: "Zbyt wiele nieudanych prób! Twój adres IP został tymczasowo zablokowany. Spróbuj ponownie za 15 minut." 
-  },
-  
-  standardHeaders: true, // Zwraca informacje o limicie w nagłówkach RateLimit-*
-  legacyHeaders: false,  // Wyłącza przestarzałe nagłówki X-RateLimit-*
-});
-
-// Rejestracja
-router.post('/register', authLimiter, async (req, res) => {
-  let { email, password, nick } = req.body;
-
-  // 1. Wstępna walidacja obecności pól
-  if (!email || !password || !nick) {
-    return res.status(400).json({ error: "Wszystkie pola (email, password, nick) są wymagane!" });
-  }
-
-  // 2. Sanitization & Trim (oczyszczanie ze skrajnych spacji)
-  email = email.trim();
-  nick = nick.trim();
-
-  // 3. Twarda walidacja długości (Input Length Validation)
-  if (nick.length < 2 || nick.length > 50) {
-    return res.status(400).json({ error: "Nick musi mieć od 2 do 50 znaków!" });
-  }
-
-  if (email.length > 254) {
-    return res.status(400).json({ error: "Adres e-mail jest zbyt długi!" });
-  }
-
-  if (password.length < 8 || password.length > 100) {
-    return res.status(400).json({ error: "Hasło musi mieć od 8 do 100 znaków!" });
-  }
-
-  try {
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(password, saltRounds);
-
-    const query = `
-      INSERT INTO users (email, password_hash, nick) 
-      VALUES ($1, $2, $3) 
-      RETURNING id, email, nick, created_at
-    `;
-    const result = await pool.query(query, [email, passwordHash, nick]);
-
-    res.status(201).json({ message: "Użytkownik zarejestrowany! 🏋️‍♂️", user: result.rows[0] });
-  } catch (error) {
-    if (error.code === '23505') {
-      return res.status(400).json({ error: "Ten adres e-mail lub nick jest już zajęty!" });
-    }
-    res.status(500).json({ error: "Błąd serwera podczas rejestracji", details: error.message });
-  }
-});
-
-// Logowanie
-router.post('/login', authLimiter, async (req, res) => {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email i hasło są wymagane!" });
-  }
-
-  try {
-    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (userResult.rows.length === 0) {
-      return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
-    }
-
-    const user = userResult.rows[0];
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-
-    if (!isPasswordValid) {
-      return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
-    }
-
-    const token = jwt.sign(
-      { userId: user.id, nick: user.nick },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    res.json({
-      message: "Zalogowano pomyślnie! 🦾",
-      token,
-      user: { id: user.id, email: user.email, nick: user.nick, isPremium: user.is_premium }
-    });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas logowania", details: error.message });
-  }
-});
-
-// Pobranie aktualnych danych profilu użytkownika (w tym świeżego streaka)
-router.get('/me', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT id, email, nick, current_streak, is_premium, weekly_target_workouts FROM users WHERE id = $1',
-      [req.user.userId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Użytkownik nie istnieje." });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas pobierania profilu", details: error.message });
-  }
-});
-
-router.put('/weekly-target', authenticateToken, async (req, res) => {
-  const { weeklyTarget } = req.body;
+// 1. Pobieranie atlasu ćwiczeń (Globalne + Prywatne zalogowanego użytkownika)
+router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
-  // Walidacja wejścia - cel musi być logiczną liczbą dni w tygodniu (1-7)
-  const targetNum = parseInt(weeklyTarget);
-  if (isNaN(targetNum) || targetNum < 1 || targetNum > 7) {
-    return res.status(400).json({ error: "Cel tygodniowy musi być liczbą od 1 do 7!" });
+  try {
+    // Pobieramy ćwiczenia, gdzie user_id jest NULL (systemowe) LUB należy do zalogowanego usera
+    const query = `
+      SELECT id, name, muscle_group as "muscle_group", user_id as "user_id"
+      FROM exercises
+      WHERE user_id IS NULL OR user_id = $1
+      ORDER BY name ASC
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas pobierania atlasu ćwiczeń", details: error.message });
+  }
+});
+
+// 2. Dodawanie własnego ćwiczenia przez użytkownika
+router.post('/', authenticateToken, checkLimits('exercises'), async (req, res) => {
+  const userId = req.user.userId;
+  const { name, muscleGroup } = req.body;
+
+  if (!name || !muscleGroup) {
+    return res.status(400).json({ error: "Nazwa ćwiczenia oraz grupa mięśniowa są wymagane!" });
   }
 
   try {
-    const query = `
-      UPDATE users 
-      SET weekly_target_workouts = $1 
-      WHERE id = $2 
-      RETURNING weekly_target_workouts
+    // Sprawdzamy duplikaty w zakresie globalnym oraz prywatnym tego użytkownika
+    const checkQuery = `
+      SELECT id FROM exercises 
+      WHERE LOWER(name) = LOWER($1) AND (user_id IS NULL OR user_id = $2)
     `;
-    const result = await pool.query(query, [targetNum, userId]);
+    const checkResult = await pool.query(checkQuery, [name.trim(), userId]);
+    if (checkResult.rows.length > 0) {
+      return res.status(400).json({ error: "Ćwiczenie o takiej nazwie już istnieje w Twoim atlasie!" });
+    }
+
+    const insertQuery = `
+      INSERT INTO exercises (name, muscle_group, user_id)
+      VALUES ($1, $2, $3)
+      RETURNING id, name, muscle_group as "muscle_group", user_id as "user_id"
+    `;
+    const result = await pool.query(insertQuery, [name.trim(), muscleGroup, userId]);
     
-    res.json({ 
-      message: "Cel zaktualizowany! 🎯", 
-      weekly_target_workouts: result.rows[0].weekly_target_workouts 
-    });
+    res.status(201).json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas aktualizacji celu", details: error.message });
+    res.status(500).json({ error: "Błąd serwera podczas dodawania ćwiczenia", details: error.message });
+  }
+});
+
+// 3. Usuwanie własnego ćwiczenia przez użytkownika
+router.delete('/:id', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const exerciseId = req.params.id;
+
+  try {
+    // Klauzula WHERE chroni przed usunięciem ćwiczeń globalnych (NULL) lub innych userów
+    const deleteQuery = 'DELETE FROM exercises WHERE id = $1 AND user_id = $2 RETURNING *';
+    const result = await pool.query(deleteQuery, [exerciseId, userId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Nie znaleziono ćwiczenia lub nie masz uprawnień do jego usunięcia." });
+    }
+
+    res.json({ message: "Ćwiczenie zostało pomyślnie usunięte z Twojego atlasu." });
+  } catch (error) {
+    // Obsługa klucza obcego (Foreign Key Constraint) — ochrona integralności danych
+    if (error.code === '23503') {
+      return res.status(400).json({ 
+        error: "Nie można usunąć ćwiczenia, ponieważ zostało już użyte w zapisanych treningach! Usuń najpierw te treningi z historii." 
+      });
+    }
+    res.status(500).json({ error: "Błąd serwera podczas usuwania ćwiczenia", details: error.message });
+  }
+});
+
+module.exports = router;
+</file>
+
+<file path="backend/routes/templates.js">
+// backend/routes/templates.js
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+const checkLimits = require('../middleware/checkLimits');
+
+// 1. POBRANIE WSZYSTKICH SZABLONÓW UŻYTKOWNIKA
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const query = `
+      SELECT wt.id, wt.name, wt.created_at,
+             COALESCE(
+               json_agg(
+                 json_build_object(
+                   'exerciseId', ts.exercise_id,
+                   'weight', ts.weight,
+                   'reps', ts.reps,
+                   'order', ts.series_order
+                 ) ORDER BY ts.series_order ASC
+               ) FILTER (WHERE ts.id IS NOT NULL), '[]'
+             ) as series
+      FROM workout_templates wt
+      LEFT JOIN template_series ts ON wt.id = ts.template_id
+      WHERE wt.user_id = $1
+      GROUP BY wt.id
+      ORDER BY wt.name ASC
+    `;
+    const { rows } = await pool.query(query, [userId]);
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania szablonów", details: error.message });
+  }
+});
+
+// 2. TWORZENIE NOWEGO SZABLONU (TRANSAKCYJNE + BŁYSKAWICZNY UNNEST)
+router.post('/', authenticateToken, checkLimits('templates'), async (req, res) => {
+  const userId = req.user.userId;
+  let { name, series } = req.body;
+
+  if (!name || !name.trim() || !Array.isArray(series) || series.length === 0) {
+    return res.status(400).json({ error: "Nazwa szablonu oraz zestaw serii są wymagane!" });
+  }
+
+  name = name.trim();
+  if (name.length < 3 || name.length > 100) {
+    return res.status(400).json({ error: "Nazwa szablonu musi mieć od 3 do 100 znaków!" });
+  }
+
+  // Pobieramy dedykowanego klienta z puli dla bezpiecznej transakcji
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Wstawienie nagłówka szablonu
+    const templateResult = await client.query(
+      "INSERT INTO workout_templates (user_id, name) VALUES ($1, $2) RETURNING id, name",
+      [userId, name]
+    );
+    const templateId = templateResult.rows[0].id;
+
+    // Przygotowanie płaskich tablic kolumn pod mechanizm UNNEST
+    const exerciseIds = [];
+    const weights = [];
+    const reps = [];
+    const orders = [];
+
+    for (let i = 0; i < series.length; i++) {
+      const s = series[i];
+      if (!s.exerciseId || s.weight === undefined || !s.reps) {
+        throw new Error("Niekompletne dane serii w szablonie.");
+      }
+      exerciseIds.push(s.exerciseId);
+      weights.push(s.weight);
+      reps.push(s.reps);
+      orders.push(s.order || (i + 1));
+    }
+
+    // Wykonujemy JEDNO zapytanie dla wszystkich wierszy (0 marnowania round-tripów)
+    const bulkInsertQuery = `
+      INSERT INTO template_series (template_id, exercise_id, weight, reps, series_order)
+      SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[])
+    `;
+    
+    await client.query(bulkInsertQuery, [templateId, exerciseIds, weights, reps, orders]);
+
+    await client.query('COMMIT');
+    res.status(201).json({ message: "Szablon treningowy został zapisany! 💾", templateId });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: "Błąd podczas zapisu szablonu", details: error.message });
+  } finally {
+    client.release(); // Bezwzględne zwolnienie klienta do puli
+  }
+});
+
+// 3. USUNIĘCIE SZABLONU (KASKADOWE PRZEZ BAZĘ)
+router.delete('/:id', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      "DELETE FROM workout_templates WHERE id = $1 AND user_id = $2",
+      [id, userId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Nie znaleziono szablonu lub brak uprawnień." });
+    }
+
+    res.json({ message: "Szablon usunięty pomyślnie. ✕" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd usuwania szablonu", details: error.message });
   }
 });
 
@@ -1936,135 +1711,242 @@ createRoot(document.getElementById('root')).render(
 )
 </file>
 
-<file path="frontend/src/views/Social.jsx">
-import React from 'react'
+<file path="frontend/src/views/History.jsx">
+import React, { useState } from 'react'
+import { API_BASE_URL } from '../config/api'
 
-export default function Social({
-  friendNickInput, 
-  setFriendNickInput,
-  handleSendFriendRequest, 
-  pendingRequests, 
-  handleAcceptFriend, 
-  handleRejectFriend,
-  friends,
-  user // <--- NOWOŚĆ: odebranie zalogowanego użytkownika z App.jsx
+export default function History({ 
+  workoutsHistory, 
+  onDeleteWorkout, 
+  onLoadMoreWorkouts, 
+  hasMoreWorkouts, 
+  onUpdateWorkout,
+  user,  // <--- NOWOŚĆ
+  token  // <--- NOWOŚĆ
 }) {
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [workoutToDelete, setWorkoutToDelete] = useState(null)
+  const [isExporting, setIsExporting] = useState(false)
+
+  // STANY DLA OBSŁUGI INLINE EDIT
+  const [editingSessionId, setEditingSessionId] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [editComment, setEditComment] = useState('')
+
+  const isPremiumUser = user?.is_premium || user?.role === 'TRAINER';
+
+  // FUNKCJA OBSŁUGI BEZPIECZNEGO POBIERANIA BLOB PLIKU CSV
+  const handleExportCSV = async () => {
+    if (!isPremiumUser) {
+      alert("🔒 Funkcja eksportu do pliku CSV jest dostępna wyłącznie dla posiadaczy konta GymPatico PREMIUM! Przejdź na wyższy pakiet, aby odblokować pełną analitykę arkusza Excel.");
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts/export`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Nie udało się pobrać pliku.');
+      }
+
+      // Konwertujemy odpowiedź na Blob strumienia danych
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
       
-      {/* LEWA STRONA: WYSZUKIWARKA + OCZEKUJĄCE */}
-      <div className="lg:col-span-1 flex flex-col gap-6">
-        
-        {/* SEKCJA 1: WYSZUKAJ ZNAJOMYCH */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">Szukaj znajomych 🔍</h2>
-          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangen.</p>
-          
-          <form onSubmit={handleSendFriendRequest} className="flex gap-2">
-            <input 
-              type="text" 
-              placeholder="np. MarekWorkout" 
-              value={friendNickInput} 
-              onChange={e => setFriendNickInput(e.target.value)} 
-              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-            />
-            <button 
-              type="submit" 
-              className="bg-gymRed hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
-            >
-              Zaproś
-            </button>
-          </form>
-        </section>
+      // Tworzymy ukryty element kotwicy <a>, aby wymusić natywne pobieranie w przeglądarce (również na telefonie)
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gympatico_export_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Czyszczenie pamięci podręcznej przeglądarki po pobraniu
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (err) {
+      alert(`❌ Błąd eksportu: ${err.message}`);
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
-        {/* SEKCJA 2: OCZEKUJĄCE ZAPROSZENIA */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-4">Oczekujące zaproszenia ✉️</h2>
-          
-          {pendingRequests.length === 0 ? (
-            <p className="text-zinc-500 italic text-sm text-center py-4">Brak nowych zaproszeń.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {pendingRequests.map(req => (
-                <div key={req.friendship_id} className="flex justify-between items-center bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800 shadow-sm">
-                  <span className="text-sm">Od: <strong className="text-zinc-200">{req.nick}</strong></span>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => handleAcceptFriend(req.friendship_id)} 
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
-                    >
-                      Akceptuj
-                    </button>
-                    <button 
-                      onClick={() => handleRejectFriend(req.friendship_id)} 
-                      className="border border-gymRed text-gymRed hover:bg-gymRed/10 font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
-                    >
-                      Odrzuć
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
+  const initiateDelete = (id) => {
+    setWorkoutToDelete(id)
+    setIsModalOpen(true)
+  }
 
-      {/* PRAWA STRONA: RANKING STREAKÓW */}
-      <section className="lg:col-span-2 bg-gymCard p-4 md:p-6 rounded-xl shadow-lg border border-zinc-800/40">
-        <div className="border-b border-zinc-800 pb-4 mb-4">
-          <h2 className="text-xl md:text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-gymRed">
-            Ranking Streaków Gangu GymPatico 🔥
-          </h2>
-          <p className="text-zinc-400 text-xs md:text-sm mt-1">Utrzymuj cel tygodniowy, aby piąć się w górę tabeli!</p>
+  const confirmDelete = () => {
+    if (workoutToDelete) {
+      onDeleteWorkout(workoutToDelete)
+    }
+    closeModal()
+  }
+
+  const closeModal = () => {
+    setIsModalOpen(false)
+    setWorkoutToDelete(null)
+  }
+
+  const startEditing = (w) => {
+    setEditingSessionId(w.id)
+    setEditName(w.name)
+    setEditComment(w.comment || '')
+  }
+
+  const cancelEditing = () => {
+    setEditingSessionId(null)
+    setEditName('')
+    setEditComment('')
+  }
+
+  const saveEditing = (id) => {
+    if (!editName.trim()) return
+    onUpdateWorkout(id, editName.trim(), editComment.trim())
+    setEditingSessionId(null)
+  }
+
+  return (
+    <section className="bg-gymCard p-4 md:p-6 rounded-xl text-left shadow-lg relative">
+      
+      {/* NAGŁÓWEK SEKCJ Z INTEGRACJĄ PRZYCISKU EKSPORTU */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-zinc-800 pb-4 mb-4 gap-4">
+        <div>
+          <h2 className="text-xl md:text-2xl font-bold tracking-tight">Twoja historia aktywności 📅</h2>
+          <p className="text-zinc-400 text-xs mt-0.5">Wszystkie zarejestrowane sesje robocze w laboratoriach GymPatico.</p>
         </div>
 
-        {friends.length === 0 ? (
-          <p className="text-zinc-500 italic text-center py-12">Brak znajomych w rankingu. Zaproś kogoś!</p>
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            {friends.map((f, idx) => {
-              const isFirst = idx === 0;
-              const isSecond = idx === 1;
-              const isThird = idx === 2;
-              const isMe = f.id === user?.id; // <--- NOWOŚĆ: Sprawdzenie czy ten wiersz to Ty
+        <button
+          onClick={handleExportCSV}
+          disabled={isExporting || workoutsHistory.length === 0}
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all active:scale-95 cursor-pointer shadow-md border ${
+            isPremiumUser
+              ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white'
+              : 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
+          } disabled:opacity-40`}
+        >
+          {isExporting ? '🔄 Generowanie...' : isPremiumUser ? '📊 Eksportuj do CSV' : '🔒 Eksportuj do CSV (PREMIUM)'}
+        </button>
+      </div>
+      
+      {workoutsHistory.length === 0 ? (
+        <p className="text-zinc-500 italic mt-4 text-center py-6">Brak wpisów w historii.</p>
+      ) : (
+        <div className="flex flex-col gap-4 mt-4">
+          {workoutsHistory.map(w => {
+            const isEditing = w.id === editingSessionId
 
-              return (
-                <div 
-                  key={f.id} 
-                  className={`flex justify-between items-center p-3.5 rounded-lg shadow-sm transition-all duration-200 ${
-                    isMe
-                      ? 'bg-gymRed/10 border-2 border-gymRed/40 shadow-[0_0_15px_rgba(255,71,87,0.05)]' // Styl dla Ciebie
-                      : isFirst 
-                        ? 'bg-amber-500/10 border border-amber-500/30' 
-                        : 'bg-[#2d2d2d] border border-zinc-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className={`text-lg font-black w-8 text-center ${
-                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : isSecond ? 'text-zinc-300' : isThird ? 'text-amber-600' : 'text-zinc-500'
-                    }`}>
-                      #{idx + 1}
-                    </span>
-                    <strong className={`text-sm md:text-base ${isMe ? 'text-gymRed font-black' : isFirst ? 'text-amber-200 font-bold' : 'text-zinc-100'}`}>
-                      {f.nick} {isMe ? '(Ty) ⚡' : isFirst ? '👑' : ''}
-                    </strong>
+            return (
+              <div key={w.id} className="bg-[#2d2d2d] p-4 md:p-5 rounded-lg border-l-4 border-gymRed shadow-md transition-all hover:border-l-6">
+                
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 sm:gap-4">
+                  
+                  <div className="flex-1 flex flex-col gap-2">
+                    {isEditing ? (
+                      <div className="flex flex-col gap-2 max-w-md w-full">
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={e => setEditName(e.target.value)}
+                          className="p-2 text-sm font-bold text-white bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
+                          placeholder="Nazwa treningu"
+                          required
+                        />
+                        <input
+                          type="text"
+                          value={editComment}
+                          onChange={e => setEditComment(e.target.value)}
+                          className="p-2 text-xs text-zinc-300 bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
+                          placeholder="Dodaj komentarz (opcjonalnie)..."
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <h3 className="text-base md:text-lg font-bold text-gymRed leading-tight">{w.name}</h3>
+                        <span className="text-zinc-400 text-xs">{new Date(w.startedAt).toLocaleString()}</span>
+                      </>
+                    )}
                   </div>
                   
-                  <div className="text-right">
-                    <span className={`font-black text-sm md:text-lg tracking-tight ${
-                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : 'text-gymRed'
-                    }`}>
-                      🔥 {f.current_streak} {f.current_streak === 1 ? 'tyg.' : 'tyg.'}
-                    </span>
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    {isEditing ? (
+                      <>
+                        <button onClick={cancelEditing} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white cursor-pointer">Anuluj</button>
+                        <button onClick={() => saveEditing(w.id)} className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-bold transition-all hover:bg-emerald-500 active:scale-95 cursor-pointer shadow-md">Zapisz ✓</button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => startEditing(w)} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white active:scale-95 cursor-pointer">Edytuj ✏️</button>
+                        <button onClick={() => initiateDelete(w.id)} className="px-3 py-1.5 rounded border border-gymRed text-gymRed text-xs font-bold bg-transparent transition-all hover:bg-gymRed hover:text-white active:scale-95 cursor-pointer">Usuń ✕</button>
+                      </>
+                    )}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
 
-    </div>
+                {!isEditing && w.comment && (
+                  <p className="text-zinc-400 italic mt-3 text-xs md:text-sm bg-zinc-800/40 p-2 rounded border-l border-zinc-700">
+                    "{w.comment}"
+                  </p>
+                )}
+                
+                <div className="overflow-x-auto mt-4 -mx-4 px-4 sm:mx-0 sm:px-0">
+                  <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
+                    <thead>
+                      <tr className="text-left border-b border-zinc-700 text-zinc-400 text-xs font-semibold uppercase tracking-wider">
+                        <th className="pb-2">Ćwiczenie</th>
+                        <th className="pb-2 text-center">Seria</th>
+                        <th className="pb-2 text-center">Obciążenie</th>
+                        <th className="pb-2 text-center">Reps</th>
+                        <th className="pb-2 text-right">Est. 1RM</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800 text-xs md:text-sm">
+                      {w.series.map(s => (
+                        <tr key={s.id} className="hover:bg-zinc-800/30 transition-colors">
+                          <td className="py-2.5 font-medium pr-2 text-zinc-200">{s.exerciseName}</td>
+                          <td className="py-2.5 text-center text-zinc-400">{s.order}</td>
+                          <td className="py-2.5 text-center text-zinc-200 font-semibold">{s.weight} kg</td>
+                          <td className="py-2.5 text-center text-zinc-400">{s.reps}</td>
+                          <td className="py-2.5 text-right text-gymRed font-bold">
+                            {s.estimatedOneRM ? `${s.estimatedOneRM.toFixed(1)} kg` : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })}
+
+          {hasMoreWorkouts && (
+            <button onClick={onLoadMoreWorkouts} className="w-full py-3.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white border border-zinc-800 rounded-lg font-bold text-sm transition-all active:scale-[0.99] cursor-pointer mt-2">
+              Załaduj starsze treningi 🔄
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* --- AUTORSKI MODAL POTWIERDZENIA USUWANIA --- */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity"></div>
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Usunąć ten trening?</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja jest bezpowrotna. Dane o serii oraz rekordy 1RM znikną z profilu.</p>
+            <div className="flex gap-3">
+              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm transition-all active:scale-95 cursor-pointer border border-zinc-800">Anuluj</button>
+              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm transition-all active:scale-95 cursor-pointer shadow-lg shadow-red-950/20">Tak, usuń</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
 </file>
@@ -2223,6 +2105,8 @@ export default defineConfig({
 </file>
 
 <file path="init.sql">
+-- init.sql - Zunifikowana struktura bazy danych GymPatico z obsługą stref czasowych (TIMESTAMPTZ)
+
 -- 1. Tabela Użytkowników
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2232,9 +2116,9 @@ CREATE TABLE users (
     weekly_target_workouts INT DEFAULT 3,
     current_streak INT DEFAULT 0,
     max_streak INT DEFAULT 0,
-    last_workout_at TIMESTAMP,
+    last_workout_at TIMESTAMPTZ, -- Poprawiono strefę czasową streaka
     is_premium BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 2. Tabela Logów Wagi
@@ -2242,10 +2126,10 @@ CREATE TABLE weight_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     weight NUMERIC(5,2) NOT NULL,
-    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Tabela Ćwiczeń (Czysta kolumna name, bez starego ograniczenia UNIQUE)
+-- 3. Tabela Ćwiczeń
 CREATE TABLE exercises (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
@@ -2253,11 +2137,11 @@ CREATE TABLE exercises (
     user_id UUID REFERENCES users(id) ON DELETE CASCADE DEFAULT NULL
 );
 
--- 4. INDEKSY UNIKALNE (Muszą powstać natychmiast po tabeli exercises!)
--- Zabezpieczenie ćwiczeń globalnych (brak wielokrotnych duplikatów o tej samej nazwie w atlasie systemowym)
+-- 4. INDEKSY UNIKALNE DLA ATLASU ĆWICZEŃ
+-- Zabezpieczenie ćwiczeń globalnych (brak duplikatów o tej samej nazwie w bazie systemowej)
 CREATE UNIQUE INDEX exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
 
--- Zabezpieczenie ćwiczeń prywatnych (dany user nie doda u siebie dwóch tak samo nazwanych pozycji)
+-- Zabezpieczenie ćwiczeń prywatnych (użytkownik nie doda u siebie dwóch tak samo nazwanych pozycji)
 CREATE UNIQUE INDEX exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
 
 -- 5. Tabela Znajomości
@@ -2266,7 +2150,7 @@ CREATE TABLE friendships (
     sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
     receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
     status VARCHAR(20) DEFAULT 'PENDING',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT unique_friendship UNIQUE (sender_id, receiver_id)
 );
 
@@ -2276,8 +2160,8 @@ CREATE TABLE workout_sessions (
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     comment TEXT,
-    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 7. Tabela Serii Treningowych
@@ -2293,15 +2177,15 @@ CREATE TABLE log_series (
     comment TEXT
 );
 
--- Tabela główna szablonów
+-- 8. Tabela Główna Szablonów Treningowych
 CREATE TABLE workout_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabela przechowująca konfigurację serii w danym szablonie
+-- 9. Tabela Serii w Szablonach
 CREATE TABLE template_series (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
@@ -2311,10 +2195,11 @@ CREATE TABLE template_series (
     series_order INT NOT NULL
 );
 
+-- Indeksy wydajnościowe dla klastrowania szablonów
 CREATE INDEX idx_templates_user ON workout_templates(user_id);
 CREATE INDEX idx_template_series_template ON template_series(template_id);
 
--- 8. SEEDOWANIE BAZY DANYCH (Teraz ON CONFLICT idealnie trafia w utworzony wyżej indeks globalny)
+-- 10. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
 INSERT INTO exercises (name, muscle_group) VALUES
   -- Klatka piersiowa
   ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),
@@ -2350,403 +2235,163 @@ INSERT INTO exercises (name, muscle_group) VALUES
 ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
 </file>
 
-<file path="backend/routes/friends.js">
+<file path="backend/routes/auth.js">
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
+const rateLimit = require('express-rate-limit');
 
-// Wysyłanie zaproszenia
-router.post('/request', authenticateToken, async (req, res) => {
-  const { targetNick } = req.body;
-  const senderId = req.user.userId;
-
-  if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
-
-  try {
-    const userResult = await pool.query('SELECT id FROM users WHERE nick = $1', [targetNick]);
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
-    }
-
-    const receiverId = userResult.rows[0].id;
-    if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
-
-    const checkResult = await pool.query(
-      "SELECT * FROM friendships WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)",
-      [senderId, receiverId]
-    );
-    if (checkResult.rows.length > 0) {
-      return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
-    }
-
-    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1, $2, \'PENDING\')', [senderId, receiverId]);
-    res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
-  }
-});
-
-// Pobranie rankingu znajomych
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    // Łączymy wyniki znajomych z danymi zalogowanego usera przez UNION
-    const query = `
-      SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
-        CASE 
-          WHEN u.last_workout_at < NOW() - INTERVAL '12 days' THEN 0
-          ELSE u.current_streak
-        END as "current_streak"
-      FROM friendships f
-      JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1) OR (f.receiver_id = u.id AND f.sender_id = $1)
-      WHERE f.status = 'ACCEPTED' AND u.id != $1
-
-      UNION
-
-      SELECT id, nick, last_workout_at, is_premium,
-        CASE 
-          WHEN last_workout_at < NOW() - INTERVAL '12 days' THEN 0
-          ELSE current_streak
-        END as "current_streak"
-      FROM users
-      WHERE id = $1
-
-      ORDER BY "current_streak" DESC, nick ASC
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd pobierania rankingu znajomych", details: error.message });
-  }
-});
-
-// Skrzynka odbiorcza zaproszeń
-router.get('/requests', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    const query = `
-      SELECT f.id as friendship_id, u.id as sender_id, u.nick 
-      FROM friendships f 
-      JOIN users u ON f.sender_id = u.id
-      WHERE f.receiver_id = $1 AND f.status = 'PENDING'
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd ładowania skrzynki", details: error.message });
-  }
-});
-
-// Akceptacja zaproszenia
-router.post('/accept', authenticateToken, async (req, res) => {
-  const { friendshipId } = req.body;
-  const userId = req.user.userId; // Wyciągamy ID zalogowanego użytkownika z tokenu
-
-  if (!friendshipId) {
-    return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
-  }
-
-  try {
-    // Dodajemy warunek: receiver_id = $2
-    const query = `
-      UPDATE friendships 
-      SET status = 'ACCEPTED' 
-      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING' 
-      RETURNING *
-    `;
-    
-    const result = await pool.query(query, [friendshipId, userId]);
-    
-    // Jeśli zaproszenie nie należało do usera, zapytanie nie zmodyfikuje żadnego wiersza
-    if (result.rows.length === 0) {
-      return res.status(404).json({ 
-        error: "Zaproszenie nie istnieje, zostało już przetworzone lub nie masz uprawnień do jego akceptacji." 
-      });
-    }
-    
-    res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
-  }
-});
-
-router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
-  const { friendshipId } = req.params;
-  const userId = req.user.userId;
-
-  try {
-    // Pancerne i szybkie zapytanie: kasujemy tylko, jeśli ID się zgadza, status to PENDING i zalogowany user jest ODBIORCĄ
-    const deleteQuery = `
-      DELETE FROM friendships 
-      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING'
-    `;
-    const result = await pool.query(deleteQuery, [friendshipId, userId]);
-
-    // Jeśli baza danych nie usunęła żadnego wiersza (rowCount === 0), zwracamy błąd uprawnień lub braku rekordu
-    if (result.rowCount === 0) {
-      return res.status(404).json({ 
-        error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." 
-      });
-    }
-
-    res.json({ message: "Zaproszenie zostało odrzucone. ✕" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas odrzucania zaproszenia", details: error.message });
-  }
-});
-
-module.exports = router;
-</file>
-
-<file path="backend/routes/workouts.js">
-const express = require('express');
-const router = express.Router();
-const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
-
-// Zapisanie treningu + wyliczenie streaka
-router.post('/', authenticateToken, async (req, res) => {
-  const { name, comment, series } = req.body;
-  const userId = req.user.userId;
-
-  if (!name || !series || !Array.isArray(series) || series.length === 0) {
-    return res.status(400).json({ error: "Nazwa treningu oraz serie są wymagane!" });
-  }
-
-  // 1. Pobieramy dedykowanego, pojedynczego klienta z puli połączeń
-  const client = await pool.connect();
-
-  try {
-    // 2. Uruchamiamy transakcję na zabezpieczonym kliencie
-    await client.query('BEGIN');
-
-    const sessionResult = await client.query(
-      "INSERT INTO workout_sessions (user_id, name, comment, started_at, ended_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id",
-      [userId, name, comment || null]
-    );
-    const sessionId = sessionResult.rows[0].id;
-
-    for (let i = 0; i < series.length; i++) {
-      const s = series[i];
-      let estimatedOneRM = null;
-      if (s.reps >= 1 && s.reps <= 12) {
-        estimatedOneRM = s.weight * (1 + s.reps / 30);
-      }
-
-      // Wszystkie zapytania w pętli lecą przez stałe połączenie "client"
-      await client.query(
-        `INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [sessionId, s.exerciseId, s.weight, s.reps, s.order || (i + 1), estimatedOneRM, s.isAlternative || false, s.comment || null]
-      );
-    }
-
-    const userResult = await client.query('SELECT current_streak, weekly_target_workouts FROM users WHERE id = $1', [userId]);
-    const { current_streak, weekly_target_workouts } = userResult.rows[0];
-
-    const target = weekly_target_workouts ?? 3;
-
-    const thisWeekResult = await client.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 AND started_at >= date_trunc('week', NOW())`, [userId]
-    );
-    const workoutsThisWeek = parseInt(thisWeekResult.rows[0].count);
-
-    const lastWeekResult = await client.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
-      AND started_at >= date_trunc('week', NOW() - INTERVAL '1 week') 
-      AND started_at < date_trunc('week', NOW())`, [userId]
-    );
-    const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count);
-
-    let newStreak = current_streak;
-    const didMeetGoalLastWeek = workoutsLastWeek >= target;
-
-    if (workoutsThisWeek === target) {
-      if (didMeetGoalLastWeek || current_streak === 0) {
-        newStreak = current_streak + 1;
-      } else {
-        newStreak = 1;
-      }
-    } else if (workoutsThisWeek > target) {
-      newStreak = current_streak;
-    } else {
-      if (didMeetGoalLastWeek) {
-        newStreak = current_streak;
-      } else {
-        newStreak = 0;
-      }
-    }
-
-    await client.query(
-      'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
-      [newStreak, userId]
-    );
-
-    // 3. Jeśli wszystko przeszło bez błędów — zatwierdzamy zmiany w bazie danych
-    await client.query('COMMIT');
-    
-    res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
-  } catch (error) {
-    // 4. W przypadku jakiegokolwiek niepowodzenia cofamy CAŁĄ transakcję
-    await client.query('ROLLBACK');
-    res.status(500).json({ error: "Błąd transakcji", details: error.message });
-  } finally {
-    // 5. BEZWZGLĘDNIE zwalniamy klienta z powrotem do puli połączeń, aby nie zablokować bazy
-    client.release();
-  }
-});
-
-// Pobranie historii treningów
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
+// KONFIGURACJA RATE LIMITERA DLA STRONY AUTH
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // Okno czasowe: 15 minut
+  max: 10, // Maksymalnie 10 prób z jednego adresu IP w danym oknie
   
-  // Pobieramy parametry z query stringa, ustawiając bezpieczne wartości domyślne
-  const limit = parseInt(req.query.limit) || 20;
-  const offset = parseInt(req.query.offset) || 0;
-
-  try {
-    // Krok A: Pobieramy tylko określone sesje treningowe dla danej strony
-    const sessionsQuery = `
-      SELECT id, name, comment, started_at as "startedAt"
-      FROM workout_sessions
-      WHERE user_id = $1
-      ORDER BY started_at DESC
-      LIMIT $2 OFFSET $3
-    `;
-    const sessionsResult = await pool.query(sessionsQuery, [userId, limit, offset]);
-    const sessions = sessionsResult.rows;
-
-    if (sessions.length === 0) {
-      return res.json([]);
-    }
-
-    // Krok B: Wyciągamy ID pobranych sesji, aby pobrać do nich serie
-    const sessionIds = sessions.map(s => s.id);
-
-    const seriesQuery = `
-      SELECT 
-        ls.id, 
-        ls.workout_session_id, 
-        ls.exercise_id, 
-        ls.weight, 
-        ls.reps, 
-        ls.series_order as "order", -- <--- TUTAJ: mapujemy series_order na alias "order"
-        ls.estimated_one_rm,
-        ex.name as "exerciseName"
-      FROM log_series ls
-      JOIN exercises ex ON ls.exercise_id = ex.id
-      WHERE ls.workout_session_id = ANY($1)
-      ORDER BY ls.workout_session_id, ls.series_order ASC
-    `;
-    const seriesResult = await pool.query(seriesQuery, [sessionIds]);
-    const allSeries = seriesResult.rows;
-
-    // Krok C: Mapujemy serie do odpowiadających im sesji treningowych
-    const historyData = sessions.map(session => {
-      return {
-        ...session,
-        series: allSeries.filter(s => s.workout_session_id === session.id)
-      };
-    });
-
-    res.json(historyData);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas pobierania historii", details: error.message });
-  }
+  // Format odpowiedzi dopasowany do frontendu (obsługa catch(err) i showToast)
+  message: { 
+    error: "Zbyt wiele nieudanych prób! Twój adres IP został tymczasowo zablokowany. Spróbuj ponownie za 15 minut." 
+  },
+  
+  standardHeaders: true, // Zwraca informacje o limicie w nagłówkach RateLimit-*
+  legacyHeaders: false,  // Wyłącza przestarzałe nagłówki X-RateLimit-*
 });
 
-router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
-  const { exerciseId } = req.params;
-  const userId = req.user.userId;
+// Rejestracja nowego użytkownika
+router.post('/register', authLimiter, async (req, res) => {
+  let { email, password, nick } = req.body;
+
+  // 1. Wstępna walidacja obecności pól
+  if (!email || !password || !nick) {
+    return res.status(400).json({ error: "Wszystkie pola (email, password, nick) są wymagane!" });
+  }
+
+  // 2. Sanitization & Trim (oczyszczanie ze skrajnych spacji)
+  email = email.trim();
+  nick = nick.trim();
+
+  // 3. Twarda walidacja długości (Input Length Validation)
+  if (nick.length < 2 || nick.length > 50) {
+    return res.status(400).json({ error: "Nick musi mieć od 2 do 50 znaków!" });
+  }
+
+  if (email.length > 254) {
+    return res.status(400).json({ error: "Adres e-mail jest zbyt długi!" });
+  }
+
+  if (password.length < 8 || password.length > 100) {
+    return res.status(400).json({ error: "Hasło musi mieć od 8 do 100 znaków!" });
+  }
 
   try {
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
     const query = `
-      SELECT 
-        TO_CHAR(ws.started_at, 'YYYY-MM-DD') as date,
-        MAX(ls.estimated_one_rm) as max_1rm
-      FROM log_series ls
-      JOIN workout_sessions ws ON ls.workout_session_id = ws.id
-      WHERE ls.exercise_id = $1 
-        AND ws.user_id = $2 
-        AND ls.estimated_one_rm IS NOT NULL
-      GROUP BY TO_CHAR(ws.started_at, 'YYYY-MM-DD') -- Grupowanie TYLKO po sformatowanym dniu
-      ORDER BY date ASC -- Sortowanie tekstowe YYYY-MM-DD działa perfekcyjnie chronologicznie
+      INSERT INTO users (email, password_hash, nick) 
+      VALUES ($1, $2, $3) 
+      RETURNING id, email, nick, role, created_at
     `;
-    
-    const result = await pool.query(query, [exerciseId, userId]);
-    
-    const progressionData = result.rows.map(row => ({
-      date: row.date,
-      oneRm: parseFloat(row.max_1rm)
-    }));
+    const result = await pool.query(query, [email, passwordHash, nick]);
 
-    res.json(progressionData);
+    res.status(201).json({ message: "Użytkownik zarejestrowany! 🏋️‍♂️", user: result.rows[0] });
   } catch (error) {
-    res.status(500).json({ error: "Błąd podczas pobierania progresji 1RM", details: error.message });
+    if (error.code === '23505') {
+      return res.status(400).json({ error: "Ten adres e-mail lub nick jest już zajęty!" });
+    }
+    res.status(500).json({ error: "Błąd serwera podczas rejestracji", details: error.message });
   }
 });
 
-router.delete('/:sessionId', authenticateToken, async (req, res) => {
-  const { sessionId } = req.params;
-  const userId = req.user.userId;
+// Logowanie użytkownika
+router.post('/login', authLimiter, async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email i hasło są wymagane!" });
+  }
 
   try {
-    // Sprawdzamy, czy sesja istnieje i należy do zalogowanego użytkownika
-    const checkQuery = 'SELECT * FROM workout_sessions WHERE id = $1 AND user_id = $2';
-    const checkResult = await pool.query(checkQuery, [sessionId, userId]);
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: "Nie znaleziono treningu lub nie masz uprawnień do jego usunięcia." });
+    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
     }
 
-    // Usuwamy trening. Kaskada (ON DELETE CASCADE) na poziomie bazy danych automatycznie usunie serie z log_series.
-    await pool.query('DELETE FROM workout_sessions WHERE id = $1', [sessionId]);
+    const user = userResult.rows[0];
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
-    res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
+    }
+
+    // FIX SECURE: Dodajemy jawnie "role: user.role" do tokenu, oszczędzając zapytania SQL w middleware
+    const token = jwt.sign(
+      { userId: user.id, nick: user.nick, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      message: "Zalogowano pomyślnie! 🦾",
+      token,
+      user: { 
+        id: user.id, 
+        email: user.email, 
+        nick: user.nick, 
+        isPremium: user.is_premium,
+        role: user.role // Przekazujemy również do stanu aplikacji na frontendzie
+      }
+    });
   } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas usuwania treningu", details: error.message });
+    res.status(500).json({ error: "Błąd serwera podczas logowania", details: error.message });
   }
 });
 
-// Edycja metadanych treningu (Nazwa i Komentarz)
-router.patch('/:sessionId', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { sessionId } = req.params;
-  let { name, comment } = req.body;
-
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: "Nazwa treningu jest wymagana!" });
-  }
-
-  name = name.trim();
-  comment = comment ? comment.trim() : null;
-
-  // Identyczne limity znaków jak przy tworzeniu sesji
-  if (name.length < 3 || name.length > 100) {
-    return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
-  }
-
-  if (comment && comment.length > 500) {
-    return res.status(400).json({ error: "Komentarz może mieć maksymalnie 500 znaków!" });
-  }
-
+// Pobranie aktualnych danych profilu użytkownika (w tym świeżego streaka)
+router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const updateQuery = `
-      UPDATE workout_sessions 
-      SET name = $1, comment = $2 
-      WHERE id = $3 AND user_id = $4 
-      RETURNING id, name, comment
-    `;
-    const result = await pool.query(updateQuery, [name.trim(), comment ? comment.trim() : null, sessionId, userId]);
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Nie znaleziono sesji treningowej lub brak uprawnień." });
+    // Uzupełniamy zapytanie o kolumnę "role" dla synchronizacji twardej w App.jsx
+    const result = await pool.query(
+      'SELECT id, email, nick, current_streak, is_premium, weekly_target_workouts, role FROM users WHERE id = $1',
+      [req.user.userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
     }
-
+    
     res.json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas edycji parametrów treningu", details: error.message });
+    res.status(500).json({ error: "Błąd serwera podczas pobierania profilu", details: error.message });
+  }
+});
+
+// Aktualizacja celu tygodniowego
+router.put('/weekly-target', authenticateToken, async (req, res) => {
+  const { weeklyTarget } = req.body;
+  const userId = req.user.userId;
+
+  const targetNum = parseInt(weeklyTarget);
+  if (isNaN(targetNum) || targetNum < 1 || targetNum > 7) {
+    return res.status(400).json({ error: "Cel tygodniowy musi być liczbą od 1 do 7!" });
+  }
+
+  try {
+    const query = `
+      UPDATE users 
+      SET weekly_target_workouts = $1 
+      WHERE id = $2 
+      RETURNING weekly_target_workouts
+    `;
+    const result = await pool.query(query, [targetNum, userId]);
+    
+    res.json({ 
+      message: "Cel zaktualizowany! 🎯", 
+      weekly_target_workouts: result.rows[0].weekly_target_workouts 
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas aktualizacji celu", details: error.message });
   }
 });
 
@@ -3010,6 +2655,658 @@ export default function NewWorkout({
     </div>
   )
 }
+</file>
+
+<file path="frontend/src/views/Social.jsx">
+import React from 'react'
+
+export default function Social({
+  friendNickInput, 
+  setFriendNickInput,
+  handleSendFriendRequest, 
+  pendingRequests, 
+  handleAcceptFriend, 
+  handleRejectFriend,
+  friends,
+  user
+}) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
+      
+      {/* LEWA STRONA: WYSZUKIWARKA + OCZEKUJĄCE */}
+      <div className="lg:col-span-1 flex flex-col gap-6">
+        
+        {/* SEKCJA 1: WYSZUKAJ ZNAJOMYCH */}
+        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
+          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">Szukaj znajomych 🔍</h2>
+          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangu.</p>
+          
+          <form onSubmit={handleSendFriendRequest} className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="np. MarekWorkout" 
+              value={friendNickInput} 
+              onChange={e => setFriendNickInput(e.target.value)} 
+              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
+            />
+            <button 
+              type="submit" 
+              className="bg-gymRed hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
+            >
+              Zaproś
+            </button>
+          </form>
+        </section>
+
+        {/* SEKCJA 2: OCZEKUJĄCE ZAPROSZENIA */}
+        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
+          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-4">Oczekujące zaproszenia ✉️</h2>
+          
+          {pendingRequests.length === 0 ? (
+            <p className="text-zinc-500 italic text-sm text-center py-4">Brak nowych zaproszeń.</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {pendingRequests.map(req => (
+                <div key={req.friendship_id} className="flex justify-between items-center bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800 shadow-sm">
+                  <span className="text-sm">Od: <strong className="text-zinc-200">{req.nick}</strong></span>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => handleAcceptFriend(req.friendship_id)} 
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
+                    >
+                      Akceptuj
+                    </button>
+                    <button 
+                      onClick={() => handleRejectFriend(req.friendship_id)} 
+                      className="border border-gymRed text-gymRed hover:bg-gymRed/10 font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
+                    >
+                      Odrzuć
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* PRAWA STRONA: RANKING STREAKÓW GANGU */}
+      <section className="lg:col-span-2 bg-gymCard p-4 md:p-6 rounded-xl shadow-lg border border-zinc-800/40">
+        <div className="border-b border-zinc-800 pb-4 mb-4">
+          <h2 className="text-xl md:text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-gymRed">
+            Ranking Streaków Gangu GymPatico 🔥
+          </h2>
+          <p className="text-zinc-400 text-xs md:text-sm mt-1">Utrzymuj cel tygodniowy, aby piąć się w górę tabeli!</p>
+        </div>
+
+        {friends.length === 0 ? (
+          <p className="text-zinc-500 italic text-center py-12">Brak znajomych w rankingu. Zaproś kogoś!</p>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {friends.map((f, idx) => {
+              const isFirst = idx === 0;
+              const isSecond = idx === 1;
+              const isThird = idx === 2;
+              const isMe = f.id === user?.id;
+              const isPremium = f.is_premium === true || f.isPremium === true;
+
+              return (
+                <div 
+                  key={f.id} 
+                  className={`flex justify-between items-center p-3.5 rounded-lg shadow-sm transition-all duration-200 ${
+                    isMe
+                      ? 'bg-gymRed/10 border-2 border-gymRed/40 shadow-[0_0_15px_rgba(255,71,87,0.03)]' 
+                      : isFirst 
+                        ? 'bg-amber-500/5 border border-amber-500/20 shadow-[0_0_12px_rgba(245,158,11,0.02)]' 
+                        : 'bg-[#2d2d2d] border border-zinc-800/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`text-lg font-black w-8 text-center shrink-0 ${
+                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : isSecond ? 'text-zinc-300' : isThird ? 'text-amber-600' : 'text-zinc-500'
+                    }`}>
+                      #{idx + 1}
+                    </span>
+                    
+                    <div className="flex items-center gap-2 min-w-0 truncate">
+                      <strong className={`text-sm md:text-base truncate ${
+                        isMe ? 'text-gymRed font-black' : isFirst ? 'text-amber-200 font-bold' : 'text-zinc-100'
+                      }`}>
+                        {f.nick} {isMe ? '(Ty)' : ''}
+                      </strong>
+
+                      {/* WARUNKOWY BADGE PREMIUM DLA WYRÓŻNIONYCH KONT */}
+                      {isPremium && (
+                        <span 
+                          className="inline-flex items-center bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider uppercase shrink-0 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
+                          title="Użytkownik pakietu GymPatico Premium 🦾"
+                        >
+                          ⭐ PREMIUM
+                        </span>
+                      )}
+
+                      {isFirst && !isMe && <span className="text-base shrink-0">👑</span>}
+                    </div>
+                  </div>
+                  
+                  <div className="text-right shrink-0 ml-2">
+                    <span className={`font-black text-sm md:text-lg tracking-tight ${
+                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : 'text-zinc-300'
+                    }`}>
+                      🔥 {f.current_streak} tyg.
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+    </div>
+  )
+}
+</file>
+
+<file path="backend/routes/friends.js">
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+const checkLimits = require('../middleware/checkLimits');
+
+// Wysyłanie zaproszenia
+router.post('/request', authenticateToken, checkLimits('friends'), async (req, res) => {
+  const { targetNick } = req.body;
+  const senderId = req.user.userId;
+
+  if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
+
+  try {
+    const userResult = await pool.query('SELECT id FROM users WHERE nick = $1', [targetNick]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
+    }
+
+    const receiverId = userResult.rows[0].id;
+    if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
+
+    const checkResult = await pool.query(
+      "SELECT * FROM friendships WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)",
+      [senderId, receiverId]
+    );
+    if (checkResult.rows.length > 0) {
+      return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
+    }
+
+    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1, $2, \'PENDING\')', [senderId, receiverId]);
+    res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
+  }
+});
+
+// Pobranie rankingu znajomych
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    // Łączymy wyniki znajomych z danymi zalogowanego usera przez UNION
+    const query = `
+      SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
+        CASE 
+          WHEN u.last_workout_at < NOW() - INTERVAL '12 days' THEN 0
+          ELSE u.current_streak
+        END as "current_streak"
+      FROM friendships f
+      JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1) OR (f.receiver_id = u.id AND f.sender_id = $1)
+      WHERE f.status = 'ACCEPTED' AND u.id != $1
+
+      UNION
+
+      SELECT id, nick, last_workout_at, is_premium,
+        CASE 
+          WHEN last_workout_at < NOW() - INTERVAL '12 days' THEN 0
+          ELSE current_streak
+        END as "current_streak"
+      FROM users
+      WHERE id = $1
+
+      ORDER BY "current_streak" DESC, nick ASC
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania rankingu znajomych", details: error.message });
+  }
+});
+
+// Skrzynka odbiorcza zaproszeń
+router.get('/requests', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const query = `
+      SELECT f.id as friendship_id, u.id as sender_id, u.nick 
+      FROM friendships f 
+      JOIN users u ON f.sender_id = u.id
+      WHERE f.receiver_id = $1 AND f.status = 'PENDING'
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd ładowania skrzynki", details: error.message });
+  }
+});
+
+// Akceptacja zaproszenia
+router.post('/accept', authenticateToken, async (req, res) => {
+  const { friendshipId } = req.body;
+  const userId = req.user.userId; // Wyciągamy ID zalogowanego użytkownika z tokenu
+
+  if (!friendshipId) {
+    return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
+  }
+
+  try {
+    // Dodajemy warunek: receiver_id = $2
+    const query = `
+      UPDATE friendships 
+      SET status = 'ACCEPTED' 
+      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING' 
+      RETURNING *
+    `;
+    
+    const result = await pool.query(query, [friendshipId, userId]);
+    
+    // Jeśli zaproszenie nie należało do usera, zapytanie nie zmodyfikuje żadnego wiersza
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        error: "Zaproszenie nie istnieje, zostało już przetworzone lub nie masz uprawnień do jego akceptacji." 
+      });
+    }
+    
+    res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
+  }
+});
+
+router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
+  const { friendshipId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    // Pancerne i szybkie zapytanie: kasujemy tylko, jeśli ID się zgadza, status to PENDING i zalogowany user jest ODBIORCĄ
+    const deleteQuery = `
+      DELETE FROM friendships 
+      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING'
+    `;
+    const result = await pool.query(deleteQuery, [friendshipId, userId]);
+
+    // Jeśli baza danych nie usunęła żadnego wiersza (rowCount === 0), zwracamy błąd uprawnień lub braku rekordu
+    if (result.rowCount === 0) {
+      return res.status(404).json({ 
+        error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." 
+      });
+    }
+
+    res.json({ message: "Zaproszenie zostało odrzucone. ✕" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas odrzucania zaproszenia", details: error.message });
+  }
+});
+
+module.exports = router;
+</file>
+
+<file path="backend/routes/workouts.js">
+// backend/routes/workouts.js
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+const checkLimits = require('../middleware/checkLimits');
+
+// 1. ZAPISANIE TRENINGU (Zoptymalizowany UNNEST Batch Insert + JIT Streak)
+router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) => {
+  const { name, comment, series } = req.body;
+  const userId = req.user.userId;
+
+  if (!name || !series || !Array.isArray(series) || series.length === 0) {
+    return res.status(400).json({ error: "Nazwa treningu oraz serie są wymagane!" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const sessionResult = await client.query(
+      "INSERT INTO workout_sessions (user_id, name, comment, started_at, ended_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id",
+      [userId, name, comment || null]
+    );
+    const sessionId = sessionResult.rows[0].id;
+
+    const exerciseIds = [];
+    const weights = [];
+    const reps = [];
+    const orders = [];
+    const estimatedOneRMs = [];
+    const isAlternatives = [];
+    const seriesComments = [];
+
+    for (let i = 0; i < series.length; i++) {
+      const s = series[i];
+      let estimatedOneRM = null;
+      if (s.reps >= 1 && s.reps <= 12) {
+        estimatedOneRM = s.weight * (1 + s.reps / 30);
+      }
+
+      exerciseIds.push(s.exerciseId);
+      weights.push(s.weight);
+      reps.push(s.reps);
+      orders.push(s.order || (i + 1));
+      estimatedOneRMs.push(estimatedOneRM);
+      isAlternatives.push(s.isAlternative || false);
+      seriesComments.push(s.comment || null);
+    }
+
+    const bulkInsertSeriesQuery = `
+      INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment)
+      SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::numeric[], $7::boolean[], $8::text[])
+    `;
+
+    await client.query(bulkInsertSeriesQuery, [
+      sessionId, exerciseIds, weights, reps, orders, estimatedOneRMs, isAlternatives, seriesComments
+    ]);
+
+    const userResult = await client.query('SELECT current_streak, weekly_target_workouts, last_workout_at FROM users WHERE id = $1', [userId]);
+    const { current_streak, weekly_target_workouts, last_workout_at } = userResult.rows[0];
+
+    const target = weekly_target_workouts ?? 3;
+
+    const lastWeekResult = await client.query(
+      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
+      AND started_at >= date_trunc('week', NOW() - INTERVAL '1 week') 
+      AND started_at < date_trunc('week', NOW())`, [userId]
+    );
+    const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count);
+
+    let effectiveStreak = current_streak;
+
+    if (last_workout_at) {
+      const startOfThisWeekResult = await client.query(`SELECT date_trunc('week', NOW()) as start_of_week`);
+      const startOfThisWeek = new Date(startOfThisWeekResult.rows[0].start_of_week);
+      const lastWorkoutDate = new Date(last_workout_at);
+
+      if (lastWorkoutDate < startOfThisWeek) {
+        if (workoutsLastWeek < target) {
+          effectiveStreak = 0; 
+        }
+      }
+    }
+
+    const thisWeekResult = await client.query(
+      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 AND started_at >= date_trunc('week', NOW())`, [userId]
+    );
+    const workoutsThisWeek = parseInt(thisWeekResult.rows[0].count);
+
+    let newStreak = effectiveStreak;
+    if (workoutsThisWeek === target) {
+      newStreak = effectiveStreak + 1;
+    } else {
+      newStreak = effectiveStreak;
+    }
+
+    await client.query(
+      'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
+      [newStreak, userId]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: "Błąd transakcji", details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// 2. POBRANIE HISTORII TRENINGÓW (Zabezpieczona Paginacja)
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  
+  // TWARDA SANITACJA: Zabezpieczenie przed atakiem DoS / Resource Exhaustion
+  const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
+  try {
+    // Krok A: Pobieramy tylko przefiltrowane i ograniczone sesje treningowe
+    const sessionsQuery = `
+      SELECT id, name, comment, started_at as "startedAt"
+      FROM workout_sessions
+      WHERE user_id = $1
+      ORDER BY started_at DESC
+      LIMIT $2 OFFSET $3
+    `;
+    const sessionsResult = await pool.query(sessionsQuery, [userId, limit, offset]);
+    const sessions = sessionsResult.rows;
+
+    if (sessions.length === 0) {
+      return res.json([]);
+    }
+
+    // Krok B: Wyciągamy ID pobranych sesji, aby pobrać do nich serie
+    const sessionIds = sessions.map(s => s.id);
+
+    const seriesQuery = `
+      SELECT 
+        ls.id, 
+        ls.workout_session_id, 
+        ls.exercise_id, 
+        ls.weight, 
+        ls.reps, 
+        ls.series_order as "order",
+        ls.estimated_one_rm,
+        ex.name as "exerciseName"
+      FROM log_series ls
+      JOIN exercises ex ON ls.exercise_id = ex.id
+      WHERE ls.workout_session_id = ANY($1)
+      ORDER BY ls.workout_session_id, ls.series_order ASC
+    `;
+    const seriesResult = await pool.query(seriesQuery, [sessionIds]);
+    const allSeries = seriesResult.rows;
+
+    // Krok C: Mapujemy serie do odpowiadających im sesji treningowych
+    const historyData = sessions.map(session => {
+      return {
+        ...session,
+        series: allSeries.filter(s => s.workout_session_id === session.id)
+      };
+    });
+
+    res.json(historyData);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas pobierania historii", details: error.message });
+  }
+});
+
+// 3. POBRANIE PROGRESJI 1RM ĆWICZENIA (Twarde odcięcie czasowe dla planów FREE)
+router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
+  const { exerciseId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    const userCheck = await pool.query(
+      'SELECT is_premium as "isPremium", role FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userCheck.rowCount === 0) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    const { isPremium, role } = userCheck.rows[0];
+
+    // FIX SECURE: Jeśli użytkownik nie ma premium i nie jest trenerem, wymuszamy filtr ostatnich 30 dni w SQL
+    let timeBoundaryFilter = '';
+    if (!isPremium && role !== 'TRAINER') {
+      timeBoundaryFilter = "AND ws.started_at >= NOW() - INTERVAL '30 days'";
+    }
+
+    const query = `
+      SELECT 
+        TO_CHAR(ws.started_at, 'YYYY-MM-DD') as date,
+        MAX(ls.estimated_one_rm) as max_1rm
+      FROM log_series ls
+      JOIN workout_sessions ws ON ls.workout_session_id = ws.id
+      WHERE ls.exercise_id = $1 
+        AND ws.user_id = $2 
+        AND ls.estimated_one_rm IS NOT NULL
+        ${timeBoundaryFilter}
+      GROUP BY TO_CHAR(ws.started_at, 'YYYY-MM-DD')
+      ORDER BY date ASC
+    `;
+    
+    const result = await pool.query(query, [exerciseId, userId]);
+    
+    const progressionData = result.rows.map(row => ({
+      date: row.date,
+      oneRm: parseFloat(row.max_1rm)
+    }));
+
+    res.json(progressionData);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd podczas pobierania progresji 1RM", details: error.message });
+  }
+});
+
+// 4. USUNIĘCIE TRENINGU
+router.delete('/:sessionId', authenticateToken, async (req, res) => {
+  const { sessionId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    const checkQuery = 'SELECT * FROM workout_sessions WHERE id = $1 AND user_id = $2';
+    const checkResult = await pool.query(checkQuery, [sessionId, userId]);
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: "Nie znaleziono treningu lub nie masz uprawnień do jego usunięcia." });
+    }
+
+    await pool.query('DELETE FROM workout_sessions WHERE id = $1', [sessionId]);
+    res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas usuwania treningu", details: error.message });
+  }
+});
+
+// 5. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz)
+router.patch('/:sessionId', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { sessionId } = req.params;
+  let { name, comment } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: "Nazwa treningu jest wymagana!" });
+  }
+
+  name = name.trim();
+  comment = comment ? comment.trim() : null;
+
+  if (name.length < 3 || name.length > 100) {
+    return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
+  }
+
+  if (comment && comment.length > 500) {
+    return res.status(400).json({ error: "Komentarz może mieć maksymalnie 500 znaków!" });
+  }
+
+  try {
+    const updateQuery = `
+      UPDATE workout_sessions 
+      SET name = $1, comment = $2 
+      WHERE id = $3 AND user_id = $4 
+      RETURNING id, name, comment
+    `;
+    const result = await pool.query(updateQuery, [name.trim(), comment ? comment.trim() : null, sessionId, userId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Nie znaleziono sesji treningowej lub brak uprawnień." });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas edycji parametrów treningu", details: error.message });
+  }
+});
+
+// 6. EKSPORT HISTORII DO PLIKU CSV (Weryfikacja PREMIUM / Excel UTF-8 BOM)
+router.get('/export', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const userCheck = await pool.query(
+      'SELECT is_premium as "isPremium", role FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userCheck.rowCount === 0) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    const { isPremium, role } = userCheck.rows[0];
+
+    if (!isPremium && role !== 'TRAINER') {
+      return res.status(403).json({ 
+        error: "Funkcja eksportu historii do pliku CSV jest dostępna wyłącznie dla użytkowników planu PREMIUM! 🦾" 
+      });
+    }
+
+    const query = `
+      SELECT 
+        TO_CHAR(ws.started_at, 'YYYY-MM-DD HH24:MI') as "Data",
+        ws.name as "Nazwa treningu",
+        COALESCE(ws.comment, '') as "Komentarz do treningu",
+        ex.name as "Ćwiczenie",
+        ex.muscle_group as "Grupa mięśniowa",
+        ls.series_order as "Numer serii",
+        ls.weight as "Ciężar (kg)",
+        ls.reps as "Powtórzenia",
+        COALESCE(ROUND(ls.estimated_one_rm, 1), 0) as "Estymowane 1RM"
+      FROM workout_sessions ws
+      JOIN log_series ls ON ws.id = ls.workout_session_id
+      JOIN exercises ex ON ls.exercise_id = ex.id
+      WHERE ws.user_id = $1
+      ORDER BY ws.started_at DESC, ls.series_order ASC
+    `;
+    const { rows } = await pool.query(query, [userId]);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename=gympatico_historia_treningow.csv');
+    res.write('\uFEFF');
+
+    const headers = ["Data", "Nazwa treningu", "Komentarz do treningu", "Ćwiczenie", "Grupa mięśniowa", "Numer serii", "Ciężar (kg)", "Powtórzenia", "Estymowane 1RM"];
+    res.write(headers.join(';') + '\n');
+
+    for (const row of rows) {
+      const line = headers.map(header => {
+        const value = row[header];
+        if (typeof value === 'string' && (value.includes(';') || value.includes('"') || value.includes('\n'))) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      });
+      res.write(line.join(';') + '\n');
+    }
+
+    res.end();
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas generowania pliku eksportu", details: error.message });
+  }
+});
+
+module.exports = router;
 </file>
 
 <file path="frontend/src/views/Dashboard.jsx">
@@ -3294,7 +3591,9 @@ export default function Dashboard({
           </div>
 
           <div className="mb-4">
-            <WeightChart logs={weightLogs} />
+            <WeightChart 
+              logs={user?.is_premium || user?.role === 'TRAINER' ? weightLogs : weightLogs.slice(0, 7)} 
+            />
           </div>
 
           {weightLogs.length === 0 ? (
@@ -3349,63 +3648,60 @@ export default function Dashboard({
 </file>
 
 <file path="backend/index.js">
-require('dotenv').config(); // Wczytujemy zmienne na samym starcie
-
-// Walidacja zmiennych środowiskowych (Fail-Fast)
-if (!process.env.JWT_SECRET) {
-  console.error("\n❌ BŁĄD KRYTYCZNY: Zmienna środowiskowa JWT_SECRET nie jest ustawiona!");
-  console.error("Zabezpiecz aplikację, tworząc plik .env i ustawiając JWT_SECRET.\n");
-  process.exit(1); // Natychmiastowe zatrzymanie serwera
-}
-
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const pool = require('./config/db');
 const templatesRouter = require('./routes/templates');
 
+// Krytyczny bezpiecznik środowiskowy
+if (!process.env.JWT_SECRET) {
+  console.error("FATAL ERROR: Zmienna środowiskowa JWT_SECRET nie została zdefiniowana!");
+  process.exit(1);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// --- GLOBALNE MIDDLEWARE BEZPIECZEŃSTWA NAGŁÓWKÓW ---
 app.use(helmet());
 
-// 1. Definiujemy bezpieczną listę zaufanych adresów (origins)
-const allowedOrigins = [
-  process.env.FRONTEND_URL,    // Adres z Vercela
-  'http://localhost:5173',     // Lokalny serwer Vite (Desktop)
-  'http://127.0.0.1:5173'      // Alternatywny lokalny adres IP
-].filter(Boolean); // Usuwa undefined, jeśli FRONTEND_URL nie jest ustawiony lokalnie
-
-// Aktywacja podstawowych middleware
+// Zaawansowana i w pełni utwardzona konfiguracja CORS
 app.use(cors({
   origin: (origin, callback) => {
-    // Zezwalamy na żądania bez nagłówka Origin (np. Postman, Insomnia czy skrypty serwerowe)
+    // Zezwalamy na żądania bez nagłówka Origin (np. wewnętrzne testy serwera, Postman, Insomnia)
     if (!origin) return callback(null, true);
 
-    // 1. Oczyszczamy adresy z ewentualnych spacji na końcach oraz ukośników (BHP stringów)
+    // Czyszczenie stringów ze skrajnych spacji oraz końcowych ukośników (BHP danych)
     const cleanOrigin = origin.trim().replace(/\/$/, "");
     const cleanFrontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim().replace(/\/$/, "") : "";
 
-    // 2. Definiujemy reguły dopasowania
+    // Kryteria dopasowania uprawnień sieciowych (Origins Whitelist)
     const isLocalhost = cleanOrigin.startsWith('http://localhost') || cleanOrigin.startsWith('http://127.0.0.1');
     const isMainVercel = cleanFrontendUrl && cleanOrigin === cleanFrontendUrl;
-    const isVercelSubdomain = cleanOrigin.endsWith('.vercel.app'); // Wpuszcza wszystkie produkcyjne i testowe aliasy Vercela
+    
+    // FIX SECURE: Łączymy prefiks nazwy projektu z domeną Vercel.
+    // Wpuszcza tylko adresy typu: gympatico.vercel.app, gympatico-git-main.vercel.app itp.
+    // Blokuje natomiast: jakas-inna-nazwa-uzytkownika.vercel.app
+    const isVercelSubdomain = cleanOrigin.startsWith('https://gympatico') && cleanOrigin.endsWith('.vercel.app');
 
     if (isLocalhost || isMainVercel || isVercelSubdomain) {
-      // Adres spełnia kryteria – wpuszczamy i generujemy poprawne nagłówki dla Preflight (OPTIONS)
+      // Adres zweryfikowany pozytywnie -> generujemy poprawne nagłówki dla Preflight (OPTIONS)
       return callback(null, true);
     } else {
-      // Jeżeli adres zostanie odrzucony, serwer jawnie zapisze to w logach live na Renderze
+      // Rejestrujemy próby nieautoryzowanego dostępu na żywo w logach Rendera
       console.error(`[CORS BLOKADA] Nieautoryzowany Origin: "${origin}". Oczekiwano FRONTEND_URL: "${process.env.FRONTEND_URL}"`);
-      return callback(null, false); // Blokujemy czysto, bez crashowania procesu Node
+      return callback(null, false); // Blokujemy ruch przeglądarkowy czysto, bez crashowania procesu Node
     }
   },
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200 // Zapewnia stabilną obsługę zapytań przedwstępnych OPTIONS w starszych przeglądarkach
 }));
+
 app.use(express.json());
 
-// PODPIĘCIE MODUŁOWYCH ROUTERÓW
+// --- PODPIĘCIE MODUŁOWYCH ROUTERÓW API ---
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/weight', require('./routes/weight'));
 app.use('/api/workouts', require('./routes/workouts'));
@@ -3414,13 +3710,12 @@ app.use('/api/exercises', require('./routes/exercises'));
 app.use('/api/stats', require('./routes/stats'));
 app.use('/api/templates', templatesRouter);
 
-// [INFO] Stary, publiczny blok app.get('/api/exercises') został usunięty.
-// Wszystkie zapytania GET oraz POST dla ćwiczeń przetwarza teraz moduł powyżej.
-
-// Start serwera
+// Uruchomienie serwera
 app.listen(PORT, () => {
-  console.log(`🚀 Profesjonalny, modułowy serwer GymPatico śmiga pod adresem http://localhost:${PORT}`);
+  console.log(`🚀 Serwer GymPatico działa stabilnie i bezpiecznie na porcie ${PORT}`);
 });
+
+module.exports = app;
 </file>
 
 <file path="frontend/src/App.jsx">
@@ -3479,10 +3774,16 @@ function AppContent() {
   } = useWorkouts(token, exercises)
 
   const handleLoginSuccess = (userToken, userData) => {
+    // Normalizacja obiektu usera podczas logowania, by zawierał is_premium zgodne z resztą aplikacji
+    const normalizedLoginUser = {
+      ...userData,
+      is_premium: userData.isPremium || userData.is_premium || false
+    };
+
     localStorage.setItem('gp_token', userToken);
-    localStorage.setItem('gp_user', JSON.stringify(userData));
+    localStorage.setItem('gp_user', JSON.stringify(normalizedLoginUser));
     setToken(userToken)
-    setUser(userData)
+    setUser(normalizedLoginUser)
     navigate('/')
   }
 
@@ -3491,19 +3792,19 @@ function AppContent() {
     localStorage.removeItem('gp_user');
     setToken(null);
     setUser(null);
-    setLocalSeriesList([]); // Pochodzi z destrukcji useWorkouts
+    setLocalSeriesList([]); 
     navigate('/login');
-  }, [navigate, setLocalSeriesList]); // setToken i setUser są gwarantowane jako stabilne przez Reacta
+  }, [navigate, setLocalSeriesList]);
 
   const fetchStatsData = useCallback(async () => {
-  if (!token) return;
-  const res = await fetch(`${API_BASE_URL}/api/stats`, {
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
-  if (!res.ok) throw new Error('Błąd pobierania statystyk');
-  const data = await res.json();
-  setStats(data);
-}, [token]);
+    if (!token) return;
+    const res = await fetch(`${API_BASE_URL}/api/stats`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Błąd pobierania statystyk');
+    const data = await res.json();
+    setStats(data);
+  }, [token]);
 
   // Globalny, zabezpieczony mechanizm synchronizacji stanów z bazą
   const fetchAllData = useCallback(async () => {
@@ -3532,7 +3833,15 @@ function AppContent() {
         headers: protectedHeaders 
       })
         .then(res => { if (!res.ok) throw new Error('Błąd profilu'); return res.json(); })
-        .then(data => setUser(data));
+        .then(data => {
+          // FIX SECURE CACHE: Normalizujemy klucze i bezwzględnie aktualizujemy localStorage świeżymi danymi z Supabase
+          const normalizedUser = {
+            ...data,
+            isPremium: data.is_premium, // zachowanie kompatybilności wstecznej dla starszych odwołań camelCase
+          };
+          setUser(normalizedUser);
+          localStorage.setItem('gp_user', JSON.stringify(normalizedUser));
+        });
 
       await Promise.all([
         fetchExercises,
@@ -3549,29 +3858,26 @@ function AppContent() {
     } finally {
       setLoadingData(false);
     }
-  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData]);
+  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates]);
 
   useEffect(() => {
     fetchAllData()
   }, [token, fetchAllData])
 
-  // --- POPRAWKA: AUTOMATYCZNE WYLOGOWANIE PO WYGAŚNIĘCIU TOKENU ---
+  // Automatyczne wylogowanie po wygaśnięciu tokenu
   useEffect(() => {
     const handleSessionExpired = () => {
-      handleLogout(); // Czyści token, profil i przekierowuje do /login
+      handleLogout(); 
       showToast('Twoja sesja wygasła. Zaloguj się ponownie! 🔐', 'error');
     };
 
-    // Rejestracja nasłuchiwania na globalnej szynie zdarzeń
     window.addEventListener('gympatico-unauthorized', handleSessionExpired);
-    
-    // Czyszczenie subskrypcji przy odmontowywaniu komponentu
     return () => {
       window.removeEventListener('gympatico-unauthorized', handleSessionExpired);
     };
   }, [handleLogout]);
 
-  // --- HANDLERY OPERACJI INŻYNIERSKICH COMFORT-FLOW ---
+  // Handlery operacji comfort-flow
   const onUpdateWeeklyTarget = async (newTarget) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/auth/weekly-target`, {
@@ -3581,7 +3887,13 @@ function AppContent() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować celu.');
-      setUser(prev => ({ ...prev, weekly_target_workouts: data.weekly_target_workouts }));
+      
+      // FIX SECURE CACHE: Aktualizujemy localStorage również przy ręcznej zmianie parametrów celu
+      setUser(prev => {
+        const updatedUser = { ...prev, weekly_target_workouts: data.weekly_target_workouts };
+        localStorage.setItem('gp_user', JSON.stringify(updatedUser));
+        return updatedUser;
+      });
       showToast('Tygodniowy cel zaktualizowany! 🎯', 'success');
     } catch (err) {
       showToast(err.message, 'error');
@@ -3683,7 +3995,7 @@ function AppContent() {
       if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć ćwiczenia.');
 
       showToast('Ćwiczenie usunięte z atlasu! 🗑️', 'success');
-      await fetchAllData(); // Odświeżamy listę w locie
+      await fetchAllData(); 
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -3699,7 +4011,6 @@ function AppContent() {
   };
 
   return (
-    // Główny kontener aplikacji zintegrowany z ciemnym tłem GymPatico
     <div className="p-4 md:p-6 font-sans bg-gymDark text-white min-h-screen relative">
 
       {token && (
@@ -3711,7 +4022,6 @@ function AppContent() {
               <p className="hidden md:block text-zinc-400 text-xs mt-0.5">Witaj, <strong className="text-zinc-200">{user?.nick}</strong>!</p>
             </div>
             
-            {/* Nawigacja stacjonarna (Ukrywana na smartfonach przez md:flex) */}
             <nav className="hidden md:flex items-center gap-2">
               <button onClick={() => navigate('/')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Panel</button>
               <button onClick={() => navigate('/stats')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/stats' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Statystyki 📊</button>
@@ -3722,13 +4032,12 @@ function AppContent() {
               <button onClick={handleLogout} className="px-4 py-2 text-xs font-semibold rounded-lg bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer transition-all ml-2">Wyloguj</button>
             </nav>
 
-            {/* Przycisk wyjścia dla wersji mobilnej */}
             <button onClick={handleLogout} className="block md:hidden px-3 py-1.5 bg-zinc-800 text-white border border-zinc-700 rounded-lg font-bold cursor-pointer text-xs transition-colors hover:bg-zinc-700">
               Wyjdź 🚪
             </button>
           </header>
 
-          {/* ERGONOMICZNA DOLNA BELKA NAWIGACYJNA DLA MOBILE */}
+          {/* DOLNA BELKA NAWIGACYJNA MOBILNA */}
           <nav className="grid grid-cols-6 md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#1e1e1e] border-t border-zinc-800/80 shadow-2xl z-[999] py-1 px-0.5">
             <button onClick={() => navigate('/')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/' ? 'text-gymRed' : 'text-zinc-500'}`}>
               <span className="text-lg">📊</span><span>Panel</span>
@@ -3752,31 +4061,25 @@ function AppContent() {
         </>
       )}
 
-      {/* PASEK SYNCHRONIZACJI BACKENDU */}
       {loadingData && token && (
         <div className="text-gymRed text-left mb-4 font-bold text-xs md:text-sm animate-pulse flex items-center gap-1.5">
           🔄 Synchronizacja z bazą danych...
         </div>
       )}
 
-      {/* STRUMIEŃ GŁÓWNY WIDOKÓW (Dopisany bezpieczny padding dolny na mobile pod belkę) */}
       <main className="pb-20 md:pb-0">
         <Routes>
           <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
           <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={handleAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} /> : <Navigate to="/login" />} />
-          
-          {/* URATOWANE: Dokładnie jedna, w pełni wyposażona trasa dla Atlasu z obsługą dodawania */}
           <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} onDeleteExercise={onDeleteCustomExercise} /> : <Navigate to="/login" />} />
-          
           <Route path="/new-workout" element={token ? <NewWorkout workoutName={workoutName} setWorkoutName={setWorkoutName} workoutComment={workoutComment} setWorkoutComment={setWorkoutComment} currentSelectedExercise={currentSelectedExercise} setCurrentSelectedExercise={setCurrentSelectedExercise} seriesWeight={seriesWeight} setSeriesWeight={setSeriesWeight} seriesReps={seriesReps} setSeriesReps={setSeriesReps} exercises={exercises} localSeriesList={localSeriesList} addSeriesToLocalList={addSeriesToLocalList} handleSaveWorkout={onSaveWorkout} removeSeriesFromLocalList={removeSeriesFromLocalList} templates={templates} onSaveTemplate={handleSaveTemplate} onDeleteTemplate={handleDeleteTemplate} /> : <Navigate to="/login" />} />
-          <Route path="/history" element={token ? <History workoutsHistory={workoutsHistory} onDeleteWorkout={onDeleteWorkout} onLoadMoreWorkouts={onLoadMoreWorkouts} hasMoreWorkouts={hasMoreWorkouts} onUpdateWorkout={onUpdateWorkoutMetadata} /> : <Navigate to="/login" />} />
+          <Route path="/history" element={token ? <History workoutsHistory={workoutsHistory} onDeleteWorkout={onDeleteWorkout} onLoadMoreWorkouts={onLoadMoreWorkouts} hasMoreWorkouts={hasMoreWorkouts} onUpdateWorkout={onUpdateWorkoutMetadata} user={user} token={token} /> : <Navigate to="/login" />} />
           <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} /> : <Navigate to="/login" />} />
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>
       </main>
 
-      {/* UNIFORM TOAST NOTIFICATION BOX */}
       {toast.message && (
         <div 
           className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-xl text-white font-bold text-xs md:text-sm shadow-2xl z-[1000] tracking-wide animate-in fade-in slide-in-from-bottom-4 duration-200

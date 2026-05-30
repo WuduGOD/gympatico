@@ -4,8 +4,9 @@ const router = express.Router();
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
+const { getUserPlan } = require('../utils/userHelpers'); // <--- NOWY IMPORT HELPERA (DRY)
 
-// Zapisanie treningu + wyliczenie streaka (Zoptymalizowany UNNEST Batch Insert)
+// 1. ZAPISANIE TRENINGU (Zoptymalizowany UNNEST Batch Insert + JIT Streak)
 router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) => {
   const { name, comment, series } = req.body;
   const userId = req.user.userId;
@@ -25,7 +26,6 @@ router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) =>
     );
     const sessionId = sessionResult.rows[0].id;
 
-    // Inicjalizacja tablic dla mechanizmu masowego wstawiania UNNEST
     const exerciseIds = [];
     const weights = [];
     const reps = [];
@@ -34,7 +34,6 @@ router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) =>
     const isAlternatives = [];
     const seriesComments = [];
 
-    // Mapowanie obiektów JS na płaskie tablice kolumn bazodanowych
     for (let i = 0; i < series.length; i++) {
       const s = series[i];
       let estimatedOneRM = null;
@@ -51,7 +50,6 @@ router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) =>
       seriesComments.push(s.comment || null);
     }
 
-    // JEDNO ZAPYTANIE ZAMIAST PĘTLI SIECIOWEJ (Batch Insertion)
     const bulkInsertSeriesQuery = `
       INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment)
       SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::numeric[], $7::boolean[], $8::text[])
@@ -61,7 +59,6 @@ router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) =>
       sessionId, exerciseIds, weights, reps, orders, estimatedOneRMs, isAlternatives, seriesComments
     ]);
 
-    // Pobranie parametrów użytkownika do wyliczenia streaka
     const userResult = await client.query('SELECT current_streak, weekly_target_workouts, last_workout_at FROM users WHERE id = $1', [userId]);
     const { current_streak, weekly_target_workouts, last_workout_at } = userResult.rows[0];
 
@@ -115,17 +112,12 @@ router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) =>
   }
 });
 
-// Pobranie historii treningów (Zabezpieczone stronicowanie)
+// 2. POBRANIE HISTORII TRENINGÓW (Zabezpieczona Paginacja DoS Guard)
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   
-  let limit = parseInt(req.query.limit, 10);
-  let offset = parseInt(req.query.offset, 10);
-
-  if (isNaN(limit) || limit <= 0) limit = 20;
-  limit = Math.min(limit, 100); 
-
-  if (isNaN(offset) || offset < 0) offset = 0; 
+  const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
   try {
     const sessionsQuery = `
@@ -175,25 +167,22 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// Pobranie progresji 1RM ćwiczenia
+// 3. POBRANIE PROGRESJI 1RM ĆWICZENIA (Zoptymalizowany pod kątem helpera getUserPlan + limit 30 dni dla FREE)
 router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
   const { exerciseId } = req.params;
   const userId = req.user.userId;
 
   try {
-    const userCheck = await pool.query(
-      'SELECT is_premium as "isPremium", role FROM users WHERE id = $1',
-      [userId]
-    );
+    // Wykorzystujemy ujednolicony helper zamiast surowego zapytania SQL
+    const plan = await getUserPlan(userId);
 
-    if (userCheck.rowCount === 0) {
+    if (!plan) {
       return res.status(404).json({ error: "Użytkownik nie istnieje." });
     }
 
-    const { isPremium, role } = userCheck.rows[0];
-
+    // Blokada czasowa dla użytkowników darmowych
     let timeBoundaryFilter = '';
-    if (!isPremium && role !== 'TRAINER') {
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
       timeBoundaryFilter = "AND ws.started_at >= NOW() - INTERVAL '30 days'";
     }
 
@@ -224,7 +213,7 @@ router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
   }
 });
 
-// Usunięcie treningu
+// 4. USUNIĘCIE TRENINGU
 router.delete('/:sessionId', authenticateToken, async (req, res) => {
   const { sessionId } = req.params;
   const userId = req.user.userId;
@@ -244,7 +233,7 @@ router.delete('/:sessionId', authenticateToken, async (req, res) => {
   }
 });
 
-// Edycja metadanych treningu (Nazwa i Komentarz)
+// 5. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz)
 router.patch('/:sessionId', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   const { sessionId } = req.params;
@@ -284,23 +273,19 @@ router.patch('/:sessionId', authenticateToken, async (req, res) => {
   }
 });
 
-// Eksport historii do formatu CSV (Tylko PREMIUM / TRAINER)
+// 6. EKSPORT HISTORII DO PLIKU CSV (Zoptymalizowany pod kątem helpera getUserPlan + Excel UTF-8 BOM)
 router.get('/export', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    const userCheck = await pool.query(
-      'SELECT is_premium as "isPremium", role FROM users WHERE id = $1',
-      [userId]
-    );
+    // Wykorzystujemy ujednolicony helper zamiast surowego zapytania SQL
+    const plan = await getUserPlan(userId);
 
-    if (userCheck.rowCount === 0) {
+    if (!plan) {
       return res.status(404).json({ error: "Użytkownik nie istnieje." });
     }
 
-    const { isPremium, role } = userCheck.rows[0];
-
-    if (!isPremium && role !== 'TRAINER') {
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
       return res.status(403).json({ 
         error: "Funkcja eksportu historii do pliku CSV jest dostępna wyłącznie dla użytkowników planu PREMIUM! 🦾" 
       });
@@ -327,6 +312,7 @@ router.get('/export', authenticateToken, async (req, res) => {
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename=gympatico_historia_treningow.csv');
+    
     res.write('\uFEFF');
 
     const headers = ["Data", "Nazwa treningu", "Komentarz do treningu", "Ćwiczenie", "Grupa mięśniowa", "Numer serii", "Ciężar (kg)", "Powtórzenia", "Estymowane 1RM"];

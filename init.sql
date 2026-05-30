@@ -1,3 +1,5 @@
+-- init.sql - Zunifikowana struktura bazy danych GymPatico z obsługą stref czasowych (TIMESTAMPTZ)
+
 -- 1. Tabela Użytkowników
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -7,9 +9,9 @@ CREATE TABLE users (
     weekly_target_workouts INT DEFAULT 3,
     current_streak INT DEFAULT 0,
     max_streak INT DEFAULT 0,
-    last_workout_at TIMESTAMP,
+    last_workout_at TIMESTAMPTZ, -- Poprawiono strefę czasową streaka
     is_premium BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 2. Tabela Logów Wagi
@@ -17,10 +19,10 @@ CREATE TABLE weight_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     weight NUMERIC(5,2) NOT NULL,
-    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Tabela Ćwiczeń (Czysta kolumna name, bez starego ograniczenia UNIQUE)
+-- 3. Tabela Ćwiczeń
 CREATE TABLE exercises (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
@@ -28,11 +30,11 @@ CREATE TABLE exercises (
     user_id UUID REFERENCES users(id) ON DELETE CASCADE DEFAULT NULL
 );
 
--- 4. INDEKSY UNIKALNE (Muszą powstać natychmiast po tabeli exercises!)
--- Zabezpieczenie ćwiczeń globalnych (brak wielokrotnych duplikatów o tej samej nazwie w atlasie systemowym)
+-- 4. INDEKSY UNIKALNE DLA ATLASU ĆWICZEŃ
+-- Zabezpieczenie ćwiczeń globalnych (brak duplikatów o tej samej nazwie w bazie systemowej)
 CREATE UNIQUE INDEX exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
 
--- Zabezpieczenie ćwiczeń prywatnych (dany user nie doda u siebie dwóch tak samo nazwanych pozycji)
+-- Zabezpieczenie ćwiczeń prywatnych (użytkownik nie doda u siebie dwóch tak samo nazwanych pozycji)
 CREATE UNIQUE INDEX exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
 
 -- 5. Tabela Znajomości
@@ -41,7 +43,7 @@ CREATE TABLE friendships (
     sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
     receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
     status VARCHAR(20) DEFAULT 'PENDING',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT unique_friendship UNIQUE (sender_id, receiver_id)
 );
 
@@ -51,8 +53,8 @@ CREATE TABLE workout_sessions (
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     comment TEXT,
-    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 7. Tabela Serii Treningowych
@@ -68,15 +70,15 @@ CREATE TABLE log_series (
     comment TEXT
 );
 
--- Tabela główna szablonów
+-- 8. Tabela Główna Szablonów Treningowych
 CREATE TABLE workout_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tabela przechowująca konfigurację serii w danym szablonie
+-- 9. Tabela Serii w Szablonach
 CREATE TABLE template_series (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
@@ -86,10 +88,11 @@ CREATE TABLE template_series (
     series_order INT NOT NULL
 );
 
+-- Indeksy wydajnościowe dla klastrowania szablonów
 CREATE INDEX idx_templates_user ON workout_templates(user_id);
 CREATE INDEX idx_template_series_template ON template_series(template_id);
 
--- 8. SEEDOWANIE BAZY DANYCH (Teraz ON CONFLICT idealnie trafia w utworzony wyżej indeks globalny)
+-- 10. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
 INSERT INTO exercises (name, muscle_group) VALUES
   -- Klatka piersiowa
   ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),

@@ -18,7 +18,7 @@ export default function Social({
         
         {/* SEKCJA 1: WYSZUKAJ ZNAJOMYCH */}
         <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">Simple Szukaj znajomych 🔍</h2>
+          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">Szukaj znajomych 🔍</h2>
           <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangu.</p>
           
           <form onSubmit={handleSendFriendRequest} className="flex gap-2">
@@ -88,7 +88,7 @@ export default function Social({
               const isSecond = idx === 1;
               const isThird = idx === 2;
               const isMe = f.id === user?.id;
-              const isPremium = f.is_premium === true; // <--- ODZYTKANIE FLAGI Z BACKENDU
+              const isPremium = f.is_premium === true || f.isPremium === true;
 
               return (
                 <div 
@@ -102,14 +102,12 @@ export default function Social({
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    {/* NUMERACJA POZYCJI W RANKINGU */}
                     <span className={`text-lg font-black w-8 text-center shrink-0 ${
                       isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : isSecond ? 'text-zinc-300' : isThird ? 'text-amber-600' : 'text-zinc-500'
                     }`}>
                       #{idx + 1}
                     </span>
                     
-                    {/* KONTENER NA NICK I ODZNAKI (Zabezpieczony przed rozjeżdżaniem flexem) */}
                     <div className="flex items-center gap-2 min-w-0 truncate">
                       <strong className={`text-sm md:text-base truncate ${
                         isMe ? 'text-gymRed font-black' : isFirst ? 'text-amber-200 font-bold' : 'text-zinc-100'
@@ -117,7 +115,7 @@ export default function Social({
                         {f.nick} {isMe ? '(Ty)' : ''}
                       </strong>
 
-                      {/* --- POPRAWKA: NEONOWO-ZŁOTY BADGE PREMIUM DLA WYRÓŻNIONYCH KONT --- */}
+                      {/* WARUNKOWY BADGE PREMIUM DLA WYRÓŻNIONYCH KONT */}
                       {isPremium && (
                         <span 
                           className="inline-flex items-center bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider uppercase shrink-0 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
@@ -127,17 +125,15 @@ export default function Social({
                         </span>
                       )}
 
-                      {/* KORONA DLA LIDERA TABELI */}
                       {isFirst && !isMe && <span className="text-base shrink-0">👑</span>}
                     </div>
                   </div>
                   
-                  {/* WARTOŚĆ STREAKU W TYGODNIACH */}
                   <div className="text-right shrink-0 ml-2">
                     <span className={`font-black text-sm md:text-lg tracking-tight ${
                       isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : 'text-zinc-300'
                     }`}>
-                      🔥 {f.current_streak} {f.current_streak === 1 ? 'tyg.' : 'tyg.'}
+                      🔥 {f.current_streak} tyg.
                     </span>
                   </div>
                 </div>
