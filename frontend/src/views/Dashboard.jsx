@@ -279,7 +279,9 @@ export default function Dashboard({
           </div>
 
           <div className="mb-4">
-            <WeightChart logs={weightLogs} />
+            <WeightChart 
+              logs={user?.is_premium || user?.role === 'TRAINER' ? weightLogs : weightLogs.slice(0, 7)} 
+            />
           </div>
 
           {weightLogs.length === 0 ? (

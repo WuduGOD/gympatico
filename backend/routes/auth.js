@@ -20,7 +20,7 @@ const authLimiter = rateLimit({
   legacyHeaders: false,  // Wyłącza przestarzałe nagłówki X-RateLimit-*
 });
 
-// Rejestracja
+// Rejestracja nowego użytkownika
 router.post('/register', authLimiter, async (req, res) => {
   let { email, password, nick } = req.body;
 
@@ -53,7 +53,7 @@ router.post('/register', authLimiter, async (req, res) => {
     const query = `
       INSERT INTO users (email, password_hash, nick) 
       VALUES ($1, $2, $3) 
-      RETURNING id, email, nick, created_at
+      RETURNING id, email, nick, role, created_at
     `;
     const result = await pool.query(query, [email, passwordHash, nick]);
 
@@ -66,7 +66,7 @@ router.post('/register', authLimiter, async (req, res) => {
   }
 });
 
-// Logowanie
+// Logowanie użytkownika
 router.post('/login', authLimiter, async (req, res) => {
   const { email, password } = req.body;
 
@@ -87,8 +87,9 @@ router.post('/login', authLimiter, async (req, res) => {
       return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
     }
 
+    // FIX SECURE: Dodajemy jawnie "role: user.role" do tokenu, oszczędzając zapytania SQL w middleware
     const token = jwt.sign(
-      { userId: user.id, nick: user.nick },
+      { userId: user.id, nick: user.nick, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: '30d' }
     );
@@ -96,7 +97,13 @@ router.post('/login', authLimiter, async (req, res) => {
     res.json({
       message: "Zalogowano pomyślnie! 🦾",
       token,
-      user: { id: user.id, email: user.email, nick: user.nick, isPremium: user.is_premium }
+      user: { 
+        id: user.id, 
+        email: user.email, 
+        nick: user.nick, 
+        isPremium: user.is_premium,
+        role: user.role // Przekazujemy również do stanu aplikacji na frontendzie
+      }
     });
   } catch (error) {
     res.status(500).json({ error: "Błąd serwera podczas logowania", details: error.message });
@@ -106,8 +113,9 @@ router.post('/login', authLimiter, async (req, res) => {
 // Pobranie aktualnych danych profilu użytkownika (w tym świeżego streaka)
 router.get('/me', authenticateToken, async (req, res) => {
   try {
+    // Uzupełniamy zapytanie o kolumnę "role" dla synchronizacji twardej w App.jsx
     const result = await pool.query(
-      'SELECT id, email, nick, current_streak, is_premium, weekly_target_workouts FROM users WHERE id = $1',
+      'SELECT id, email, nick, current_streak, is_premium, weekly_target_workouts, role FROM users WHERE id = $1',
       [req.user.userId]
     );
     
@@ -121,11 +129,11 @@ router.get('/me', authenticateToken, async (req, res) => {
   }
 });
 
+// Aktualizacja celu tygodniowego
 router.put('/weekly-target', authenticateToken, async (req, res) => {
   const { weeklyTarget } = req.body;
   const userId = req.user.userId;
 
-  // Walidacja wejścia - cel musi być logiczną liczbą dni w tygodniu (1-7)
   const targetNum = parseInt(weeklyTarget);
   if (isNaN(targetNum) || targetNum < 1 || targetNum > 7) {
     return res.status(400).json({ error: "Cel tygodniowy musi być liczbą od 1 do 7!" });

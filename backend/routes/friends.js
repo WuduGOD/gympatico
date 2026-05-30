@@ -2,9 +2,10 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
+const checkLimits = require('../middleware/checkLimits');
 
 // Wysyłanie zaproszenia
-router.post('/request', authenticateToken, async (req, res) => {
+router.post('/request', authenticateToken, checkLimits('friends'), async (req, res) => {
   const { targetNick } = req.body;
   const senderId = req.user.userId;
 

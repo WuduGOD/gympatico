@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth'); // Twoje middleware do weryfikacji JWT
+const checkLimits = require('../middleware/checkLimits');
 
 // 1. Pobieranie atlasu ćwiczeń (Globalne + Prywatne zalogowanego użytkownika)
 router.get('/', authenticateToken, async (req, res) => {
@@ -23,7 +24,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // 2. Dodawanie własnego ćwiczenia przez użytkownika
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', authenticateToken, checkLimits('exercises'), async (req, res) => {
   const userId = req.user.userId;
   const { name, muscleGroup } = req.body;
 

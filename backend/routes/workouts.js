@@ -1,10 +1,12 @@
+// backend/routes/workouts.js
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
+const checkLimits = require('../middleware/checkLimits');
 
-// Zapisanie treningu + wyliczenie streaka
-router.post('/', authenticateToken, async (req, res) => {
+// Zapisanie treningu + wyliczenie streaka (Zoptymalizowany UNNEST Batch Insert)
+router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) => {
   const { name, comment, series } = req.body;
   const userId = req.user.userId;
 
@@ -12,11 +14,9 @@ router.post('/', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: "Nazwa treningu oraz serie są wymagane!" });
   }
 
-  // 1. Pobieramy dedykowanego, pojedynczego klienta z puli połączeń
   const client = await pool.connect();
 
   try {
-    // 2. Uruchamiamy transakcję na zabezpieczonym kliencie
     await client.query('BEGIN');
 
     const sessionResult = await client.query(
@@ -25,6 +25,16 @@ router.post('/', authenticateToken, async (req, res) => {
     );
     const sessionId = sessionResult.rows[0].id;
 
+    // Inicjalizacja tablic dla mechanizmu masowego wstawiania UNNEST
+    const exerciseIds = [];
+    const weights = [];
+    const reps = [];
+    const orders = [];
+    const estimatedOneRMs = [];
+    const isAlternatives = [];
+    const seriesComments = [];
+
+    // Mapowanie obiektów JS na płaskie tablice kolumn bazodanowych
     for (let i = 0; i < series.length; i++) {
       const s = series[i];
       let estimatedOneRM = null;
@@ -32,23 +42,30 @@ router.post('/', authenticateToken, async (req, res) => {
         estimatedOneRM = s.weight * (1 + s.reps / 30);
       }
 
-      // Wszystkie zapytania w pętli lecą przez stałe połączenie "client"
-      await client.query(
-        `INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [sessionId, s.exerciseId, s.weight, s.reps, s.order || (i + 1), estimatedOneRM, s.isAlternative || false, s.comment || null]
-      );
+      exerciseIds.push(s.exerciseId);
+      weights.push(s.weight);
+      reps.push(s.reps);
+      orders.push(s.order || (i + 1));
+      estimatedOneRMs.push(estimatedOneRM);
+      isAlternatives.push(s.isAlternative || false);
+      seriesComments.push(s.comment || null);
     }
 
-    const userResult = await client.query('SELECT current_streak, weekly_target_workouts FROM users WHERE id = $1', [userId]);
-    const { current_streak, weekly_target_workouts } = userResult.rows[0];
+    // JEDNO ZAPYTANIE ZAMIAST PĘTLI SIECIOWEJ (Batch Insertion)
+    const bulkInsertSeriesQuery = `
+      INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment)
+      SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::numeric[], $7::boolean[], $8::text[])
+    `;
+
+    await client.query(bulkInsertSeriesQuery, [
+      sessionId, exerciseIds, weights, reps, orders, estimatedOneRMs, isAlternatives, seriesComments
+    ]);
+
+    // Pobranie parametrów użytkownika do wyliczenia streaka
+    const userResult = await client.query('SELECT current_streak, weekly_target_workouts, last_workout_at FROM users WHERE id = $1', [userId]);
+    const { current_streak, weekly_target_workouts, last_workout_at } = userResult.rows[0];
 
     const target = weekly_target_workouts ?? 3;
-
-    const thisWeekResult = await client.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 AND started_at >= date_trunc('week', NOW())`, [userId]
-    );
-    const workoutsThisWeek = parseInt(thisWeekResult.rows[0].count);
 
     const lastWeekResult = await client.query(
       `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
@@ -57,23 +74,30 @@ router.post('/', authenticateToken, async (req, res) => {
     );
     const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count);
 
-    let newStreak = current_streak;
-    const didMeetGoalLastWeek = workoutsLastWeek >= target;
+    let effectiveStreak = current_streak;
 
+    if (last_workout_at) {
+      const startOfThisWeekResult = await client.query(`SELECT date_trunc('week', NOW()) as start_of_week`);
+      const startOfThisWeek = new Date(startOfThisWeekResult.rows[0].start_of_week);
+      const lastWorkoutDate = new Date(last_workout_at);
+
+      if (lastWorkoutDate < startOfThisWeek) {
+        if (workoutsLastWeek < target) {
+          effectiveStreak = 0; 
+        }
+      }
+    }
+
+    const thisWeekResult = await client.query(
+      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 AND started_at >= date_trunc('week', NOW())`, [userId]
+    );
+    const workoutsThisWeek = parseInt(thisWeekResult.rows[0].count);
+
+    let newStreak = effectiveStreak;
     if (workoutsThisWeek === target) {
-      if (didMeetGoalLastWeek || current_streak === 0) {
-        newStreak = current_streak + 1;
-      } else {
-        newStreak = 1;
-      }
-    } else if (workoutsThisWeek > target) {
-      newStreak = current_streak;
+      newStreak = effectiveStreak + 1;
     } else {
-      if (didMeetGoalLastWeek) {
-        newStreak = current_streak;
-      } else {
-        newStreak = 0;
-      }
+      newStreak = effectiveStreak;
     }
 
     await client.query(
@@ -81,30 +105,29 @@ router.post('/', authenticateToken, async (req, res) => {
       [newStreak, userId]
     );
 
-    // 3. Jeśli wszystko przeszło bez błędów — zatwierdzamy zmiany w bazie danych
     await client.query('COMMIT');
-    
     res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
   } catch (error) {
-    // 4. W przypadku jakiegokolwiek niepowodzenia cofamy CAŁĄ transakcję
     await client.query('ROLLBACK');
     res.status(500).json({ error: "Błąd transakcji", details: error.message });
   } finally {
-    // 5. BEZWZGLĘDNIE zwalniamy klienta z powrotem do puli połączeń, aby nie zablokować bazy
     client.release();
   }
 });
 
-// Pobranie historii treningów
+// Pobranie historii treningów (Zabezpieczone stronicowanie)
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   
-  // Pobieramy parametry z query stringa, ustawiając bezpieczne wartości domyślne
-  const limit = parseInt(req.query.limit) || 20;
-  const offset = parseInt(req.query.offset) || 0;
+  let limit = parseInt(req.query.limit, 10);
+  let offset = parseInt(req.query.offset, 10);
+
+  if (isNaN(limit) || limit <= 0) limit = 20;
+  limit = Math.min(limit, 100); 
+
+  if (isNaN(offset) || offset < 0) offset = 0; 
 
   try {
-    // Krok A: Pobieramy tylko określone sesje treningowe dla danej strony
     const sessionsQuery = `
       SELECT id, name, comment, started_at as "startedAt"
       FROM workout_sessions
@@ -119,7 +142,6 @@ router.get('/', authenticateToken, async (req, res) => {
       return res.json([]);
     }
 
-    // Krok B: Wyciągamy ID pobranych sesji, aby pobrać do nich serie
     const sessionIds = sessions.map(s => s.id);
 
     const seriesQuery = `
@@ -129,7 +151,7 @@ router.get('/', authenticateToken, async (req, res) => {
         ls.exercise_id, 
         ls.weight, 
         ls.reps, 
-        ls.series_order as "order", -- <--- TUTAJ: mapujemy series_order na alias "order"
+        ls.series_order as "order",
         ls.estimated_one_rm,
         ex.name as "exerciseName"
       FROM log_series ls
@@ -140,7 +162,6 @@ router.get('/', authenticateToken, async (req, res) => {
     const seriesResult = await pool.query(seriesQuery, [sessionIds]);
     const allSeries = seriesResult.rows;
 
-    // Krok C: Mapujemy serie do odpowiadających im sesji treningowych
     const historyData = sessions.map(session => {
       return {
         ...session,
@@ -154,11 +175,28 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+// Pobranie progresji 1RM ćwiczenia
 router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
   const { exerciseId } = req.params;
   const userId = req.user.userId;
 
   try {
+    const userCheck = await pool.query(
+      'SELECT is_premium as "isPremium", role FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userCheck.rowCount === 0) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    const { isPremium, role } = userCheck.rows[0];
+
+    let timeBoundaryFilter = '';
+    if (!isPremium && role !== 'TRAINER') {
+      timeBoundaryFilter = "AND ws.started_at >= NOW() - INTERVAL '30 days'";
+    }
+
     const query = `
       SELECT 
         TO_CHAR(ws.started_at, 'YYYY-MM-DD') as date,
@@ -168,8 +206,9 @@ router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
       WHERE ls.exercise_id = $1 
         AND ws.user_id = $2 
         AND ls.estimated_one_rm IS NOT NULL
-      GROUP BY TO_CHAR(ws.started_at, 'YYYY-MM-DD') -- Grupowanie TYLKO po sformatowanym dniu
-      ORDER BY date ASC -- Sortowanie tekstowe YYYY-MM-DD działa perfekcyjnie chronologicznie
+        ${timeBoundaryFilter}
+      GROUP BY TO_CHAR(ws.started_at, 'YYYY-MM-DD')
+      ORDER BY date ASC
     `;
     
     const result = await pool.query(query, [exerciseId, userId]);
@@ -185,12 +224,12 @@ router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
   }
 });
 
+// Usunięcie treningu
 router.delete('/:sessionId', authenticateToken, async (req, res) => {
   const { sessionId } = req.params;
   const userId = req.user.userId;
 
   try {
-    // Sprawdzamy, czy sesja istnieje i należy do zalogowanego użytkownika
     const checkQuery = 'SELECT * FROM workout_sessions WHERE id = $1 AND user_id = $2';
     const checkResult = await pool.query(checkQuery, [sessionId, userId]);
 
@@ -198,9 +237,7 @@ router.delete('/:sessionId', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "Nie znaleziono treningu lub nie masz uprawnień do jego usunięcia." });
     }
 
-    // Usuwamy trening. Kaskada (ON DELETE CASCADE) na poziomie bazy danych automatycznie usunie serie z log_series.
     await pool.query('DELETE FROM workout_sessions WHERE id = $1', [sessionId]);
-
     res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
   } catch (error) {
     res.status(500).json({ error: "Błąd serwera podczas usuwania treningu", details: error.message });
@@ -220,7 +257,6 @@ router.patch('/:sessionId', authenticateToken, async (req, res) => {
   name = name.trim();
   comment = comment ? comment.trim() : null;
 
-  // Identyczne limity znaków jak przy tworzeniu sesji
   if (name.length < 3 || name.length > 100) {
     return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
   }
@@ -245,6 +281,71 @@ router.patch('/:sessionId', authenticateToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: "Błąd serwera podczas edycji parametrów treningu", details: error.message });
+  }
+});
+
+// Eksport historii do formatu CSV (Tylko PREMIUM / TRAINER)
+router.get('/export', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const userCheck = await pool.query(
+      'SELECT is_premium as "isPremium", role FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userCheck.rowCount === 0) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    const { isPremium, role } = userCheck.rows[0];
+
+    if (!isPremium && role !== 'TRAINER') {
+      return res.status(403).json({ 
+        error: "Funkcja eksportu historii do pliku CSV jest dostępna wyłącznie dla użytkowników planu PREMIUM! 🦾" 
+      });
+    }
+
+    const query = `
+      SELECT 
+        TO_CHAR(ws.started_at, 'YYYY-MM-DD HH24:MI') as "Data",
+        ws.name as "Nazwa treningu",
+        COALESCE(ws.comment, '') as "Komentarz do treningu",
+        ex.name as "Ćwiczenie",
+        ex.muscle_group as "Grupa mięśniowa",
+        ls.series_order as "Numer serii",
+        ls.weight as "Ciężar (kg)",
+        ls.reps as "Powtórzenia",
+        COALESCE(ROUND(ls.estimated_one_rm, 1), 0) as "Estymowane 1RM"
+      FROM workout_sessions ws
+      JOIN log_series ls ON ws.id = ls.workout_session_id
+      JOIN exercises ex ON ls.exercise_id = ex.id
+      WHERE ws.user_id = $1
+      ORDER BY ws.started_at DESC, ls.series_order ASC
+    `;
+    const { rows } = await pool.query(query, [userId]);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename=gympatico_historia_treningow.csv');
+    res.write('\uFEFF');
+
+    const headers = ["Data", "Nazwa treningu", "Komentarz do treningu", "Ćwiczenie", "Grupa mięśniowa", "Numer serii", "Ciężar (kg)", "Powtórzenia", "Estymowane 1RM"];
+    res.write(headers.join(';') + '\n');
+
+    for (const row of rows) {
+      const line = headers.map(header => {
+        const value = row[header];
+        if (typeof value === 'string' && (value.includes(';') || value.includes('"') || value.includes('\n'))) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      });
+      res.write(line.join(';') + '\n');
+    }
+
+    res.end();
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas generowania pliku eksportu", details: error.message });
   }
 });
 

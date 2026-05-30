@@ -1,14 +1,15 @@
+// backend/routes/templates.js
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth'); // Zakładam, że tam masz middleware auth
+const authenticateToken = require('../middleware/auth');
+const checkLimits = require('../middleware/checkLimits');
 
 // 1. POBRANIE WSZYSTKICH SZABLONÓW UŻYTKOWNIKA
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // Agregujemy serie bezpośrednio w bazie za pomocą json_agg, oszczędzając pamięć RAM serwera
     const query = `
       SELECT wt.id, wt.name, wt.created_at,
              COALESCE(
@@ -34,12 +35,11 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// 2. TWORZENIE NOWEGO SZABLONU (TRANSAKCYJNE)
-router.post('/', authenticateToken, async (req, res) => {
+// 2. TWORZENIE NOWEGO SZABLONU (TRANSAKCYJNE + BŁYSKAWICZNY UNNEST)
+router.post('/', authenticateToken, checkLimits('templates'), async (req, res) => {
   const userId = req.user.userId;
   let { name, series } = req.body;
 
-  // Walidacja Fail-Fast
   if (!name || !name.trim() || !Array.isArray(series) || series.length === 0) {
     return res.status(400).json({ error: "Nazwa szablonu oraz zestaw serii są wymagane!" });
   }
@@ -49,35 +49,51 @@ router.post('/', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: "Nazwa szablonu musi mieć od 3 do 100 znaków!" });
   }
 
+  // Pobieramy dedykowanego klienta z puli dla bezpiecznej transakcji
+  const client = await pool.connect();
+
   try {
-    await pool.query('BEGIN');
+    await client.query('BEGIN');
 
     // Wstawienie nagłówka szablonu
-    const templateResult = await pool.query(
+    const templateResult = await client.query(
       "INSERT INTO workout_templates (user_id, name) VALUES ($1, $2) RETURNING id, name",
       [userId, name]
     );
     const templateId = templateResult.rows[0].id;
 
-    // Masowe wstawianie serii w pętli
+    // Przygotowanie płaskich tablic kolumn pod mechanizm UNNEST
+    const exerciseIds = [];
+    const weights = [];
+    const reps = [];
+    const orders = [];
+
     for (let i = 0; i < series.length; i++) {
       const s = series[i];
       if (!s.exerciseId || s.weight === undefined || !s.reps) {
         throw new Error("Niekompletne dane serii w szablonie.");
       }
-
-      await pool.query(
-        `INSERT INTO template_series (template_id, exercise_id, weight, reps, series_order)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [templateId, s.exerciseId, s.weight, s.reps, s.order || (i + 1)]
-      );
+      exerciseIds.push(s.exerciseId);
+      weights.push(s.weight);
+      reps.push(s.reps);
+      orders.push(s.order || (i + 1));
     }
 
-    await pool.query('COMMIT');
+    // Wykonujemy JEDNO zapytanie dla wszystkich wierszy (0 marnowania round-tripów)
+    const bulkInsertQuery = `
+      INSERT INTO template_series (template_id, exercise_id, weight, reps, series_order)
+      SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[])
+    `;
+    
+    await client.query(bulkInsertQuery, [templateId, exerciseIds, weights, reps, orders]);
+
+    await client.query('COMMIT');
     res.status(201).json({ message: "Szablon treningowy został zapisany! 💾", templateId });
   } catch (error) {
-    await pool.query('ROLLBACK');
+    await client.query('ROLLBACK');
     res.status(500).json({ error: "Błąd podczas zapisu szablonu", details: error.message });
+  } finally {
+    client.release(); // Bezwzględne zwolnienie klienta do puli
   }
 });
 
