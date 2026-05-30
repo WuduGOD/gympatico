@@ -53,6 +53,7 @@ backend/routes/stats.js
 backend/routes/templates.js
 backend/routes/weight.js
 backend/routes/workouts.js
+backend/utils/userHelpers.js
 docker-compose.yml
 frontend/.env.example
 frontend/.gitignore
@@ -280,96 +281,27 @@ router.get('/', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="backend/routes/weight.js">
-// backend/routes/weight.js
-const express = require('express');
-const router = express.Router();
+<file path="backend/utils/userHelpers.js">
+// backend/utils/userHelpers.js
 const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
 
-// 1. DODAWANIE POMIARU WAGI
-router.post('/', authenticateToken, async (req, res) => {
-  const { weight } = req.body;
-  const userId = req.user.userId;
-
-  if (!weight) {
-    return res.status(400).json({ error: "Wartość wagi jest wymagana!" });
-  }
-
-  // Walidacja i konwersja na typ zmiennoprzecinkowy przed wysłaniem do PostgreSQL
-  const numericWeight = parseFloat(weight);
-  if (isNaN(numericWeight)) {
-    return res.status(400).json({ error: "Waga musi być poprawną liczbą!" });
-  }
-
-  try {
-    const query = 'INSERT INTO weight_logs (user_id, weight) VALUES ($1, $2) RETURNING *';
-    const result = await pool.query(query, [userId, numericWeight]); 
-    res.status(201).json({ message: "Waga zapisana! 📉", log: result.rows[0] });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd zapisu wagi", details: error.message });
-  }
-});
-
-// 2. POBIERANIE HISTORII WAGI (ZABEZPIECZONY LIMIT DLA PLANU FREE)
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
+/**
+ * Pobiera aktualny plan oraz rolę użytkownika bezpośrednio z bazy danych.
+ * @param {string} userId - UUID użytkownika.
+ * @param {object} [dbClient=pool] - Opcjonalny klient bazy danych (przydatne podczas transakcji).
+ * @returns {Promise<{is_premium: boolean, role: string}|null>}
+ */
+const getUserPlan = async (userId, dbClient = pool) => {
+  const result = await dbClient.query(
+    'SELECT is_premium, role FROM users WHERE id = $1',
+    [userId]
+  );
   
-  try {
-    // Sprawdzamy status premium bezpośrednio w bazie danych (Fail-Safe)
-    const userCheck = await pool.query(
-      'SELECT is_premium as "isPremium", role FROM users WHERE id = $1',
-      [userId]
-    );
+  if (result.rowCount === 0) return null;
+  return result.rows[0];
+};
 
-    if (userCheck.rowCount === 0) {
-      return res.status(404).json({ error: "Użytkownik nie istnieje." });
-    }
-
-    const { isPremium, role } = userCheck.rows[0];
-
-    // Budujemy dynamiczny filtr LIMIT - użytkownicy FREE widzą tylko 7 ostatnich punktów
-    let sqlLimitFilter = '';
-    if (!isPremium && role !== 'TRAINER') {
-      sqlLimitFilter = 'LIMIT 7';
-    }
-
-    const query = `
-      SELECT id, user_id, weight, date 
-      FROM weight_logs 
-      WHERE user_id = $1 
-      ORDER BY date DESC 
-      ${sqlLimitFilter}
-    `;
-    
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd pobierania wagi", details: error.message });
-  }
-});
-
-// 3. USUWANIE POMIARU WAGI
-router.delete('/:id', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const logId = req.params.id;
-
-  try {
-    // Usuwamy wpis tylko, jeśli należy do zalogowanego użytkownika
-    const deleteQuery = 'DELETE FROM weight_logs WHERE id = $1 AND user_id = $2 RETURNING *';
-    const result = await pool.query(deleteQuery, [logId, userId]);
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Nie znaleziono wpisu wagi lub brak uprawnień do jego usunięcia." });
-    }
-
-    res.json({ message: "Pomiar wagi został pomyślnie usunięty." });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas neuromapowania i usuwania wpisu wagi", details: error.message });
-  }
-});
-
-module.exports = router;
+module.exports = { getUserPlan };
 </file>
 
 <file path="docker-compose.yml">
@@ -1462,6 +1394,50 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
+<file path="backend/routes/weight.js">
+// backend/routes/weight.js
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+const { getUserPlan } = require('../utils/userHelpers'); // <--- IMPORT HELPERA
+
+// Pobieranie historii wagi
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  
+  try {
+    // Korzystamy z ujednoliconego helpera
+    const plan = await getUserPlan(userId);
+
+    if (!plan) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    // Twardy sufit dla planu darmowego
+    let sqlLimitFilter = '';
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
+      sqlLimitFilter = 'LIMIT 7';
+    }
+
+    const query = `
+      SELECT id, user_id, weight, date 
+      FROM weight_logs 
+      WHERE user_id = $1 
+      ORDER BY date DESC 
+      ${sqlLimitFilter}
+    `;
+    
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania wagi", details: error.message });
+  }
+});
+
+module.exports = router;
+</file>
+
 <file path="frontend/package.json">
 {
   "name": "frontend",
@@ -2104,137 +2080,6 @@ export default defineConfig({
 })
 </file>
 
-<file path="init.sql">
--- init.sql - Zunifikowana struktura bazy danych GymPatico z obsługą stref czasowych (TIMESTAMPTZ)
-
--- 1. Tabela Użytkowników
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    nick VARCHAR(55) UNIQUE NOT NULL,
-    weekly_target_workouts INT DEFAULT 3,
-    current_streak INT DEFAULT 0,
-    max_streak INT DEFAULT 0,
-    last_workout_at TIMESTAMPTZ, -- Poprawiono strefę czasową streaka
-    is_premium BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2. Tabela Logów Wagi
-CREATE TABLE weight_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    weight NUMERIC(5,2) NOT NULL,
-    date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
--- 3. Tabela Ćwiczeń
-CREATE TABLE exercises (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255) NOT NULL,
-    muscle_group VARCHAR(100) NOT NULL,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE DEFAULT NULL
-);
-
--- 4. INDEKSY UNIKALNE DLA ATLASU ĆWICZEŃ
--- Zabezpieczenie ćwiczeń globalnych (brak duplikatów o tej samej nazwie w bazie systemowej)
-CREATE UNIQUE INDEX exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
-
--- Zabezpieczenie ćwiczeń prywatnych (użytkownik nie doda u siebie dwóch tak samo nazwanych pozycji)
-CREATE UNIQUE INDEX exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
-
--- 5. Tabela Znajomości
-CREATE TABLE friendships (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    status VARCHAR(20) DEFAULT 'PENDING',
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_friendship UNIQUE (sender_id, receiver_id)
-);
-
--- 6. Tabela Sesji Treningowych
-CREATE TABLE workout_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    comment TEXT,
-    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
--- 7. Tabela Serii Treningowych
-CREATE TABLE log_series (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
-    exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE,
-    weight NUMERIC NOT NULL,
-    reps INT NOT NULL,
-    series_order INT NOT NULL,
-    estimated_one_rm NUMERIC,
-    is_alternative BOOLEAN DEFAULT FALSE,
-    comment TEXT
-);
-
--- 8. Tabela Główna Szablonów Treningowych
-CREATE TABLE workout_templates (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 9. Tabela Serii w Szablonach
-CREATE TABLE template_series (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
-    exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
-    weight NUMERIC(6,2) NOT NULL,
-    reps INT NOT NULL,
-    series_order INT NOT NULL
-);
-
--- Indeksy wydajnościowe dla klastrowania szablonów
-CREATE INDEX idx_templates_user ON workout_templates(user_id);
-CREATE INDEX idx_template_series_template ON template_series(template_id);
-
--- 10. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
-INSERT INTO exercises (name, muscle_group) VALUES
-  -- Klatka piersiowa
-  ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),
-  ('Wyciskanie hantli na ławce skośnej dodatniej', 'Klatka piersiowa'),
-  ('Pompki na poręczach (Dips)', 'Klatka piersiowa'),
-  ('Rozpiętki z hantlami na ławce poziomej', 'Klatka piersiowa'),
-
-  -- Plecy
-  ('Martwy ciąg klasyczny', 'Plecy'),
-  ('Podciąganie na drążku (nachwytem)', 'Plecy'),
-  ('Wiosłowanie sztangą w opadzie tułowia', 'Plecy'),
-  ('Ściąganie drążka wyciągu górnego do klatki', 'Plecy'),
-  ('Wiosłowanie hantlem jednorącz w oparciu o ławkę', 'Plecy'),
-
-  -- Barki
-  ('Wyciskanie żołnierskie (OHP)', 'Barki'),
-  ('Wyciskanie hantli siedząc', 'Barki'),
-  ('Unoszenie hantli bokiem stojąc', 'Barki'),
-  ('Odwrotne rozpiętki na maszynie (Face pulls)', 'Barki'),
-
-  -- Nogi
-  ('Przysiad ze sztangą na plecach (Back squat)', 'Nogi'),
-  ('Wypychanie ciężaru na suwnicy (Leg press)', 'Nogi'),
-  ('Rumuński martwy ciąg (RDL)', 'Nogi'),
-  ('Prostowanie nóg na maszynie siedząc', 'Nogi'),
-  ('Uginanie nóg na maszynie leżąc', 'Nogi'),
-
-  -- Ramiona (Biceps i Triceps)
-  ('Uginanie przedramion ze sztangą łamaną stojąc', 'Biceps'),
-  ('Uginanie przedramion z hantlami z supinacją', 'Biceps'),
-  ('Wyciskanie francuskie ze sztangą łamaną leżąc', 'Triceps'),
-  ('Prostowanie przedramion na wyciągu (linki)', 'Triceps')
-ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
-</file>
-
 <file path="backend/routes/auth.js">
 const express = require('express');
 const router = express.Router();
@@ -2657,155 +2502,135 @@ export default function NewWorkout({
 }
 </file>
 
-<file path="frontend/src/views/Social.jsx">
-import React from 'react'
+<file path="init.sql">
+-- init.sql - Zunifikowana struktura bazy danych GymPatico z obsługą stref czasowych (TIMESTAMPTZ)
 
-export default function Social({
-  friendNickInput, 
-  setFriendNickInput,
-  handleSendFriendRequest, 
-  pendingRequests, 
-  handleAcceptFriend, 
-  handleRejectFriend,
-  friends,
-  user
-}) {
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
-      
-      {/* LEWA STRONA: WYSZUKIWARKA + OCZEKUJĄCE */}
-      <div className="lg:col-span-1 flex flex-col gap-6">
-        
-        {/* SEKCJA 1: WYSZUKAJ ZNAJOMYCH */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">Szukaj znajomych 🔍</h2>
-          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangu.</p>
-          
-          <form onSubmit={handleSendFriendRequest} className="flex gap-2">
-            <input 
-              type="text" 
-              placeholder="np. MarekWorkout" 
-              value={friendNickInput} 
-              onChange={e => setFriendNickInput(e.target.value)} 
-              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-            />
-            <button 
-              type="submit" 
-              className="bg-gymRed hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
-            >
-              Zaproś
-            </button>
-          </form>
-        </section>
+-- 1. Tabela Użytkowników
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    nick VARCHAR(55) UNIQUE NOT NULL,
+    weekly_target_workouts INT DEFAULT 3,
+    current_streak INT DEFAULT 0,
+    max_streak INT DEFAULT 0,
+    last_workout_at TIMESTAMPTZ, -- Poprawiono strefę czasową streaka
+    is_premium BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
 
-        {/* SEKCJA 2: OCZEKUJĄCE ZAPROSZENIA */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-4">Oczekujące zaproszenia ✉️</h2>
-          
-          {pendingRequests.length === 0 ? (
-            <p className="text-zinc-500 italic text-sm text-center py-4">Brak nowych zaproszeń.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {pendingRequests.map(req => (
-                <div key={req.friendship_id} className="flex justify-between items-center bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800 shadow-sm">
-                  <span className="text-sm">Od: <strong className="text-zinc-200">{req.nick}</strong></span>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => handleAcceptFriend(req.friendship_id)} 
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
-                    >
-                      Akceptuj
-                    </button>
-                    <button 
-                      onClick={() => handleRejectFriend(req.friendship_id)} 
-                      className="border border-gymRed text-gymRed hover:bg-gymRed/10 font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
-                    >
-                      Odrzuć
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
+-- 2. Tabela Logów Wagi
+CREATE TABLE weight_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    weight NUMERIC(5,2) NOT NULL,
+    date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
 
-      {/* PRAWA STRONA: RANKING STREAKÓW GANGU */}
-      <section className="lg:col-span-2 bg-gymCard p-4 md:p-6 rounded-xl shadow-lg border border-zinc-800/40">
-        <div className="border-b border-zinc-800 pb-4 mb-4">
-          <h2 className="text-xl md:text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-gymRed">
-            Ranking Streaków Gangu GymPatico 🔥
-          </h2>
-          <p className="text-zinc-400 text-xs md:text-sm mt-1">Utrzymuj cel tygodniowy, aby piąć się w górę tabeli!</p>
-        </div>
+-- 3. Tabela Ćwiczeń
+CREATE TABLE exercises (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    muscle_group VARCHAR(100) NOT NULL,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE DEFAULT NULL
+);
 
-        {friends.length === 0 ? (
-          <p className="text-zinc-500 italic text-center py-12">Brak znajomych w rankingu. Zaproś kogoś!</p>
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            {friends.map((f, idx) => {
-              const isFirst = idx === 0;
-              const isSecond = idx === 1;
-              const isThird = idx === 2;
-              const isMe = f.id === user?.id;
-              const isPremium = f.is_premium === true || f.isPremium === true;
+-- 4. INDEKSY UNIKALNE DLA ATLASU ĆWICZEŃ
+-- Zabezpieczenie ćwiczeń globalnych (brak duplikatów o tej samej nazwie w bazie systemowej)
+CREATE UNIQUE INDEX exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
 
-              return (
-                <div 
-                  key={f.id} 
-                  className={`flex justify-between items-center p-3.5 rounded-lg shadow-sm transition-all duration-200 ${
-                    isMe
-                      ? 'bg-gymRed/10 border-2 border-gymRed/40 shadow-[0_0_15px_rgba(255,71,87,0.03)]' 
-                      : isFirst 
-                        ? 'bg-amber-500/5 border border-amber-500/20 shadow-[0_0_12px_rgba(245,158,11,0.02)]' 
-                        : 'bg-[#2d2d2d] border border-zinc-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className={`text-lg font-black w-8 text-center shrink-0 ${
-                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : isSecond ? 'text-zinc-300' : isThird ? 'text-amber-600' : 'text-zinc-500'
-                    }`}>
-                      #{idx + 1}
-                    </span>
-                    
-                    <div className="flex items-center gap-2 min-w-0 truncate">
-                      <strong className={`text-sm md:text-base truncate ${
-                        isMe ? 'text-gymRed font-black' : isFirst ? 'text-amber-200 font-bold' : 'text-zinc-100'
-                      }`}>
-                        {f.nick} {isMe ? '(Ty)' : ''}
-                      </strong>
+-- Zabezpieczenie ćwiczeń prywatnych (użytkownik nie doda u siebie dwóch tak samo nazwanych pozycji)
+CREATE UNIQUE INDEX exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
 
-                      {/* WARUNKOWY BADGE PREMIUM DLA WYRÓŻNIONYCH KONT */}
-                      {isPremium && (
-                        <span 
-                          className="inline-flex items-center bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider uppercase shrink-0 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
-                          title="Użytkownik pakietu GymPatico Premium 🦾"
-                        >
-                          ⭐ PREMIUM
-                        </span>
-                      )}
+-- 5. Tabela Znajomości
+CREATE TABLE friendships (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'PENDING',
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_friendship UNIQUE (sender_id, receiver_id)
+);
 
-                      {isFirst && !isMe && <span className="text-base shrink-0">👑</span>}
-                    </div>
-                  </div>
-                  
-                  <div className="text-right shrink-0 ml-2">
-                    <span className={`font-black text-sm md:text-lg tracking-tight ${
-                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : 'text-zinc-300'
-                    }`}>
-                      🔥 {f.current_streak} tyg.
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+-- 6. Tabela Sesji Treningowych
+CREATE TABLE workout_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    comment TEXT,
+    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
 
-    </div>
-  )
-}
+-- 7. Tabela Serii Treningowych
+CREATE TABLE log_series (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
+    exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE,
+    weight NUMERIC NOT NULL,
+    reps INT NOT NULL,
+    series_order INT NOT NULL,
+    estimated_one_rm NUMERIC,
+    is_alternative BOOLEAN DEFAULT FALSE,
+    comment TEXT
+);
+
+-- 8. Tabela Główna Szablonów Treningowych
+CREATE TABLE workout_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 9. Tabela Serii w Szablonach
+CREATE TABLE template_series (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
+    exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+    weight NUMERIC(6,2) NOT NULL,
+    reps INT NOT NULL,
+    series_order INT NOT NULL
+);
+
+-- Indeksy wydajnościowe dla klastrowania szablonów
+CREATE INDEX idx_templates_user ON workout_templates(user_id);
+CREATE INDEX idx_template_series_template ON template_series(template_id);
+
+-- 10. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
+INSERT INTO exercises (name, muscle_group) VALUES
+  -- Klatka piersiowa
+  ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),
+  ('Wyciskanie hantli na ławce skośnej dodatniej', 'Klatka piersiowa'),
+  ('Pompki na poręczach (Dips)', 'Klatka piersiowa'),
+  ('Rozpiętki z hantlami na ławce poziomej', 'Klatka piersiowa'),
+
+  -- Plecy
+  ('Martwy ciąg klasyczny', 'Plecy'),
+  ('Podciąganie na drążku (nachwytem)', 'Plecy'),
+  ('Wiosłowanie sztangą w opadzie tułowia', 'Plecy'),
+  ('Ściąganie drążka wyciągu górnego do klatki', 'Plecy'),
+  ('Wiosłowanie hantlem jednorącz w oparciu o ławkę', 'Plecy'),
+
+  -- Barki
+  ('Wyciskanie żołnierskie (OHP)', 'Barki'),
+  ('Wyciskanie hantli siedząc', 'Barki'),
+  ('Unoszenie hantli bokiem stojąc', 'Barki'),
+  ('Odwrotne rozpiętki na maszynie (Face pulls)', 'Barki'),
+
+  -- Nogi
+  ('Przysiad ze sztangą na plecach (Back squat)', 'Nogi'),
+  ('Wypychanie ciężaru na suwnicy (Leg press)', 'Nogi'),
+  ('Rumuński martwy ciąg (RDL)', 'Nogi'),
+  ('Prostowanie nóg na maszynie siedząc', 'Nogi'),
+  ('Uginanie nóg na maszynie leżąc', 'Nogi'),
+
+  -- Ramiona (Biceps i Triceps)
+  ('Uginanie przedramion ze sztangą łamaną stojąc', 'Biceps'),
+  ('Uginanie przedramion z hantlami z supinacją', 'Biceps'),
+  ('Wyciskanie francuskie ze sztangą łamaną leżąc', 'Triceps'),
+  ('Prostowanie przedramion na wyciągu (linki)', 'Triceps')
+ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
 </file>
 
 <file path="backend/routes/friends.js">
@@ -2958,6 +2783,157 @@ router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => 
 module.exports = router;
 </file>
 
+<file path="frontend/src/views/Social.jsx">
+import React from 'react'
+
+export default function Social({
+  friendNickInput, 
+  setFriendNickInput,
+  handleSendFriendRequest, 
+  pendingRequests, 
+  handleAcceptFriend, 
+  handleRejectFriend,
+  friends,
+  user
+}) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
+      
+      {/* LEWA STRONA: WYSZUKIWARKA + OCZEKUJĄCE */}
+      <div className="lg:col-span-1 flex flex-col gap-6">
+        
+        {/* SEKCJA 1: WYSZUKAJ ZNAJOMYCH */}
+        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
+          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">Szukaj znajomych 🔍</h2>
+          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangu.</p>
+          
+          <form onSubmit={handleSendFriendRequest} className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="np. MarekWorkout" 
+              value={friendNickInput} 
+              onChange={e => setFriendNickInput(e.target.value)} 
+              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
+            />
+            <button 
+              type="submit" 
+              className="bg-gymRed hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
+            >
+              Zaproś
+            </button>
+          </form>
+        </section>
+
+        {/* SEKCJA 2: OCZEKUJĄCE ZAPROSZENIA */}
+        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
+          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-4">Oczekujące zaproszenia ✉️</h2>
+          
+          {pendingRequests.length === 0 ? (
+            <p className="text-zinc-500 italic text-sm text-center py-4">Brak nowych zaproszeń.</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {pendingRequests.map(req => (
+                <div key={req.friendship_id} className="flex justify-between items-center bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800 shadow-sm">
+                  <span className="text-sm">Od: <strong className="text-zinc-200">{req.nick}</strong></span>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => handleAcceptFriend(req.friendship_id)} 
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
+                    >
+                      Akceptuj
+                    </button>
+                    <button 
+                      onClick={() => handleRejectFriend(req.friendship_id)} 
+                      className="border border-gymRed text-gymRed hover:bg-gymRed/10 font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
+                    >
+                      Odrzuć
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* PRAWA STRONA: RANKING STREAKÓW GANGU */}
+      <section className="lg:col-span-2 bg-gymCard p-4 md:p-6 rounded-xl shadow-lg border border-zinc-800/40">
+        <div className="border-b border-zinc-800 pb-4 mb-4">
+          <h2 className="text-xl md:text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-gymRed">
+            Ranking Streaków Gangu GymPatico 🔥
+          </h2>
+          <p className="text-zinc-400 text-xs md:text-sm mt-1">Utrzymuj cel tygodniowy, aby piąć się w górę tabeli!</p>
+        </div>
+
+        {friends.length === 0 ? (
+          <p className="text-zinc-500 italic text-center py-12">Brak znajomych w rankingu. Zaproś kogoś!</p>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {friends.map((f, idx) => {
+              const isFirst = idx === 0;
+              const isSecond = idx === 1;
+              const isThird = idx === 2;
+              const isMe = f.id === user?.id;
+              const isPremium = f.is_premium === true || f.isPremium === true;
+
+              return (
+                <div 
+                  key={f.id} 
+                  className={`flex justify-between items-center p-3.5 rounded-lg shadow-sm transition-all duration-200 ${
+                    isMe
+                      ? 'bg-gymRed/10 border-2 border-gymRed/40 shadow-[0_0_15px_rgba(255,71,87,0.03)]' 
+                      : isFirst 
+                        ? 'bg-amber-500/5 border border-amber-500/20 shadow-[0_0_12px_rgba(245,158,11,0.02)]' 
+                        : 'bg-[#2d2d2d] border border-zinc-800/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`text-lg font-black w-8 text-center shrink-0 ${
+                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : isSecond ? 'text-zinc-300' : isThird ? 'text-amber-600' : 'text-zinc-500'
+                    }`}>
+                      #{idx + 1}
+                    </span>
+                    
+                    <div className="flex items-center gap-2 min-w-0 truncate">
+                      <strong className={`text-sm md:text-base truncate ${
+                        isMe ? 'text-gymRed font-black' : isFirst ? 'text-amber-200 font-bold' : 'text-zinc-100'
+                      }`}>
+                        {f.nick} {isMe ? '(Ty)' : ''}
+                      </strong>
+
+                      {/* WARUNKOWY BADGE PREMIUM DLA WYRÓŻNIONYCH KONT */}
+                      {isPremium && (
+                        <span 
+                          className="inline-flex items-center bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider uppercase shrink-0 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
+                          title="Użytkownik pakietu GymPatico Premium 🦾"
+                        >
+                          ⭐ PREMIUM
+                        </span>
+                      )}
+
+                      {isFirst && !isMe && <span className="text-base shrink-0">👑</span>}
+                    </div>
+                  </div>
+                  
+                  <div className="text-right shrink-0 ml-2">
+                    <span className={`font-black text-sm md:text-lg tracking-tight ${
+                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : 'text-zinc-300'
+                    }`}>
+                      🔥 {f.current_streak} tyg.
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+    </div>
+  )
+}
+</file>
+
 <file path="backend/routes/workouts.js">
 // backend/routes/workouts.js
 const express = require('express');
@@ -2965,6 +2941,7 @@ const router = express.Router();
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
+const { getUserPlan } = require('../utils/userHelpers'); // <--- NOWY IMPORT HELPERA (DRY)
 
 // 1. ZAPISANIE TRENINGU (Zoptymalizowany UNNEST Batch Insert + JIT Streak)
 router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) => {
@@ -3072,16 +3049,14 @@ router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) =>
   }
 });
 
-// 2. POBRANIE HISTORII TRENINGÓW (Zabezpieczona Paginacja)
+// 2. POBRANIE HISTORII TRENINGÓW (Zabezpieczona Paginacja DoS Guard)
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   
-  // TWARDA SANITACJA: Zabezpieczenie przed atakiem DoS / Resource Exhaustion
   const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
   try {
-    // Krok A: Pobieramy tylko przefiltrowane i ograniczone sesje treningowe
     const sessionsQuery = `
       SELECT id, name, comment, started_at as "startedAt"
       FROM workout_sessions
@@ -3096,7 +3071,6 @@ router.get('/', authenticateToken, async (req, res) => {
       return res.json([]);
     }
 
-    // Krok B: Wyciągamy ID pobranych sesji, aby pobrać do nich serie
     const sessionIds = sessions.map(s => s.id);
 
     const seriesQuery = `
@@ -3117,7 +3091,6 @@ router.get('/', authenticateToken, async (req, res) => {
     const seriesResult = await pool.query(seriesQuery, [sessionIds]);
     const allSeries = seriesResult.rows;
 
-    // Krok C: Mapujemy serie do odpowiadających im sesji treningowych
     const historyData = sessions.map(session => {
       return {
         ...session,
@@ -3131,26 +3104,22 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// 3. POBRANIE PROGRESJI 1RM ĆWICZENIA (Twarde odcięcie czasowe dla planów FREE)
+// 3. POBRANIE PROGRESJI 1RM ĆWICZENIA (Zoptymalizowany pod kątem helpera getUserPlan + limit 30 dni dla FREE)
 router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
   const { exerciseId } = req.params;
   const userId = req.user.userId;
 
   try {
-    const userCheck = await pool.query(
-      'SELECT is_premium as "isPremium", role FROM users WHERE id = $1',
-      [userId]
-    );
+    // Wykorzystujemy ujednolicony helper zamiast surowego zapytania SQL
+    const plan = await getUserPlan(userId);
 
-    if (userCheck.rowCount === 0) {
+    if (!plan) {
       return res.status(404).json({ error: "Użytkownik nie istnieje." });
     }
 
-    const { isPremium, role } = userCheck.rows[0];
-
-    // FIX SECURE: Jeśli użytkownik nie ma premium i nie jest trenerem, wymuszamy filtr ostatnich 30 dni w SQL
+    // Blokada czasowa dla użytkowników darmowych
     let timeBoundaryFilter = '';
-    if (!isPremium && role !== 'TRAINER') {
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
       timeBoundaryFilter = "AND ws.started_at >= NOW() - INTERVAL '30 days'";
     }
 
@@ -3241,23 +3210,19 @@ router.patch('/:sessionId', authenticateToken, async (req, res) => {
   }
 });
 
-// 6. EKSPORT HISTORII DO PLIKU CSV (Weryfikacja PREMIUM / Excel UTF-8 BOM)
+// 6. EKSPORT HISTORII DO PLIKU CSV (Zoptymalizowany pod kątem helpera getUserPlan + Excel UTF-8 BOM)
 router.get('/export', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    const userCheck = await pool.query(
-      'SELECT is_premium as "isPremium", role FROM users WHERE id = $1',
-      [userId]
-    );
+    // Wykorzystujemy ujednolicony helper zamiast surowego zapytania SQL
+    const plan = await getUserPlan(userId);
 
-    if (userCheck.rowCount === 0) {
+    if (!plan) {
       return res.status(404).json({ error: "Użytkownik nie istnieje." });
     }
 
-    const { isPremium, role } = userCheck.rows[0];
-
-    if (!isPremium && role !== 'TRAINER') {
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
       return res.status(403).json({ 
         error: "Funkcja eksportu historii do pliku CSV jest dostępna wyłącznie dla użytkowników planu PREMIUM! 🦾" 
       });
@@ -3284,6 +3249,7 @@ router.get('/export', authenticateToken, async (req, res) => {
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename=gympatico_historia_treningow.csv');
+    
     res.write('\uFEFF');
 
     const headers = ["Data", "Nazwa treningu", "Komentarz do treningu", "Ćwiczenie", "Grupa mięśniowa", "Numer serii", "Ciężar (kg)", "Powtórzenia", "Estymowane 1RM"];

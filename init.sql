@@ -9,8 +9,9 @@ CREATE TABLE users (
     weekly_target_workouts INT DEFAULT 3,
     current_streak INT DEFAULT 0,
     max_streak INT DEFAULT 0,
-    last_workout_at TIMESTAMPTZ, -- Poprawiono strefę czasową streaka
+    last_workout_at TIMESTAMPTZ, 
     is_premium BOOLEAN DEFAULT FALSE,
+    role VARCHAR(20) DEFAULT 'USER' NOT NULL, -- <--- POPRAWKA: Kolumna roli zabezpieczająca bezstanowe JWT i moduł TRAINER
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 

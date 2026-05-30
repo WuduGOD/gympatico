@@ -167,113 +167,7 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// 3. POBRANIE PROGRESJI 1RM ĆWICZENIA (Zoptymalizowany pod kątem helpera getUserPlan + limit 30 dni dla FREE)
-router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
-  const { exerciseId } = req.params;
-  const userId = req.user.userId;
-
-  try {
-    // Wykorzystujemy ujednolicony helper zamiast surowego zapytania SQL
-    const plan = await getUserPlan(userId);
-
-    if (!plan) {
-      return res.status(404).json({ error: "Użytkownik nie istnieje." });
-    }
-
-    // Blokada czasowa dla użytkowników darmowych
-    let timeBoundaryFilter = '';
-    if (!plan.is_premium && plan.role !== 'TRAINER') {
-      timeBoundaryFilter = "AND ws.started_at >= NOW() - INTERVAL '30 days'";
-    }
-
-    const query = `
-      SELECT 
-        TO_CHAR(ws.started_at, 'YYYY-MM-DD') as date,
-        MAX(ls.estimated_one_rm) as max_1rm
-      FROM log_series ls
-      JOIN workout_sessions ws ON ls.workout_session_id = ws.id
-      WHERE ls.exercise_id = $1 
-        AND ws.user_id = $2 
-        AND ls.estimated_one_rm IS NOT NULL
-        ${timeBoundaryFilter}
-      GROUP BY TO_CHAR(ws.started_at, 'YYYY-MM-DD')
-      ORDER BY date ASC
-    `;
-    
-    const result = await pool.query(query, [exerciseId, userId]);
-    
-    const progressionData = result.rows.map(row => ({
-      date: row.date,
-      oneRm: parseFloat(row.max_1rm)
-    }));
-
-    res.json(progressionData);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd podczas pobierania progresji 1RM", details: error.message });
-  }
-});
-
-// 4. USUNIĘCIE TRENINGU
-router.delete('/:sessionId', authenticateToken, async (req, res) => {
-  const { sessionId } = req.params;
-  const userId = req.user.userId;
-
-  try {
-    const checkQuery = 'SELECT * FROM workout_sessions WHERE id = $1 AND user_id = $2';
-    const checkResult = await pool.query(checkQuery, [sessionId, userId]);
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: "Nie znaleziono treningu lub nie masz uprawnień do jego usunięcia." });
-    }
-
-    await pool.query('DELETE FROM workout_sessions WHERE id = $1', [sessionId]);
-    res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas usuwania treningu", details: error.message });
-  }
-});
-
-// 5. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz)
-router.patch('/:sessionId', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { sessionId } = req.params;
-  let { name, comment } = req.body;
-
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: "Nazwa treningu jest wymagana!" });
-  }
-
-  name = name.trim();
-  comment = comment ? comment.trim() : null;
-
-  if (name.length < 3 || name.length > 100) {
-    return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
-  }
-
-  if (comment && comment.length > 500) {
-    return res.status(400).json({ error: "Komentarz może mieć maksymalnie 500 znaków!" });
-  }
-
-  try {
-    const updateQuery = `
-      UPDATE workout_sessions 
-      SET name = $1, comment = $2 
-      WHERE id = $3 AND user_id = $4 
-      RETURNING id, name, comment
-    `;
-    const result = await pool.query(updateQuery, [name.trim(), comment ? comment.trim() : null, sessionId, userId]);
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Nie znaleziono sesji treningowej lub brak uprawnień." });
-    }
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas edycji parametrów treningu", details: error.message });
-  }
-});
-
-// 6. EKSPORT HISTORII DO PLIKU CSV (Zoptymalizowany pod kątem helpera getUserPlan + Excel UTF-8 BOM)
+// 3. EKSPORT HISTORII DO PLIKU CSV (Zoptymalizowany pod kątem helpera getUserPlan + Excel UTF-8 BOM)
 router.get('/export', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
@@ -332,6 +226,112 @@ router.get('/export', authenticateToken, async (req, res) => {
     res.end();
   } catch (error) {
     res.status(500).json({ error: "Błąd serwera podczas generowania pliku eksportu", details: error.message });
+  }
+});
+
+// 4. POBRANIE PROGRESJI 1RM ĆWICZENIA (Zoptymalizowany pod kątem helpera getUserPlan + limit 30 dni dla FREE)
+router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
+  const { exerciseId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    // Wykorzystujemy ujednolicony helper zamiast surowego zapytania SQL
+    const plan = await getUserPlan(userId);
+
+    if (!plan) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    // Blokada czasowa dla użytkowników darmowych
+    let timeBoundaryFilter = '';
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
+      timeBoundaryFilter = "AND ws.started_at >= NOW() - INTERVAL '30 days'";
+    }
+
+    const query = `
+      SELECT 
+        TO_CHAR(ws.started_at, 'YYYY-MM-DD') as date,
+        MAX(ls.estimated_one_rm) as max_1rm
+      FROM log_series ls
+      JOIN workout_sessions ws ON ls.workout_session_id = ws.id
+      WHERE ls.exercise_id = $1 
+        AND ws.user_id = $2 
+        AND ls.estimated_one_rm IS NOT NULL
+        ${timeBoundaryFilter}
+      GROUP BY TO_CHAR(ws.started_at, 'YYYY-MM-DD')
+      ORDER BY date ASC
+    `;
+    
+    const result = await pool.query(query, [exerciseId, userId]);
+    
+    const progressionData = result.rows.map(row => ({
+      date: row.date,
+      oneRm: parseFloat(row.max_1rm)
+    }));
+
+    res.json(progressionData);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd podczas pobierania progresji 1RM", details: error.message });
+  }
+});
+
+// 5. USUNIĘCIE TRENINGU
+router.delete('/:sessionId', authenticateToken, async (req, res) => {
+  const { sessionId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    const checkQuery = 'SELECT * FROM workout_sessions WHERE id = $1 AND user_id = $2';
+    const checkResult = await pool.query(checkQuery, [sessionId, userId]);
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: "Nie znaleziono treningu lub nie masz uprawnień do jego usunięcia." });
+    }
+
+    await pool.query('DELETE FROM workout_sessions WHERE id = $1', [sessionId]);
+    res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas usuwania treningu", details: error.message });
+  }
+});
+
+// 6. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz)
+router.patch('/:sessionId', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { sessionId } = req.params;
+  let { name, comment } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: "Nazwa treningu jest wymagana!" });
+  }
+
+  name = name.trim();
+  comment = comment ? comment.trim() : null;
+
+  if (name.length < 3 || name.length > 100) {
+    return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
+  }
+
+  if (comment && comment.length > 500) {
+    return res.status(400).json({ error: "Komentarz może mieć maksymalnie 500 znaków!" });
+  }
+
+  try {
+    const updateQuery = `
+      UPDATE workout_sessions 
+      SET name = $1, comment = $2 
+      WHERE id = $3 AND user_id = $4 
+      RETURNING id, name, comment
+    `;
+    const result = await pool.query(updateQuery, [name.trim(), comment ? comment.trim() : null, sessionId, userId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Nie znaleziono sesji treningowej lub brak uprawnień." });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas edycji parametrów treningu", details: error.message });
   }
 });
 
