@@ -525,8 +525,7 @@ export default function NewWorkout({
                   placeholder="Wyszukaj ćwiczenie..." 
                   value={searchQuery} 
                   onChange={e => setSearchQuery(e.target.value)} 
-                  autoFocus 
-                  className="flex-1 p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed font-medium" 
+                  className="flex-1 p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-base md:text-sm outline-none focus:border-gymRed font-medium" 
                 />
                 <button onClick={() => setIsAtlasOpen(false)} className="text-textSecondary hover:text-white font-bold text-xs px-3 py-2 bg-gymCardSecondary border border-zinc-800 rounded-gp-md cursor-pointer shrink-0 transition-colors">
                   Anuluj
