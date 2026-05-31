@@ -42,6 +42,7 @@ The content is organized as follows:
 <directory_structure>
 .github/workflows/playwright.yml
 .gitignore
+backend/.env.example
 backend/config/db.js
 backend/index.js
 backend/middleware/auth.js
@@ -100,171 +101,16 @@ init.sql
 <files>
 This section contains the contents of the repository's files.
 
-<file path="backend/schema.sql">
--- Użyj pliku init.sql w katalogu głównym repozytorium (CI i lokalna baza testowa).
--- Ten plik pozostaje tylko jako wskaźnik dla starszych skryptów.
-</file>
-
-<file path="backend/tests/helpers.js">
-const pool = require('../config/db');
-
-const EXERCISE_SEED = [
-  ['Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'],
-  ['Przysiad ze sztangą na plecach (Back squat)', 'Nogi'],
-];
-
-async function ensureTestSchema() {
-  await pool.query(`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'USER';
-    UPDATE users SET role = 'USER' WHERE role IS NULL;
-  `);
-}
-
-async function resetDatabase() {
-  await ensureTestSchema();
-  await pool.query('TRUNCATE users CASCADE');
-  await pool.query('TRUNCATE exercises CASCADE');
-}
-
-async function seedExercises() {
-  for (const [name, muscleGroup] of EXERCISE_SEED) {
-    await pool.query(
-      `INSERT INTO exercises (name, muscle_group) VALUES ($1, $2)`,
-      [name, muscleGroup]
-    );
-  }
-}
-
-async function getExerciseIdByName(namePattern) {
-  const result = await pool.query(
-    `SELECT id FROM exercises WHERE name ILIKE $1 LIMIT 1`,
-    [namePattern]
-  );
-  return result.rows[0]?.id;
-}
-
-async function closePool() {
-  await pool.end();
-}
-
-module.exports = {
-  resetDatabase,
-  seedExercises,
-  getExerciseIdByName,
-  closePool,
-};
-</file>
-
-<file path="frontend/tests/gympatico.spec.js">
-// frontend/tests/gympatico.spec.js
-import { test, expect } from '@playwright/test';
-
-test.describe('GymPatico Full E2E Mobile Workflow', () => {
-
-  test('Rejestracja -> Logowanie -> Trening -> Filtry Kapsułkowe', async ({ page }) => {
-    const uniqueId = Date.now();
-    const botEmail = `bot_${uniqueId}@gympatico.pl`;
-    const botNick = `RobotTester_${uniqueId}`;
-
-    // 1. OTWARCIE STRONY I KLIKNIĘCIE LINKU REJESTRACJI
-    await page.goto('/login');
-    await page.waitForLoadState('networkidle');
-
-    // Klikamy w przełącznik na dole karty, aby wejść w tryb rejestracji
-    await page.click('text=Nie masz konta? Zarejestruj się');
-
-    // Wypełniamy pole Nick, które pojawia się tylko przy rejestracji
-    await page.locator('input[placeholder="np. Koksik99"]').fill(botNick);
-    
-    // Wypełniamy e-mail oraz hasło
-    await page.locator('input[type="email"]').fill(botEmail);
-    await page.locator('input[type="password"]').fill('BotPassword2026!');
-
-    // Przygotowanie nasłuchiwania odpowiedzi sieciowej na rejestrację
-    const registerPromise = page.waitForResponse(resp => 
-      resp.url().includes('/api/auth/register') && resp.status() === 201
-    );
-
-    // Wysyłamy formularz przyciskiem rejestracji
-    await page.click('button:has-text("Zarejestruj się 🚀")');
-    await registerPromise; // Czekamy na potwierdzenie zapisu w bazie danych
-
-    // 2. PROCES LOGOWANIA
-    // Po udanej rejestracji komponent automatycznie resetuje formularz do trybu logowania
-    await page.waitForLoadState('networkidle');
-    
-    // Email zostaje zachowany w stanie komponentu, wpisujemy tylko hasło ponownie
-    await page.locator('input[type="password"]').fill('BotPassword2026!');
-
-    // Przygotowanie nasłuchiwania na udany token JWT
-    const loginPromise = page.waitForResponse(resp => 
-      resp.url().includes('/api/auth/login') && resp.status() === 200
-    );
-
-    // Klikamy przycisk logowania
-    await page.click('button:has-text("Zaloguj się 🦾")');
-    await loginPromise;
-
-    // Czekamy na poprawne przekierowanie na Dashboard i weryfikujemy stan autoryzacji
-    await page.waitForURL('**/');
-    await expect(page.getByText(botNick)).toBeVisible();
-
-    // 3. ROZPOCZĘCIE TRENINGU W LOGGERZE
-    await page.goto('/new-workout');
-    await page.click('text=Pusty trening ➕');
-    
-    // Sprawdzamy czy załadował się nasz autorski Sticky Button
-    const stickyAddButton = page.locator('text=Dodaj ćwiczenie do planu sesji');
-    await expect(stickyAddButton).toBeVisible();
-    await stickyAddButton.click();
-
-    // 4. TEST WYSZUKIWARKI I FILTRÓW KAPSUŁKOWYCH W DRAWERZE
-    await expect(page.locator('input[type="search"]')).toBeVisible();
-
-    // Klikamy w kapsułkę filtrowania po klatce piersiowej
-    await page.click('button:has-text("Klatka piersiowa")');
-    
-    // Sprawdzamy czy na liście zostało wyciskanie, a zniknęły przysiady ze sztangą
-    await expect(page.locator('text=Wyciskanie sztangi na ławce poziomej')).toBeVisible();
-    await expect(page.getByText('Przysiad ze sztangą na plecach')).not.toBeVisible();
-
-    // Dodajemy ćwiczenie, klikając bezpośrednio w wiersz ćwiczenia w Atlasie
-    await page.click('text=Wyciskanie sztangi na ławce poziomej');
-    
-    // 5. INLINE LOGOWANIE W TABELI SERII
-    // Pierwszy input liczbowy to waga serii pierwszej
-    await page.locator('input[type="number"]').first().fill('60');
-    // Drugi input to powtórzenia serii pierwszej
-    await page.locator('input[type="number"]').nth(1).fill('10');
-
-    // Klikamy zatwierdzenie serii fajką ✓ (uruchamia timer przerwy)
-    await page.locator('button:has-text("✓")').first().click();
-
-    const skipTimer = page.getByRole('button', { name: 'Pomiń ✕' });
-    if (await skipTimer.isVisible()) {
-      await skipTimer.click();
-    }
-
-    const saveWorkout = page.waitForResponse(
-      (resp) => resp.url().includes('/api/workouts') && resp.request().method() === 'POST' && resp.status() === 201
-    );
-
-    await page.getByRole('button', { name: 'Zakończ trening' }).click();
-    await saveWorkout;
-    await page.waitForURL('**/history');
-    await expect(page.locator('text=Twoja historia aktywności')).toBeVisible();
-  });
-});
-</file>
-
-<file path=".gitignore">
-node_modules/
-backend/.env
-frontend/.env
-repomix-output.txt
-dist/
-build/
-.env
+<file path="backend/.env.example">
+DATABASE_URL=
+DB_USER=gymadmin
+DB_HOST=localhost
+DB_NAME=gympatico_dev
+DB_PASSWORD=
+DB_PORT=5433
+JWT_SECRET=
+PORT=3000
+FRONTEND_URL=http://localhost:5173
 </file>
 
 <file path="backend/middleware/auth.js">
@@ -362,6 +208,61 @@ router.get('/', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
+<file path="backend/schema.sql">
+-- Użyj pliku init.sql w katalogu głównym repozytorium (CI i lokalna baza testowa).
+-- Ten plik pozostaje tylko jako wskaźnik dla starszych skryptów.
+</file>
+
+<file path="backend/tests/helpers.js">
+const pool = require('../config/db');
+
+const EXERCISE_SEED = [
+  ['Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'],
+  ['Przysiad ze sztangą na plecach (Back squat)', 'Nogi'],
+];
+
+async function ensureTestSchema() {
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'USER';
+    UPDATE users SET role = 'USER' WHERE role IS NULL;
+  `);
+}
+
+async function resetDatabase() {
+  await ensureTestSchema();
+  await pool.query('TRUNCATE users CASCADE');
+  await pool.query('TRUNCATE exercises CASCADE');
+}
+
+async function seedExercises() {
+  for (const [name, muscleGroup] of EXERCISE_SEED) {
+    await pool.query(
+      `INSERT INTO exercises (name, muscle_group) VALUES ($1, $2)`,
+      [name, muscleGroup]
+    );
+  }
+}
+
+async function getExerciseIdByName(namePattern) {
+  const result = await pool.query(
+    `SELECT id FROM exercises WHERE name ILIKE $1 LIMIT 1`,
+    [namePattern]
+  );
+  return result.rows[0]?.id;
+}
+
+async function closePool() {
+  await pool.end();
+}
+
+module.exports = {
+  resetDatabase,
+  seedExercises,
+  getExerciseIdByName,
+  closePool,
+};
+</file>
+
 <file path="backend/utils/userHelpers.js">
 // backend/utils/userHelpers.js
 const pool = require('../config/db');
@@ -406,40 +307,6 @@ volumes:
 
 <file path="frontend/.env.example">
 VITE_API_URL=http://localhost:3000
-</file>
-
-<file path="frontend/.gitignore">
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Playwright
-/test-results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
-/playwright/.auth/
 </file>
 
 <file path="frontend/eslint.config.js">
@@ -893,6 +760,108 @@ export default function LoginView({ onLoginSuccess }) {
 }
 </file>
 
+<file path="frontend/tests/gympatico.spec.js">
+// frontend/tests/gympatico.spec.js
+import { test, expect } from '@playwright/test';
+
+test.describe('GymPatico Full E2E Mobile Workflow', () => {
+
+  test('Rejestracja -> Logowanie -> Trening -> Filtry Kapsułkowe', async ({ page }) => {
+    const uniqueId = Date.now();
+    const botEmail = `bot_${uniqueId}@gympatico.pl`;
+    const botNick = `RobotTester_${uniqueId}`;
+
+    // 1. OTWARCIE STRONY I KLIKNIĘCIE LINKU REJESTRACJI
+    await page.goto('/login');
+    await page.waitForLoadState('networkidle');
+
+    // Klikamy w przełącznik na dole karty, aby wejść w tryb rejestracji
+    await page.click('text=Nie masz konta? Zarejestruj się');
+
+    // Wypełniamy pole Nick, które pojawia się tylko przy rejestracji
+    await page.locator('input[placeholder="np. Koksik99"]').fill(botNick);
+    
+    // Wypełniamy e-mail oraz hasło
+    await page.locator('input[type="email"]').fill(botEmail);
+    await page.locator('input[type="password"]').fill('BotPassword2026!');
+
+    // Przygotowanie nasłuchiwania odpowiedzi sieciowej na rejestrację
+    const registerPromise = page.waitForResponse(resp => 
+      resp.url().includes('/api/auth/register') && resp.status() === 201
+    );
+
+    // Wysyłamy formularz przyciskiem rejestracji
+    await page.click('button:has-text("Zarejestruj się 🚀")');
+    await registerPromise; // Czekamy na potwierdzenie zapisu w bazie danych
+
+    // 2. PROCES LOGOWANIA
+    // Po udanej rejestracji komponent automatycznie resetuje formularz do trybu logowania
+    await page.waitForLoadState('networkidle');
+    
+    // Email zostaje zachowany w stanie komponentu, wpisujemy tylko hasło ponownie
+    await page.locator('input[type="password"]').fill('BotPassword2026!');
+
+    // Przygotowanie nasłuchiwania na udany token JWT
+    const loginPromise = page.waitForResponse(resp => 
+      resp.url().includes('/api/auth/login') && resp.status() === 200
+    );
+
+    // Klikamy przycisk logowania
+    await page.click('button:has-text("Zaloguj się 🦾")');
+    await loginPromise;
+
+    // Czekamy na poprawne przekierowanie na Dashboard i weryfikujemy stan autoryzacji
+    await page.waitForURL('**/');
+    await expect(page.getByText(botNick)).toBeVisible();
+
+    // 3. ROZPOCZĘCIE TRENINGU W LOGGERZE
+    await page.goto('/new-workout');
+    await page.click('text=Pusty trening ➕');
+    
+    // Sprawdzamy czy załadował się nasz autorski Sticky Button
+    const stickyAddButton = page.locator('text=Dodaj ćwiczenie do planu sesji');
+    await expect(stickyAddButton).toBeVisible();
+    await stickyAddButton.click();
+
+    // 4. TEST WYSZUKIWARKI I FILTRÓW KAPSUŁKOWYCH W DRAWERZE
+    await expect(page.locator('input[type="search"]')).toBeVisible();
+
+    // Klikamy w kapsułkę filtrowania po klatce piersiowej
+    await page.click('button:has-text("Klatka piersiowa")');
+    
+    // Sprawdzamy czy na liście zostało wyciskanie, a zniknęły przysiady ze sztangą
+    await expect(page.locator('text=Wyciskanie sztangi na ławce poziomej')).toBeVisible();
+    await expect(page.getByText('Przysiad ze sztangą na plecach')).not.toBeVisible();
+
+    // Dodajemy ćwiczenie, klikając bezpośrednio w wiersz ćwiczenia w Atlasie
+    await page.click('text=Wyciskanie sztangi na ławce poziomej');
+    
+    // 5. INLINE LOGOWANIE W TABELI SERII
+    // Pierwszy input liczbowy to waga serii pierwszej
+    await page.locator('input[type="number"]').first().fill('60');
+    // Drugi input to powtórzenia serii pierwszej
+    await page.locator('input[type="number"]').nth(1).fill('10');
+
+    // Klikamy zatwierdzenie serii fajką ✓ (uruchamia timer przerwy)
+    await page.locator('button:has-text("✓")').first().click();
+
+    const skipTimer = page.getByRole('button', { name: 'Pomiń ✕' });
+    if (await skipTimer.isVisible()) {
+      await skipTimer.click();
+    }
+
+    const saveWorkout = page.waitForResponse(
+      (resp) => resp.url().includes('/api/workouts') && resp.request().method() === 'POST' && resp.status() === 201
+    );
+
+    await page.getByRole('button', { name: 'Zakończ trening' }).click();
+    await saveWorkout;
+    await page.waitForURL('**/history');
+    await expect(page.locator('text=Twoja historia aktywności')).toBeVisible();
+  });
+});
+</file>
+
 <file path="frontend/vercel.json">
 {
   "rewrites": [
@@ -901,66 +870,22 @@ export default function LoginView({ onLoginSuccess }) {
 }
 </file>
 
-<file path="backend/config/db.js">
-const { Pool } = require('pg');
-require('dotenv').config();
+<file path=".gitignore">
+node_modules/
+backend/.env
+frontend/.env
+repomix-output.txt
+dist/
+build/
+.env
+# Playwright
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
 
-// Budujemy konfigurację puli w zależności od obecności DATABASE_URL
-const useSsl =
-  process.env.DATABASE_URL &&
-  !/localhost|127\.0\.0\.1/i.test(process.env.DATABASE_URL);
-
-const poolConfig = process.env.DATABASE_URL
-  ? {
-      connectionString: process.env.DATABASE_URL,
-      ...(useSsl
-        ? { ssl: { rejectUnauthorized: false } }
-        : {}),
-    }
-  : {
-      // DEWELOPMENT: Fallback na lokalny kontener Docker
-      user: process.env.DB_USER || 'gymadmin',
-      host: process.env.DB_HOST || 'localhost',
-      database: process.env.DB_NAME || 'gympatico_dev',
-      password: process.env.DB_PASSWORD || 'mysecretpassword',
-      port: parseInt(process.env.DB_PORT || '5433', 10),
-    };
-
-const pool = new Pool(poolConfig);
-
-module.exports = pool;
-</file>
-
-<file path="backend/package.json">
-{
-  "name": "gympatico",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
-    "test": "node --test --test-concurrency=1 tests/*.test.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "bcrypt": "^6.0.0",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "express-rate-limit": "^8.5.2",
-    "helmet": "^8.2.0",
-    "jsonwebtoken": "^9.0.3",
-    "pg": "^8.21.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.14",
-    "supertest": "^7.2.2"
-  }
-}
+# Repomix
+repomix-output.xml
+repomix-output.txt
 </file>
 
 <file path="backend/routes/exercises.js">
@@ -1219,6 +1144,40 @@ router.get('/', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
+<file path="frontend/.gitignore">
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+</file>
+
 <file path="frontend/index.html">
 <!doctype html>
 <html lang="pl">
@@ -1243,48 +1202,6 @@ module.exports = router;
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
-</file>
-
-<file path="frontend/package.json">
-{
-  "name": "frontend",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed",
-    "test:e2e:report": "playwright show-report"
-  },
-  "dependencies": {
-    "@tailwindcss/vite": "^4.3.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "react-router-dom": "^7.15.1"
-  },
-  "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.60.0",
-    "@types/node": "^25.9.1",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "autoprefixer": "^10.5.0",
-    "eslint": "^10.3.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.6.0",
-    "postcss": "^8.5.15",
-    "tailwindcss": "^4.3.0",
-    "vite": "^8.0.12",
-    "vite-plugin-pwa": "^1.3.0"
-  }
-}
 </file>
 
 <file path="frontend/src/hooks/useFriends.js">
@@ -1727,6 +1644,36 @@ export default function RestTimer({ onFinish }) {
 }
 </file>
 
+<file path="backend/config/db.js">
+const { Pool } = require('pg');
+require('dotenv').config();
+
+// Budujemy konfigurację puli w zależności od obecności DATABASE_URL
+const useSsl =
+  process.env.DATABASE_URL &&
+  !/localhost|127\.0\.0\.1/i.test(process.env.DATABASE_URL);
+
+const poolConfig = process.env.DATABASE_URL
+  ? {
+      connectionString: process.env.DATABASE_URL,
+      ...(useSsl
+        ? { ssl: { rejectUnauthorized: false } }
+        : {}),
+    }
+  : {
+      // DEWELOPMENT: Fallback na lokalny kontener Docker
+      user: process.env.DB_USER || 'gymadmin',
+      host: process.env.DB_HOST || 'localhost',
+      database: process.env.DB_NAME || 'gympatico_dev',
+      password: process.env.DB_PASSWORD || '',
+      port: parseInt(process.env.DB_PORT || '5433', 10),
+    };
+
+const pool = new Pool(poolConfig);
+
+module.exports = pool;
+</file>
+
 <file path="backend/middleware/checkLimits.js">
 // backend/middleware/checkLimits.js
 const pool = require('../config/db');
@@ -1794,6 +1741,225 @@ const checkLimits = (resourceType) => {
 };
 
 module.exports = checkLimits;
+</file>
+
+<file path="backend/package.json">
+{
+  "name": "gympatico",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14",
+    "supertest": "^7.2.2"
+  }
+}
+</file>
+
+<file path="frontend/package.json">
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-router-dom": "^7.15.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.9.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "autoprefixer": "^10.5.0",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.0",
+    "vite": "^8.0.12",
+    "vite-plugin-pwa": "^1.3.0"
+  }
+}
+</file>
+
+<file path="frontend/src/index.css">
+@import "tailwindcss";
+
+/* Komercyjny Design System GymPatico zmapowany na silnik Tailwind v4 */
+@theme {
+  --color-gymDark: #0c0e12;           /* Głębokie, eleganckie tło aplikacji */
+  --color-gymCard: #1a1f27;           /* Powierzchnia głównych sekcji i kart */
+  --color-gymCardSecondary: #222833;  /* Tło dla inputów, selektorów i wierszy list */
+  --color-gymRed: #ef4444;            /* Główny kolor akcji i CTA */
+  --color-gymRedHover: #dc2626;       /* Stan hover dla przycisków */
+  
+  --color-gymSuccess: #22c55e;
+  --color-gymWarning: #f59e0b;
+  --color-gymDanger: #ef4444;
+  --color-gymPremium: #d4a853;        /* Prestiżowe złoto subskrypcji premium */
+
+  --color-textPrimary: #f4f6f9;       /* Czytelny biało-szary tekst główny */
+  --color-textSecondary: #9aa3b2;     /* Tekst pomocniczy i opisy */
+  --color-textMuted: #6b7280;         /* Wygaszone labele i placeholder */
+
+  /* Zaokrąglenia interfejsu mobilnego */
+  --radius-gp-sm: 6px;
+  --radius-gp-md: 10px;
+  --radius-gp-lg: 14px;
+  --radius-gp-xl: 20px;
+}
+
+@layer base {
+  html, body {
+    background-color: var(--color-gymDark);
+    color: var(--color-textPrimary);
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    padding-bottom: env(safe-area-inset-bottom, 0); /* Bezpieczna strefa dla iPhone'ów */
+  }
+}
+</file>
+
+<file path="frontend/src/views/StatsView.jsx">
+// frontend/src/views/StatsView.jsx
+import React from 'react'
+import { useNavigate } from 'react-router-dom'
+
+export default function StatsView({ stats, loading }) {
+  const navigate = useNavigate()
+
+  // 1. STAN ŁADOWANIA (Aplikacja pobiera dane z serwera)
+  if (loading) {
+    return (
+      <div className="max-w-[640px] mx-auto py-12 text-center text-zinc-500 text-sm font-medium animate-pulse flex flex-col items-center gap-2">
+        <span>🔄 Pomiary laboratoryjne w toku...</span>
+        <span className="text-[11px] text-textMuted">Przetwarzamy historię serii i objętość treningową.</span>
+      </div>
+    )
+  }
+
+  // 2. [FIXED] POPRAWIONY STAN "ZERO TRENINGÓW" Z AKTYWNYM CTA DO KREATORA
+  const hasNoData = !stats || !stats.totalWorkouts || stats.totalWorkouts === 0
+
+  if (hasNoData) {
+    return (
+      <div className="max-w-[500px] mx-auto bg-gymCard border border-zinc-800/50 rounded-2xl p-8 text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200 mt-6">
+        <div className="w-16 h-16 bg-zinc-800/50 border border-zinc-700/40 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+          📊
+        </div>
+        <h3 className="text-lg font-black text-white tracking-tight mb-2">
+          Brak dostępnych danych analitycznych ⚠️
+        </h3>
+        <p className="text-textSecondary text-xs leading-relaxed max-w-sm mx-auto">
+          Twoje wykresy objętości, statystyki ulubionych partii oraz tonaż siłowy wygenerują się automatycznie po zalogowaniu sesji roboczej.
+        </p>
+
+        {/* REAKTYWNY PRZYCISK INTERAKCJI */}
+        <button 
+          onClick={() => navigate('/new-workout')}   
+          className="mt-6 px-5 py-2.5 bg-gymRed hover:bg-gymRedHover text-white font-bold rounded-gp-md text-sm cursor-pointer shadow-lg shadow-red-950/40 transition-all active:scale-95 flex items-center justify-center gap-2 mx-auto"
+        >
+          Zaloguj pierwszy trening →
+        </button>
+      </div>
+    )
+  }
+
+  // 3. PEŁNY WIDOK ANALITYCZNY (Gdy w bazie są już realne treningi)
+  return (
+    <div className="max-w-[800px] mx-auto flex flex-col gap-6 text-left animate-in fade-in duration-200">
+      <div>
+        <h2 className="text-2xl font-black tracking-tight text-white">Analityka Progresu 📈</h2>
+        <p className="text-xs text-textSecondary mt-0.5">Podsumowanie Twoich osiągów siłowych i statystyk globalnych.</p>
+      </div>
+
+      {/* SIATKA KPI */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-gymCard border border-zinc-800/40 p-4 rounded-gp-lg shadow-md">
+          <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider block">Wszystkie sesje</span>
+          <span className="text-2xl font-black text-white font-mono mt-1 block">{stats.totalWorkouts}</span>
+        </div>
+        
+        <div className="bg-gymCard border border-zinc-800/40 p-4 rounded-gp-lg shadow-md">
+          <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider block">Łączny tonaż</span>
+          <span className="text-2xl font-black text-gymRed font-mono mt-1 block">
+            {parseInt(stats.totalVolume || 0).toLocaleString()} <span className="text-xs font-normal text-textSecondary">kg</span>
+          </span>
+        </div>
+
+        <div className="bg-gymCard border border-zinc-800/40 p-4 rounded-gp-lg shadow-md">
+          <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider block">Ulubiona partia</span>
+          <span className="text-base font-black text-gymPremium truncate mt-2 block uppercase tracking-tight">
+            {stats.favoriteMuscleGroup || 'Brak danych'}
+          </span>
+        </div>
+      </div>
+
+      {/* ROZKŁAD TRENINGOWY NA GRUPY MIĘŚNIOWE */}
+      {stats.muscleDistribution && stats.muscleDistribution.length > 0 && (
+        <section className="bg-gymCard border border-zinc-800/40 p-5 rounded-xl shadow-lg">
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Nacisk na grupy mięśniowe (Objętość serii)</h3>
+          <div className="flex flex-col gap-3">
+            {stats.muscleDistribution.map((item, idx) => {
+              const maxCount = Math.max(...stats.muscleDistribution.map(m => m.count || 1))
+              const percentage = Math.round((item.count / maxCount) * 100)
+
+              return (
+                <div key={idx} className="flex flex-col gap-1">
+                  <div className="flex justify-between items-center text-xs font-bold">
+                    <span className="text-textPrimary">{item.muscle_group || 'Inne'}</span>
+                    <span className="text-textSecondary font-mono">{item.count} serii</span>
+                  </div>
+                  <div className="w-full h-2 bg-gymCardSecondary rounded-full overflow-hidden border border-zinc-800/40">
+                    <div 
+                      className="h-full bg-gymRed rounded-full transition-all duration-500" 
+                      style={{ width: `${percentage}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
 </file>
 
 <file path="backend/routes/auth.js">
@@ -1958,151 +2124,6 @@ router.put('/weekly-target', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="frontend/src/index.css">
-@import "tailwindcss";
-
-/* Komercyjny Design System GymPatico zmapowany na silnik Tailwind v4 */
-@theme {
-  --color-gymDark: #0c0e12;           /* Głębokie, eleganckie tło aplikacji */
-  --color-gymCard: #1a1f27;           /* Powierzchnia głównych sekcji i kart */
-  --color-gymCardSecondary: #222833;  /* Tło dla inputów, selektorów i wierszy list */
-  --color-gymRed: #ef4444;            /* Główny kolor akcji i CTA */
-  --color-gymRedHover: #dc2626;       /* Stan hover dla przycisków */
-  
-  --color-gymSuccess: #22c55e;
-  --color-gymWarning: #f59e0b;
-  --color-gymDanger: #ef4444;
-  --color-gymPremium: #d4a853;        /* Prestiżowe złoto subskrypcji premium */
-
-  --color-textPrimary: #f4f6f9;       /* Czytelny biało-szary tekst główny */
-  --color-textSecondary: #9aa3b2;     /* Tekst pomocniczy i opisy */
-  --color-textMuted: #6b7280;         /* Wygaszone labele i placeholder */
-
-  /* Zaokrąglenia interfejsu mobilnego */
-  --radius-gp-sm: 6px;
-  --radius-gp-md: 10px;
-  --radius-gp-lg: 14px;
-  --radius-gp-xl: 20px;
-}
-
-@layer base {
-  html, body {
-    background-color: var(--color-gymDark);
-    color: var(--color-textPrimary);
-    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    padding-bottom: env(safe-area-inset-bottom, 0); /* Bezpieczna strefa dla iPhone'ów */
-  }
-}
-</file>
-
-<file path="frontend/src/views/StatsView.jsx">
-// frontend/src/views/StatsView.jsx
-import React from 'react'
-import { useNavigate } from 'react-router-dom'
-
-export default function StatsView({ stats, loading }) {
-  const navigate = useNavigate()
-
-  // 1. STAN ŁADOWANIA (Aplikacja pobiera dane z serwera)
-  if (loading) {
-    return (
-      <div className="max-w-[640px] mx-auto py-12 text-center text-zinc-500 text-sm font-medium animate-pulse flex flex-col items-center gap-2">
-        <span>🔄 Pomiary laboratoryjne w toku...</span>
-        <span className="text-[11px] text-textMuted">Przetwarzamy historię serii i objętość treningową.</span>
-      </div>
-    )
-  }
-
-  // 2. [FIXED] POPRAWIONY STAN "ZERO TRENINGÓW" Z AKTYWNYM CTA DO KREATORA
-  const hasNoData = !stats || !stats.totalWorkouts || stats.totalWorkouts === 0
-
-  if (hasNoData) {
-    return (
-      <div className="max-w-[500px] mx-auto bg-gymCard border border-zinc-800/50 rounded-2xl p-8 text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200 mt-6">
-        <div className="w-16 h-16 bg-zinc-800/50 border border-zinc-700/40 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
-          📊
-        </div>
-        <h3 className="text-lg font-black text-white tracking-tight mb-2">
-          Brak dostępnych danych analitycznych ⚠️
-        </h3>
-        <p className="text-textSecondary text-xs leading-relaxed max-w-sm mx-auto">
-          Twoje wykresy objętości, statystyki ulubionych partii oraz tonaż siłowy wygenerują się automatycznie po zalogowaniu sesji roboczej.
-        </p>
-
-        {/* REAKTYWNY PRZYCISK INTERAKCJI */}
-        <button 
-          onClick={() => navigate('/new-workout')}   
-          className="mt-6 px-5 py-2.5 bg-gymRed hover:bg-gymRedHover text-white font-bold rounded-gp-md text-sm cursor-pointer shadow-lg shadow-red-950/40 transition-all active:scale-95 flex items-center justify-center gap-2 mx-auto"
-        >
-          Zaloguj pierwszy trening →
-        </button>
-      </div>
-    )
-  }
-
-  // 3. PEŁNY WIDOK ANALITYCZNY (Gdy w bazie są już realne treningi)
-  return (
-    <div className="max-w-[800px] mx-auto flex flex-col gap-6 text-left animate-in fade-in duration-200">
-      <div>
-        <h2 className="text-2xl font-black tracking-tight text-white">Analityka Progresu 📈</h2>
-        <p className="text-xs text-textSecondary mt-0.5">Podsumowanie Twoich osiągów siłowych i statystyk globalnych.</p>
-      </div>
-
-      {/* SIATKA KPI */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-gymCard border border-zinc-800/40 p-4 rounded-gp-lg shadow-md">
-          <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider block">Wszystkie sesje</span>
-          <span className="text-2xl font-black text-white font-mono mt-1 block">{stats.totalWorkouts}</span>
-        </div>
-        
-        <div className="bg-gymCard border border-zinc-800/40 p-4 rounded-gp-lg shadow-md">
-          <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider block">Łączny tonaż</span>
-          <span className="text-2xl font-black text-gymRed font-mono mt-1 block">
-            {parseInt(stats.totalVolume || 0).toLocaleString()} <span className="text-xs font-normal text-textSecondary">kg</span>
-          </span>
-        </div>
-
-        <div className="bg-gymCard border border-zinc-800/40 p-4 rounded-gp-lg shadow-md">
-          <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider block">Ulubiona partia</span>
-          <span className="text-base font-black text-gymPremium truncate mt-2 block uppercase tracking-tight">
-            {stats.favoriteMuscleGroup || 'Brak danych'}
-          </span>
-        </div>
-      </div>
-
-      {/* ROZKŁAD TRENINGOWY NA GRUPY MIĘŚNIOWE */}
-      {stats.muscleDistribution && stats.muscleDistribution.length > 0 && (
-        <section className="bg-gymCard border border-zinc-800/40 p-5 rounded-xl shadow-lg">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Nacisk na grupy mięśniowe (Objętość serii)</h3>
-          <div className="flex flex-col gap-3">
-            {stats.muscleDistribution.map((item, idx) => {
-              const maxCount = Math.max(...stats.muscleDistribution.map(m => m.count || 1))
-              const percentage = Math.round((item.count / maxCount) * 100)
-
-              return (
-                <div key={idx} className="flex flex-col gap-1">
-                  <div className="flex justify-between items-center text-xs font-bold">
-                    <span className="text-textPrimary">{item.muscle_group || 'Inne'}</span>
-                    <span className="text-textSecondary font-mono">{item.count} serii</span>
-                  </div>
-                  <div className="w-full h-2 bg-gymCardSecondary rounded-full overflow-hidden border border-zinc-800/40">
-                    <div 
-                      className="h-full bg-gymRed rounded-full transition-all duration-500" 
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      )}
-    </div>
-  )
-}
-</file>
-
 <file path="backend/routes/friends.js">
 const express = require('express');
 const router = express.Router();
@@ -2251,173 +2272,6 @@ router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => 
 });
 
 module.exports = router;
-</file>
-
-<file path="frontend/src/hooks/useWorkouts.js">
-// frontend/src/hooks/useWorkouts.js
-import { useState, useCallback } from 'react'
-import { API_BASE_URL } from '../config/api'
-
-export function useWorkouts(token, exercises, showToast) {
-  const [workoutsHistory, setWorkoutsHistory] = useState([])
-  const [totalWorkoutsCount, setTotalWorkoutsCount] = useState(0) // <--- NOWY STAN LICZNIKA
-  const [hasMoreWorkouts, setHasMoreWorkouts] = useState(true)
-
-  const [workoutName, setWorkoutName] = useState('')
-  const [workoutComment, setWorkoutComment] = useState('')
-  const [localSeriesList, setLocalSeriesList] = useState([])
-
-  const [currentSelectedExercise, setCurrentSelectedExercise] = useState('')
-  const [seriesWeight, setSeriesWeight] = useState('')
-  const [seriesReps, setSeriesReps] = useState('')
-
-  const [progressionData, setProgressionData] = useState([])
-
-  const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
-    if (!token) return
-    const limit = 20
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts?limit=${limit}&offset=${currentLength}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Błąd historii treningów')
-      const data = await res.json() // Oczekujemy { workouts, totalCount }
-
-      if (isAppend) {
-        setWorkoutsHistory(prev => [...prev, ...data.workouts])
-        setHasMoreWorkouts(currentLength + data.workouts.length < data.totalCount)
-      } else {
-        setWorkoutsHistory(data.workouts)
-        setHasMoreWorkouts(data.workouts.length < data.totalCount)
-      }
-      setTotalWorkoutsCount(data.totalCount)
-    } catch (err) {
-      console.error('Błąd pobierania historii:', err.message)
-    }
-  }, [token])
-
-  const addSeriesToLocalList = useCallback((e) => {
-    e?.preventDefault()
-    if (!seriesWeight || !seriesReps || !currentSelectedExercise) {
-      if (showToast) showToast('Wpisz wagę i powtórzenia! ⚠️', 'error')
-      return
-    }
-    const ex = exercises.find(item => item.id === currentSelectedExercise)
-    if (!ex) return
-
-    const weight = parseFloat(seriesWeight)
-    const reps = parseInt(seriesReps)
-    const estimatedOneRm = reps >= 1 && reps <= 12 ? weight * (1 + reps / 30) : null
-
-    const newSeries = {
-      exerciseId: currentSelectedExercise,
-      exerciseName: ex.name,
-      weight,
-      reps,
-      order: localSeriesList.filter(s => s.exerciseId === currentSelectedExercise).length + 1,
-      estimatedOneRm
-    }
-
-    setLocalSeriesList(prev => [...prev, newSeries])
-    setSeriesWeight('')
-    setSeriesReps('')
-  }, [currentSelectedExercise, seriesWeight, seriesReps, localSeriesList, exercises, showToast])
-
-  const removeSeriesFromLocalList = useCallback((index) => {
-    setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
-  }, [])
-
-  const handleSaveWorkout = useCallback(async (seriesOverride) => {
-    const seriesToSave = seriesOverride ?? localSeriesList
-
-    if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
-    if (seriesToSave.length === 0) throw new Error('Nie można zapisać pustego treningu!')
-
-    const res = await fetch(`${API_BASE_URL}/api/workouts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        name: workoutName,
-        comment: workoutComment,
-        series: seriesToSave.map(s => ({
-          exerciseId: s.exerciseId,
-          weight: s.weight,
-          reps: s.reps,
-          order: s.order,
-          estimatedOneRm: s.estimatedOneRm
-        }))
-      })
-    })
-
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Błąd zapisu treningu')
-
-    setWorkoutName('')
-    setWorkoutComment('')
-    setLocalSeriesList([])
-    return data
-  }, [token, workoutName, workoutComment, localSeriesList])
-
-  const handleDeleteWorkout = useCallback(async (sessionId) => {
-    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć treningu.')
-    return data
-  }, [token])
-
-  const fetchProgression = useCallback(async (exerciseId) => {
-    if (!token || !exerciseId) return
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts/progression/${exerciseId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Błąd pobierania danych progresji')
-      const data = await res.json()
-      setProgressionData(data)
-    } catch (err) {
-      console.error('Błąd pobierania progresu siłowego:', err.message)
-    }
-  }, [token])
-
-  const handleUpdateWorkout = useCallback(async (sessionId, newName, newComment) => {
-    if (!token) return
-    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ name: newName, comment: newComment })
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować treningu.')
-
-    setWorkoutsHistory(prev =>
-      prev.map(w => w.id === sessionId ? { ...w, name: newName, comment: newComment } : w)
-    )
-    return data
-  }, [token])
-
-  return {
-    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, totalWorkoutsCount, fetchWorkoutsData, // <--- EKSPORT LICZNIKA
-    workoutName, setWorkoutName,
-    workoutComment, setWorkoutComment,
-    currentSelectedExercise, setCurrentSelectedExercise,
-    seriesWeight, setSeriesWeight,
-    seriesReps, setSeriesReps,
-    localSeriesList, setLocalSeriesList,
-    addSeriesToLocalList, removeSeriesFromLocalList,
-    handleSaveWorkout, handleDeleteWorkout,
-    progressionData, fetchProgression,
-    handleUpdateWorkout
-  }
-}
 </file>
 
 <file path="frontend/src/main.jsx">
@@ -2762,138 +2616,171 @@ export default defineConfig({
 })
 </file>
 
-<file path="init.sql">
--- init.sql - Zunifikowana struktura bazy danych GymPatico z obsługą stref czasowych (TIMESTAMPTZ)
+<file path="frontend/src/hooks/useWorkouts.js">
+// frontend/src/hooks/useWorkouts.js
+import { useState, useCallback } from 'react'
+import { API_BASE_URL } from '../config/api'
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+export function useWorkouts(token, exercises, showToast) {
+  const [workoutsHistory, setWorkoutsHistory] = useState([])
+  const [totalWorkoutsCount, setTotalWorkoutsCount] = useState(0) // <--- NOWY STAN LICZNIKA
+  const [hasMoreWorkouts, setHasMoreWorkouts] = useState(true)
 
--- 1. Tabela Użytkowników
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    nick VARCHAR(55) UNIQUE NOT NULL,
-    weekly_target_workouts INT DEFAULT 3,
-    current_streak INT DEFAULT 0,
-    max_streak INT DEFAULT 0,
-    last_workout_at TIMESTAMPTZ, 
-    is_premium BOOLEAN DEFAULT FALSE,
-    role VARCHAR(20) DEFAULT 'USER' NOT NULL, -- <--- POPRAWKA: Kolumna roli zabezpieczająca bezstanowe JWT i moduł TRAINER
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
+  const [workoutName, setWorkoutName] = useState('')
+  const [workoutComment, setWorkoutComment] = useState('')
+  const [localSeriesList, setLocalSeriesList] = useState([])
 
--- 2. Tabela Logów Wagi
-CREATE TABLE weight_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    weight NUMERIC(5,2) NOT NULL,
-    date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
+  const [currentSelectedExercise, setCurrentSelectedExercise] = useState('')
+  const [seriesWeight, setSeriesWeight] = useState('')
+  const [seriesReps, setSeriesReps] = useState('')
 
--- 3. Tabela Ćwiczeń
-CREATE TABLE exercises (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255) NOT NULL,
-    muscle_group VARCHAR(100) NOT NULL,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE DEFAULT NULL
-);
+  const [progressionData, setProgressionData] = useState([])
 
--- 4. INDEKSY UNIKALNE DLA ATLASU ĆWICZEŃ
--- Zabezpieczenie ćwiczeń globalnych (brak duplikatów o tej samej nazwie w bazie systemowej)
-CREATE UNIQUE INDEX exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
+  const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
+    if (!token) return
+    const limit = 20
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts?limit=${limit}&offset=${currentLength}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Błąd historii treningów')
+      const data = await res.json() // Oczekujemy { workouts, totalCount }
 
--- Zabezpieczenie ćwiczeń prywatnych (użytkownik nie doda u siebie dwóch tak samo nazwanych pozycji)
-CREATE UNIQUE INDEX exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
+      if (isAppend) {
+        setWorkoutsHistory(prev => [...prev, ...data.workouts])
+        setHasMoreWorkouts(currentLength + data.workouts.length < data.totalCount)
+      } else {
+        setWorkoutsHistory(data.workouts)
+        setHasMoreWorkouts(data.workouts.length < data.totalCount)
+      }
+      setTotalWorkoutsCount(data.totalCount)
+    } catch (err) {
+      console.error('Błąd pobierania historii:', err.message)
+    }
+  }, [token])
 
--- 5. Tabela Znajomości
-CREATE TABLE friendships (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    status VARCHAR(20) DEFAULT 'PENDING',
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_friendship UNIQUE (sender_id, receiver_id)
-);
+  const addSeriesToLocalList = useCallback((e) => {
+    e?.preventDefault()
+    if (!seriesWeight || !seriesReps || !currentSelectedExercise) {
+      if (showToast) showToast('Wpisz wagę i powtórzenia! ⚠️', 'error')
+      return
+    }
+    const ex = exercises.find(item => item.id === currentSelectedExercise)
+    if (!ex) return
 
--- 6. Tabela Sesji Treningowych
-CREATE TABLE workout_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    comment TEXT,
-    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
+    const weight = parseFloat(seriesWeight)
+    const reps = parseInt(seriesReps)
+    const estimatedOneRm = reps >= 1 && reps <= 12 ? weight * (1 + reps / 30) : null
 
--- 7. Tabela Serii Treningowych
-CREATE TABLE log_series (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
-    exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE,
-    weight NUMERIC NOT NULL,
-    reps INT NOT NULL,
-    series_order INT NOT NULL,
-    estimated_one_rm NUMERIC,
-    is_alternative BOOLEAN DEFAULT FALSE,
-    comment TEXT
-);
+    const newSeries = {
+      exerciseId: currentSelectedExercise,
+      exerciseName: ex.name,
+      weight,
+      reps,
+      order: localSeriesList.filter(s => s.exerciseId === currentSelectedExercise).length + 1,
+      estimatedOneRm
+    }
 
--- 8. Tabela Główna Szablonów Treningowych
-CREATE TABLE workout_templates (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+    setLocalSeriesList(prev => [...prev, newSeries])
+    setSeriesWeight('')
+    setSeriesReps('')
+  }, [currentSelectedExercise, seriesWeight, seriesReps, localSeriesList, exercises, showToast])
 
--- 9. Tabela Serii w Szablonach
-CREATE TABLE template_series (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
-    exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
-    weight NUMERIC(6,2) NOT NULL,
-    reps INT NOT NULL,
-    series_order INT NOT NULL
-);
+  const removeSeriesFromLocalList = useCallback((index) => {
+    setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
+  }, [])
 
--- Indeksy wydajnościowe dla klastrowania szablonów
-CREATE INDEX idx_templates_user ON workout_templates(user_id);
-CREATE INDEX idx_template_series_template ON template_series(template_id);
+  const handleSaveWorkout = useCallback(async (seriesOverride) => {
+    const seriesToSave = seriesOverride ?? localSeriesList
 
--- 10. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
-INSERT INTO exercises (name, muscle_group) VALUES
-  -- Klatka piersiowa
-  ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),
-  ('Wyciskanie hantli na ławce skośnej dodatniej', 'Klatka piersiowa'),
-  ('Pompki na poręczach (Dips)', 'Klatka piersiowa'),
-  ('Rozpiętki z hantlami na ławce poziomej', 'Klatka piersiowa'),
+    if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
+    if (seriesToSave.length === 0) throw new Error('Nie można zapisać pustego treningu!')
 
-  -- Plecy
-  ('Martwy ciąg klasyczny', 'Plecy'),
-  ('Podciąganie na drążku (nachwytem)', 'Plecy'),
-  ('Wiosłowanie sztangą w opadzie tułowia', 'Plecy'),
-  ('Ściąganie drążka wyciągu górnego do klatki', 'Plecy'),
-  ('Wiosłowanie hantlem jednorącz w oparciu o ławkę', 'Plecy'),
+    const res = await fetch(`${API_BASE_URL}/api/workouts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        name: workoutName,
+        comment: workoutComment,
+        series: seriesToSave.map(s => ({
+          exerciseId: s.exerciseId,
+          weight: s.weight,
+          reps: s.reps,
+          order: s.order,
+          estimatedOneRm: s.estimatedOneRm
+        }))
+      })
+    })
 
-  -- Barki
-  ('Wyciskanie żołnierskie (OHP)', 'Barki'),
-  ('Wyciskanie hantli siedząc', 'Barki'),
-  ('Unoszenie hantli bokiem stojąc', 'Barki'),
-  ('Odwrotne rozpiętki na maszynie (Face pulls)', 'Barki'),
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Błąd zapisu treningu')
 
-  -- Nogi
-  ('Przysiad ze sztangą na plecach (Back squat)', 'Nogi'),
-  ('Wypychanie ciężaru na suwnicy (Leg press)', 'Nogi'),
-  ('Rumuński martwy ciąg (RDL)', 'Nogi'),
-  ('Prostowanie nóg na maszynie siedząc', 'Nogi'),
-  ('Uginanie nóg na maszynie leżąc', 'Nogi'),
+    setWorkoutName('')
+    setWorkoutComment('')
+    setLocalSeriesList([])
+    return data
+  }, [token, workoutName, workoutComment, localSeriesList])
 
-  -- Ramiona (Biceps i Triceps)
-  ('Uginanie przedramion ze sztangą łamaną stojąc', 'Biceps'),
-  ('Uginanie przedramion z hantlami z supinacją', 'Biceps'),
-  ('Wyciskanie francuskie ze sztangą łamaną leżąc', 'Triceps'),
-  ('Prostowanie przedramion na wyciągu (linki)', 'Triceps')
-ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
+  const handleDeleteWorkout = useCallback(async (sessionId) => {
+    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć treningu.')
+    return data
+  }, [token])
+
+  const fetchProgression = useCallback(async (exerciseId) => {
+    if (!token || !exerciseId) return
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts/progression/${exerciseId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Błąd pobierania danych progresji')
+      const data = await res.json()
+      setProgressionData(data)
+    } catch (err) {
+      console.error('Błąd pobierania progresu siłowego:', err.message)
+    }
+  }, [token])
+
+  const handleUpdateWorkout = useCallback(async (sessionId, newName, newComment) => {
+    if (!token) return
+    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ name: newName, comment: newComment })
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować treningu.')
+
+    setWorkoutsHistory(prev =>
+      prev.map(w => w.id === sessionId ? { ...w, name: newName, comment: newComment } : w)
+    )
+    return data
+  }, [token])
+
+  return {
+    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, totalWorkoutsCount, fetchWorkoutsData, // <--- EKSPORT LICZNIKA
+    workoutName, setWorkoutName,
+    workoutComment, setWorkoutComment,
+    currentSelectedExercise, setCurrentSelectedExercise,
+    seriesWeight, setSeriesWeight,
+    seriesReps, setSeriesReps,
+    localSeriesList, setLocalSeriesList,
+    addSeriesToLocalList, removeSeriesFromLocalList,
+    handleSaveWorkout, handleDeleteWorkout,
+    progressionData, fetchProgression,
+    handleUpdateWorkout
+  }
+}
 </file>
 
 <file path="frontend/src/views/Social.jsx">
@@ -3045,6 +2932,140 @@ export default function Social({
     </div>
   )
 }
+</file>
+
+<file path="init.sql">
+-- init.sql - Zunifikowana struktura bazy danych GymPatico z obsługą stref czasowych (TIMESTAMPTZ)
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- 1. Tabela Użytkowników
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    nick VARCHAR(55) UNIQUE NOT NULL,
+    weekly_target_workouts INT DEFAULT 3,
+    current_streak INT DEFAULT 0,
+    max_streak INT DEFAULT 0,
+    last_workout_at TIMESTAMPTZ, 
+    is_premium BOOLEAN DEFAULT FALSE,
+    role VARCHAR(20) DEFAULT 'USER' NOT NULL, -- <--- POPRAWKA: Kolumna roli zabezpieczająca bezstanowe JWT i moduł TRAINER
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Tabela Logów Wagi
+CREATE TABLE weight_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    weight NUMERIC(5,2) NOT NULL,
+    date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Tabela Ćwiczeń
+CREATE TABLE exercises (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    muscle_group VARCHAR(100) NOT NULL,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE DEFAULT NULL
+);
+
+-- 4. INDEKSY UNIKALNE DLA ATLASU ĆWICZEŃ
+-- Zabezpieczenie ćwiczeń globalnych (brak duplikatów o tej samej nazwie w bazie systemowej)
+CREATE UNIQUE INDEX exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
+
+-- Zabezpieczenie ćwiczeń prywatnych (użytkownik nie doda u siebie dwóch tak samo nazwanych pozycji)
+CREATE UNIQUE INDEX exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
+
+-- 5. Tabela Znajomości
+CREATE TABLE friendships (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'PENDING',
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_friendship UNIQUE (sender_id, receiver_id)
+);
+
+-- 6. Tabela Sesji Treningowych
+CREATE TABLE workout_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    comment TEXT,
+    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 7. Tabela Serii Treningowych
+CREATE TABLE log_series (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
+    exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE,
+    weight NUMERIC NOT NULL,
+    reps INT NOT NULL,
+    series_order INT NOT NULL,
+    estimated_one_rm NUMERIC,
+    is_alternative BOOLEAN DEFAULT FALSE,
+    comment TEXT
+);
+
+-- 8. Tabela Główna Szablonów Treningowych
+CREATE TABLE workout_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 9. Tabela Serii w Szablonach
+CREATE TABLE template_series (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
+    exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+    weight NUMERIC(6,2) NOT NULL,
+    reps INT NOT NULL,
+    series_order INT NOT NULL
+);
+
+-- Indeksy wydajnościowe dla klastrowania szablonów
+CREATE INDEX idx_templates_user ON workout_templates(user_id);
+CREATE INDEX idx_template_series_template ON template_series(template_id);
+
+-- 10. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
+INSERT INTO exercises (name, muscle_group) VALUES
+  -- Klatka piersiowa
+  ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),
+  ('Wyciskanie hantli na ławce skośnej dodatniej', 'Klatka piersiowa'),
+  ('Pompki na poręczach (Dips)', 'Klatka piersiowa'),
+  ('Rozpiętki z hantlami na ławce poziomej', 'Klatka piersiowa'),
+
+  -- Plecy
+  ('Martwy ciąg klasyczny', 'Plecy'),
+  ('Podciąganie na drążku (nachwytem)', 'Plecy'),
+  ('Wiosłowanie sztangą w opadzie tułowia', 'Plecy'),
+  ('Ściąganie drążka wyciągu górnego do klatki', 'Plecy'),
+  ('Wiosłowanie hantlem jednorącz w oparciu o ławkę', 'Plecy'),
+
+  -- Barki
+  ('Wyciskanie żołnierskie (OHP)', 'Barki'),
+  ('Wyciskanie hantli siedząc', 'Barki'),
+  ('Unoszenie hantli bokiem stojąc', 'Barki'),
+  ('Odwrotne rozpiętki na maszynie (Face pulls)', 'Barki'),
+
+  -- Nogi
+  ('Przysiad ze sztangą na plecach (Back squat)', 'Nogi'),
+  ('Wypychanie ciężaru na suwnicy (Leg press)', 'Nogi'),
+  ('Rumuński martwy ciąg (RDL)', 'Nogi'),
+  ('Prostowanie nóg na maszynie siedząc', 'Nogi'),
+  ('Uginanie nóg na maszynie leżąc', 'Nogi'),
+
+  -- Ramiona (Biceps i Triceps)
+  ('Uginanie przedramion ze sztangą łamaną stojąc', 'Biceps'),
+  ('Uginanie przedramion z hantlami z supinacją', 'Biceps'),
+  ('Wyciskanie francuskie ze sztangą łamaną leżąc', 'Triceps'),
+  ('Prostowanie przedramion na wyciągu (linki)', 'Triceps')
+ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
 </file>
 
 <file path="backend/index.js">
