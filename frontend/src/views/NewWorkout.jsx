@@ -2,6 +2,14 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import RestTimer from './RestTimer'
 
+// Definicja dostępnych typów serii, ich etykiet i klas kolorystycznych Tailwind v4
+const SERIES_TYPES = {
+  NORMAL: { label: (idx) => idx + 1, bg: 'bg-zinc-800/40 text-textSecondary border-zinc-700/50' },
+  WARMUP: { label: () => 'W', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
+  DROP_SET: { label: () => 'D', bg: 'bg-purple-500/10 text-purple-400 border-purple-500/30' },
+  FAILURE: { label: () => 'F', bg: 'bg-red-500/10 text-red-400 border-red-500/30' }
+}
+
 export default function NewWorkout({
   exercises,
   templates,
@@ -16,50 +24,34 @@ export default function NewWorkout({
   handleSaveWorkout,
   showToast
 }) {
-  // GŁÓWNY STEROWNIK TRYBU: 'selection' | 'active_workout' | 'template_creator'
   const [activeMode, setActiveMode] = useState(() => {
     if (localSeriesList.length > 0) return 'active_workout'
     return 'selection'
   })
 
-  // Kolejność i lista bloków ćwiczeń wyświetlanych na ekranie
   const [sessionExercises, setSessionExercises] = useState([])
-  
-  // Stany dla konfiguracji szablonu w domu (Couch Mode)
   const [customTemplateName, setCustomTemplateName] = useState('')
   const [templateSeriesList, setTemplateSeriesList] = useState([])
-
-  // Kontrola dolnego Drawera z atlasem ćwiczeń
   const [isAtlasOpen, setIsAtlasOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  
-  // Stan aktywnego filtra grupy mięśniowej
   const [selectedMuscleFilter, setSelectedMuscleFilter] = useState('Wszystkie')
-
-  // Stan obsługi modalu z podglądem animacji i instrukcji ćwiczenia
   const [infoExercise, setInfoExercise] = useState(null)
-  
-  // State dla bezpiecznego modalu anulowania treningu
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
   
   const timerRef = useRef(null)
 
-  // Automatyczna synchronizacja trybu przy czyszczeniu nadrzędnym
   useEffect(() => {
     if (localSeriesList.length === 0 && sessionExercises.length === 0 && !workoutName && activeMode === 'active_workout') {
       setActiveMode('selection')
     }
   }, [localSeriesList, sessionExercises, workoutName, activeMode])
 
-  // Wyciąganie unikalnych grup mięśniowych z bazy do paska filtrów
   const uniqueMuscleGroups = React.useMemo(() => {
     const groups = exercises.map(e => e.muscle_group).filter(Boolean)
     return ['Wszystkie', ...new Set(groups)]
   }, [exercises])
 
-  // --- OBSŁUGA INTERFEJSU AKTYWNEGO TRENINGU (W LOCIE NA SIŁOWNI) ---
-
-  // Dodanie nowego ćwiczenia do aktywnego treningu lub szablonu
+  // Dodanie ćwiczenia do sesji
   const handleAddExerciseToSession = (exId) => {
     if (sessionExercises.includes(exId)) {
       setIsAtlasOpen(false)
@@ -69,27 +61,25 @@ export default function NewWorkout({
     setSessionExercises(prev => [...prev, exId])
     setIsAtlasOpen(false)
     setSearchQuery('')
-    setSelectedMuscleFilter('Wszystkie') // Reset filtra przy wyborze
+    setSelectedMuscleFilter('Wszystkie')
 
-    // Generujemy domyślnie 3 puste wiersze serii-placeholderów dla wybranego ćwiczenia
     if (activeMode === 'template_creator') {
       const defaultRows = [
-        { exerciseId: exId, weight: '', reps: '10', order: 1 },
-        { exerciseId: exId, weight: '', reps: '10', order: 2 },
-        { exerciseId: exId, weight: '', reps: '10', order: 3 }
+        { exerciseId: exId, weight: '', reps: '10', order: 1, seriesType: 'NORMAL' },
+        { exerciseId: exId, weight: '', reps: '10', order: 2, seriesType: 'NORMAL' },
+        { exerciseId: exId, weight: '', reps: '10', order: 3, seriesType: 'NORMAL' }
       ]
       setTemplateSeriesList(prev => [...prev, ...defaultRows])
     } else {
       const defaultRows = [
-        { exerciseId: exId, weight: '', reps: '', order: 1, completed: false, estimatedOneRm: null },
-        { exerciseId: exId, weight: '', reps: '', order: 2, completed: false, estimatedOneRm: null },
-        { exerciseId: exId, weight: '', reps: '', order: 3, completed: false, estimatedOneRm: null }
+        { exerciseId: exId, weight: '', reps: '', order: 1, completed: false, estimatedOneRm: null, seriesType: 'NORMAL' },
+        { exerciseId: exId, weight: '', reps: '', order: 2, completed: false, estimatedOneRm: null, seriesType: 'NORMAL' },
+        { exerciseId: exId, weight: '', reps: '', order: 3, completed: false, estimatedOneRm: null, seriesType: 'NORMAL' }
       ]
       setLocalSeriesList(prev => [...prev, ...defaultRows])
     }
   }
 
-  // Usuwanie całego bloku ćwiczenia wraz z jego seriami
   const handleRemoveExerciseFromSession = (exId) => {
     setSessionExercises(prev => prev.filter(id => id !== exId))
     if (activeMode === 'template_creator') {
@@ -99,15 +89,14 @@ export default function NewWorkout({
     }
   }
 
-  // Zarządzanie pojedynczymi wierszami serii (Zwiększanie/Zmniejszanie objętości bloku)
   const handleAddRowToExercise = (exId) => {
     if (activeMode === 'template_creator') {
       const currentCount = templateSeriesList.filter(s => s.exerciseId === exId).length
-      const newRow = { exerciseId: exId, weight: '', reps: '10', order: currentCount + 1 }
+      const newRow = { exerciseId: exId, weight: '', reps: '10', order: currentCount + 1, seriesType: 'NORMAL' }
       setTemplateSeriesList(prev => [...prev, newRow])
     } else {
       const currentCount = localSeriesList.filter(s => s.exerciseId === exId).length
-      const newRow = { exerciseId: exId, weight: '', reps: '', order: currentCount + 1, completed: false, estimatedOneRm: null }
+      const newRow = { exerciseId: exId, weight: '', reps: '', order: currentCount + 1, completed: false, estimatedOneRm: null, seriesType: 'NORMAL' }
       setLocalSeriesList(prev => [...prev, newRow])
     }
   }
@@ -115,26 +104,35 @@ export default function NewWorkout({
   const handleRemoveRowFromExercise = (exId) => {
     const list = activeMode === 'template_creator' ? templateSeriesList : localSeriesList
     const setter = activeMode === 'template_creator' ? setTemplateSeriesList : setLocalSeriesList
-    
-    // Szukamy indeksu ostatniej serii przypisanej do tego konkretnego ćwiczenia
     const targetIdx = [...list].reverse().findIndex(s => s.exerciseId === exId)
     if (targetIdx === -1) return
-    
     const realIndex = list.length - 1 - targetIdx
     setter(prev => prev.filter((_, i) => i !== realIndex))
   }
 
-  // Inline edycja wartości wewnątrz tablicy stanów
   const handleUpdateInlineValue = (globalIdx, field, val, modeStr) => {
     const setter = modeStr === 'creator' ? setTemplateSeriesList : setLocalSeriesList
     setter(prev => prev.map((item, i) => i === globalIdx ? { ...item, [field]: val } : item))
   }
 
-  // Zaliczenie serii (Ptaszkiem ✓) -> Wyliczenie 1RM i aktywacja stopera
+  // 🛠️ [NOWOŚĆ] ROTATOR TYPÓW SERII (Tapping cycles through NORMAL -> WARMUP -> DROP_SET -> FAILURE)
+  const handleCycleSeriesType = (globalIdx, modeStr) => {
+    const setter = modeStr === 'creator' ? setTemplateSeriesList : setLocalSeriesList
+    const list = modeStr === 'creator' ? templateSeriesList : localSeriesList
+    
+    if (list[globalIdx]?.completed) return // Zablokuj edycję typu jeśli seria zaliczona
+
+    const currentType = list[globalIdx]?.seriesType || 'NORMAL'
+    const typesKeys = Object.keys(SERIES_TYPES)
+    const nextIndex = (typesKeys.indexOf(currentType) + 1) % typesKeys.length
+    const nextType = typesKeys[nextIndex]
+
+    setter(prev => prev.map((item, i) => i === globalIdx ? { ...item, seriesType: nextType } : item))
+  }
+
   const handleToggleCompleteSeries = (globalIdx) => {
     setLocalSeriesList(prev => prev.map((item, i) => {
       if (i !== globalIdx) return item
-
       const isTurningOn = !item.completed
       const w = parseFloat(item.weight)
       const r = parseInt(item.reps)
@@ -145,22 +143,19 @@ export default function NewWorkout({
       }
 
       const oneRm = isTurningOn && r >= 1 && r <= 12 ? w * (1 + r / 30) : null
-      
       if (isTurningOn && timerRef.current?.start) {
-        timerRef.current.start() // Odpalenie minutnika przerwy
+        timerRef.current.start()
       }
-
       return { ...item, completed: isTurningOn, estimatedOneRm: oneRm }
     }))
   }
 
-  // --- AKCJE KOŃCOWE / ZAPISY ---
-
+  // --- SAVES & LOADING ---
   const handleStartTemplateCreator = () => {
     setCustomTemplateName('')
     setTemplateSeriesList([])
     setSessionExercises([])
-    setIsAtlasOpen(true) // Od razu sugerujemy wybór ćwiczeń
+    setIsAtlasOpen(true)
     setActiveMode('template_creator')
   }
 
@@ -173,8 +168,9 @@ export default function NewWorkout({
     const cleanSeries = templateSeriesList.map((s, i) => ({
       exerciseId: s.exerciseId,
       weight: parseFloat(s.weight) || 0,
-      reps: parseInt(s.reps) || 10, 
-      order: i + 1
+      reps: parseInt(s.reps) || 10,
+      order: i + 1,
+      seriesType: s.seriesType || 'NORMAL' // Przekazanie typu
     }))
     const ok = await onSaveTemplate(name, cleanSeries)
     if (ok) setActiveMode('selection')
@@ -188,7 +184,6 @@ export default function NewWorkout({
     const exIds = [...new Set(tpl.series.map(s => s.exerciseId))]
     setSessionExercises(exIds)
 
-    // Mapowanie struktury bazy na interaktywne, czyste wiersze loggera
     const mapped = tpl.series.map(s => {
       const ex = exercises.find(e => e.id === s.exerciseId)
       return {
@@ -197,7 +192,8 @@ export default function NewWorkout({
         weight: '', 
         reps: s.reps ? String(s.reps) : '', 
         completed: false,
-        estimatedOneRm: null
+        estimatedOneRm: null,
+        seriesType: s.seriesType || 'NORMAL' // Ładowanie typu z bazy
       }
     })
     setLocalSeriesList(mapped)
@@ -209,10 +205,6 @@ export default function NewWorkout({
     setSessionExercises([])
     setLocalSeriesList([])
     setActiveMode('active_workout')
-  }
-
-  const handleExitToSelection = () => {
-    setIsCancelModalOpen(true)
   }
 
   const confirmExit = () => {
@@ -227,17 +219,16 @@ export default function NewWorkout({
   const onSubmitActiveWorkout = async (e) => {
     e?.preventDefault()
     const finished = localSeriesList.filter(s => s.completed && s.weight && s.reps)
-    
     if (finished.length === 0) {
       if (showToast) showToast('Nie odznaczono żadnej ukończonej serii ptaszkiem ✓! ⚠️', 'error')
       return
     }
-
     const normalized = finished.map((s, idx) => ({
       ...s,
       weight: parseFloat(s.weight),
       reps: parseInt(s.reps),
-      order: idx + 1
+      order: idx + 1,
+      seriesType: s.seriesType || 'NORMAL' // Przekazanie typu serii do backendu
     }))
 
     try {
@@ -247,7 +238,6 @@ export default function NewWorkout({
     }
   }
 
-  // Filtrowanie hybrydowe (Wyszukiwarka + Grupa mięśniowa)
   const filteredExercises = exercises.filter(e => {
     const matchesSearch = e.name.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesMuscle = selectedMuscleFilter === 'Wszystkie' || e.muscle_group === selectedMuscleFilter
@@ -264,9 +254,6 @@ export default function NewWorkout({
   const isCreatorMode = activeMode === 'template_creator'
   const currentGlobalList = isCreatorMode ? templateSeriesList : localSeriesList
 
-  // =========================================================================
-  // STAN 1: HOME / COUCH MODE
-  // =========================================================================
   if (activeMode === 'selection') {
     return (
       <div className="max-w-[640px] mx-auto flex flex-col gap-6 text-left animate-in fade-in duration-200">
@@ -325,7 +312,6 @@ export default function NewWorkout({
   return (
     <div className="max-w-[640px] mx-auto flex flex-col gap-4 text-left animate-in fade-in duration-200 pb-20">
       
-      {/* PANEL STEROWANIA FORMULARZA */}
       <div className="flex items-start justify-between gap-3 border-b border-zinc-800 pb-3">
         <div>
           <h2 className={`text-xl font-black tracking-tight ${isCreatorMode ? 'text-gymPremium' : 'text-white'}`}>
@@ -336,7 +322,7 @@ export default function NewWorkout({
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
-          <button onClick={handleExitToSelection} className="px-3 py-2 border border-zinc-800 hover:bg-zinc-800/30 text-textSecondary font-bold text-xs rounded-gp-md cursor-pointer transition-colors">
+          <button onClick={() => setIsCancelModalOpen(true)} className="px-3 py-2 border border-zinc-800 hover:bg-zinc-800/30 text-textSecondary font-bold text-xs rounded-gp-md cursor-pointer transition-colors">
             Wyjdź ✕
           </button>
           <button 
@@ -359,25 +345,21 @@ export default function NewWorkout({
 
       {!isCreatorMode && <RestTimerWrapper timerRef={timerRef} />}
 
-      {/* RENDEROWANIE KART ELEMENTÓW NA OŚI SESJI */}
       {sessionExercises.length === 0 ? (
         <div className="text-center py-16 bg-gymCard/30 border border-dashed border-zinc-800 rounded-gp-lg p-6 text-textMuted text-xs italic">
           Brak ćwiczeń w strukturze. Tapnij poniższy przycisk, aby rozbudować listę z atlasu.
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           {sessionExercises.map((exId) => {
             const exerciseObj = exercises.find(e => e.id === exId)
             if (!exerciseObj) return null
 
-            // Filtrowanie serii przypisanych wyłącznie do tego ćwiczenia
             const exerciseRows = currentGlobalList
               .map((s, globalIndex) => ({ ...s, globalIndex }))
               .filter(s => s.exerciseId === exId)
 
-            // =========================================================================
-            // 🛠️ [NOWOŚĆ] ULTRA-KOMPAKTOWY WIDOK JEDNOLINIJKOWY DLA PROJEKTOWANIA SZABLONU
-            // =========================================================================
+            // ULTRA-KOMPAKTOWY WIDOK JEDNOLINIJKOWY DLA PROJEKTOWANIA PLANU
             if (isCreatorMode) {
               return (
                 <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-3 flex items-center justify-between gap-4 shadow-md animate-in fade-in duration-150">
@@ -395,7 +377,6 @@ export default function NewWorkout({
                     <span className="text-[10px] font-bold text-textMuted uppercase tracking-wider mt-0.5 block">{exerciseObj.muscle_group || 'Inne'}</span>
                   </div>
                   
-                  {/* Cyfrowy stepper liczby serii na telefonie */}
                   <div className="flex items-center gap-2 bg-gymCardSecondary/60 border border-zinc-800/60 p-1 rounded-gp-md shrink-0 select-none">
                     <button
                       type="button"
@@ -417,7 +398,6 @@ export default function NewWorkout({
                     </button>
                   </div>
 
-                  {/* Bezpośrednie usunięcie całej karty ćwiczenia z szablonu */}
                   <button
                     type="button"
                     onClick={() => handleRemoveExerciseFromSession(exId)}
@@ -429,9 +409,7 @@ export default function NewWorkout({
               )
             }
 
-            // =========================================================================
-            // WIDOK PEŁNY INTERAKTYWNY DLA AKTYWNEGO TRENINGU NA SIŁOWNI
-            // =========================================================================
+            // PEŁNY LOGGER NA SIŁOWNIĘ (Z BADGE'AMI TYPÓW SERII)
             return (
               <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg shadow-lg overflow-hidden animate-in fade-in duration-150">
                 <div className="px-4 py-3 bg-gymCardSecondary/40 border-b border-zinc-800/60 flex items-center justify-between gap-3">
@@ -457,27 +435,42 @@ export default function NewWorkout({
                 </div>
 
                 <div className="p-3">
-                  {exerciseRows.length === 0 ? (
-                    <p className="text-[11px] text-textMuted italic py-2">Brak zdefiniowanych wierszy serii.</p>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      <div className="grid grid-cols-12 gap-2 text-center text-[10px] font-bold text-textMuted uppercase tracking-tight px-1">
-                        <div className="col-span-2 text-left">Seria</div>
-                        <div className="col-span-3">Poprzednio</div>
-                        <div className="col-span-3">Ciężar (kg)</div>
-                        <div className="col-span-2">Powt.</div>
-                        <div className="col-span-2">Status</div>
-                      </div>
+                  <div className="flex flex-col gap-2">
+                    <div className="grid grid-cols-12 gap-2 text-center text-[10px] font-bold text-textMuted uppercase tracking-tight px-1">
+                      <div className="col-span-2 text-left">Seria</div>
+                      <div className="col-span-3">Poprzednio</div>
+                      <div className="col-span-3">Ciężar (kg)</div>
+                      <div className="col-span-2">Powt.</div>
+                      <div className="col-span-2">Status</div>
+                    </div>
 
-                      {exerciseRows.map((s, localIdx) => (
+                    {exerciseRows.map((s, localIdx) => {
+                      const currentCfg = SERIES_TYPES[s.seriesType || 'NORMAL']
+                      const renderedLabel = currentCfg.label(localIdx)
+
+                      return (
                         <div 
                           key={s.globalIndex} 
-                          className={`grid grid-cols-12 gap-2 items-center text-center p-1 rounded transition-colors ${
-                            s.completed ? 'bg-gymSuccess/5 border-l-2 border-gymSuccess' : 'bg-transparent'
+                          className={`grid grid-cols-12 gap-2 items-center text-center p-1 rounded transition-all ${
+                            s.completed 
+                              ? 'bg-gymSuccess/5 border-l-2 border-gymSuccess' 
+                              : s.seriesType === 'WARMUP' ? 'bg-amber-500/[0.02]'
+                              : s.seriesType === 'DROP_SET' ? 'bg-purple-500/[0.02]'
+                              : s.seriesType === 'FAILURE' ? 'bg-red-500/[0.02]'
+                              : 'bg-transparent'
                           }`}
                         >
-                          <div className="col-span-2 text-left font-mono text-xs font-bold text-textSecondary px-1">
-                            {localIdx + 1}
+                          {/* 🛠️ INTERAKTYWNY BADGE SERII: Tapnięcie zmienia NORMAL -> W -> D -> F */}
+                          <div className="col-span-2 text-left px-0.5">
+                            <button
+                              type="button"
+                              disabled={s.completed}
+                              onClick={() => handleCycleSeriesType(s.globalIndex, 'workout')}
+                              className={`w-7 h-7 rounded-md border text-center font-mono text-xs font-black transition-all cursor-pointer flex items-center justify-center active:scale-90 ${currentCfg.bg} disabled:opacity-100 disabled:cursor-default`}
+                              title="Zmień typ serii (Zwykła, Rozgrzewka, Drop, Załamanie)"
+                            >
+                              {renderedLabel}
+                            </button>
                           </div>
 
                           <div className="col-span-3 text-[11px] text-textMuted font-medium truncate font-mono">
@@ -522,9 +515,9 @@ export default function NewWorkout({
                           </div>
 
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      )
+                    })}
+                  </div>
 
                   <div className="flex gap-2 justify-end mt-3 pt-2 border-t border-zinc-800/40 text-[11px]">
                     <button 
@@ -550,7 +543,7 @@ export default function NewWorkout({
         </div>
       )}
 
-      {/* STICKY FOOTER ACTION BAR */}
+      {/* STICKY FOOTER */}
       <div className="fixed bottom-16 left-0 right-0 max-w-[640px] mx-auto z-40 bg-gradient-to-t from-gymDark via-gymDark to-transparent pt-6 pb-2 px-4 sm:px-0">
         <button 
           onClick={() => setIsAtlasOpen(true)} 
@@ -560,14 +553,12 @@ export default function NewWorkout({
         </button>
       </div>
 
-      {/* ATLAS JAKO BOTTOM SHEET DRAWER PANEL */}
+      {/* ATLAS DRAWER */}
       {isAtlasOpen && (
         <div className="fixed inset-0 z-[1000] md:z-[998] animate-in fade-in duration-150">
           <div onClick={() => setIsAtlasOpen(false)} className="absolute inset-0 bg-black/75 backdrop-blur-xs" />
-          
           <div className="absolute bottom-16 left-0 right-0 max-w-[640px] mx-auto bg-[#14161d] border-t border-zinc-800 rounded-t-2xl flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[75vh]">
             <div className="w-12 h-1 bg-zinc-800 rounded-full mx-auto my-2.5 shrink-0" />
-            
             <div className="px-4 pb-3 pt-1 border-b border-zinc-800/80 flex flex-col gap-3 shrink-0">
               <div className="flex items-center justify-between gap-3">
                 <input 
@@ -581,7 +572,6 @@ export default function NewWorkout({
                   Anuluj
                 </button>
               </div>
-
               <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-2 px-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden select-none">
                 {uniqueMuscleGroups.map(group => {
                   const isActive = selectedMuscleFilter === group
@@ -590,11 +580,7 @@ export default function NewWorkout({
                       key={group}
                       type="button"
                       onClick={() => setSelectedMuscleFilter(group)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-bold tracking-tight whitespace-nowrap transition-all border cursor-pointer active:scale-95 ${
-                        isActive
-                          ? 'bg-gymRed border-gymRed text-white shadow-md shadow-red-950/20'
-                          : 'bg-gymCard border-zinc-800 text-textSecondary hover:border-zinc-700 hover:text-white'
-                      }`}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold tracking-tight whitespace-nowrap transition-all border cursor-pointer active:scale-95 ${isActive ? 'bg-gymRed border-gymRed text-white' : 'bg-gymCard border-zinc-800 text-textSecondary hover:text-white'}`}
                     >
                       {group}
                     </button>
@@ -602,7 +588,6 @@ export default function NewWorkout({
                 })}
               </div>
             </div>
-            
             <div className="overflow-y-auto divide-y divide-zinc-800/40 flex-1 pb-6">
               {Object.entries(groupedExercises).map(([group, exList]) => (
                 <div key={group} className="text-left">
@@ -613,20 +598,14 @@ export default function NewWorkout({
                       <div 
                         key={ex.id} 
                         onClick={() => handleAddExerciseToSession(ex.id)} 
-                        className={`px-4 py-3 text-sm text-textPrimary hover:bg-gymRed/5 cursor-pointer flex items-center justify-between transition-colors border-b border-zinc-900/40 ${
-                          isAlreadyAdded ? 'opacity-40 pointer-events-none bg-zinc-900/20' : ''
-                        }`}
+                        className={`px-4 py-3 text-sm text-textPrimary hover:bg-gymRed/5 cursor-pointer flex items-center justify-between transition-colors border-b border-zinc-900/40 ${isAlreadyAdded ? 'opacity-40 pointer-events-none bg-zinc-900/20' : ''}`}
                       >
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           <span className="font-medium truncate">{ex.name}</span>
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setInfoExercise(ex);
-                            }}
+                            onClick={(e) => { e.stopPropagation(); setInfoExercise(ex); }}
                             className="p-1 text-textMuted hover:text-white transition-colors cursor-pointer text-[11px] bg-zinc-800/50 hover:bg-zinc-700 rounded-md font-bold shrink-0"
-                            title="Instrukcja wideo"
                           >
                             ⓘ
                           </button>
@@ -639,76 +618,46 @@ export default function NewWorkout({
                   })}
                 </div>
               ))}
-              {filteredExercises.length === 0 && (
-                <div className="p-12 text-center text-textSecondary text-xs italic">Brak pozycji w bazie o nazwie &quot;{searchQuery}&quot;</div>
-              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* INTERAKTYWNY MODAL DETALI - PRZYGOTOWANY POD WIDEO MULTIMEDIA */}
+      {/* DETALS MODAL */}
       {infoExercise && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div onClick={() => setInfoExercise(null)} className="absolute inset-0 bg-black/80 backdrop-blur-xs" />
-          
           <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl relative z-10 text-left animate-in zoom-in-95 duration-150">
-            
             {infoExercise.video_url ? (
-              <video 
-                src={infoExercise.video_url} 
-                autoPlay 
-                muted 
-                loop 
-                playsInline 
-                className="w-full h-44 object-cover bg-black border-b border-zinc-800"
-              />
+              <video src={infoExercise.video_url} autoPlay muted loop playsInline className="w-full h-44 object-cover bg-black border-b border-zinc-800" />
             ) : (
-              <div className="w-full h-44 bg-zinc-900/60 border-b border-zinc-800 flex flex-col items-center justify-center text-center p-4 text-textMuted select-none">
+              <div className="w-full h-44 bg-zinc-900/60 border-b border-zinc-800 flex flex-col items-center justify-center text-center p-4 text-textMuted">
                 <span className="text-2xl mb-1">🏋️‍♂️</span>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Pętla ruchu 3D / Video</span>
-                <span className="text-[9px] text-zinc-600 mt-1 max-w-[220px]">Zostanie wyrenderowana automatycznie po przypisaniu linku MP4 w bazie.</span>
               </div>
             )}
-
             <div className="p-5">
-              <span className="text-[10px] font-black text-gymRed uppercase tracking-wider block mb-0.5">
-                {infoExercise.muscle_group || 'Inne'}
-              </span>
-              <h3 className="text-base font-black text-white tracking-tight mb-3">
-                {infoExercise.name}
-              </h3>
-              
-              <div className="text-xs text-zinc-400 leading-relaxed bg-zinc-900/40 border border-zinc-800/60 p-3 rounded-xl max-h-36 overflow-y-auto font-medium">
-                {infoExercise.description ? infoExercise.description : (
-                  <span className="italic text-zinc-600 text-[11px]">Brak opisu technicznego dla tego ćwiczenia. Instrukcja zostanie zaciągnięta automatycznie z kolumny opisowej bazy danych.</span>
-                )}
+              <span className="text-[10px] font-black text-gymRed uppercase tracking-wider block mb-0.5">{infoExercise.muscle_group}</span>
+              <h3 className="text-base font-black text-white tracking-tight mb-3">{infoExercise.name}</h3>
+              <div className="text-xs text-zinc-400 leading-relaxed bg-zinc-900/40 border border-zinc-800/60 p-3 rounded-xl max-h-36 overflow-y-auto">
+                {infoExercise.description || <span className="italic text-zinc-600">Brak opisu technicznego.</span>}
               </div>
-
-              <button 
-                type="button"
-                onClick={() => setInfoExercise(null)} 
-                className="w-full mt-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center"
-              >
-                Zamknij podgląd
-              </button>
+              <button type="button" onClick={() => setInfoExercise(null)} className="w-full mt-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center">Zamknij podgląd</button>
             </div>
-
           </div>
         </div>
       )}
 
-      {/* REAKTYWNY MODAL POTWIERDZENIA WYJŚCIA */}
+      {/* CANCEL MODAL */}
       {isCancelModalOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div onClick={() => setIsCancelModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
-          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+          <div onClick={() => setIsCancelModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in zoom-in-95 duration-150">
             <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
             <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Anulować konfigurację?</h3>
-            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Wszystkie wprowadzone dane i wiersze zostaną usunięte z pamięci podręcznej.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setIsCancelModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Kontynuuj</button>
-              <button onClick={confirmExit} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm cursor-pointer shadow-lg shadow-red-950/20">Tak, anuluj</button>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setIsCancelModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Kontynuuj</button>
+              <button onClick={confirmExit} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm cursor-pointer">Tak, anuluj</button>
             </div>
           </div>
         </div>

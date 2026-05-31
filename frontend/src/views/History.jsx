@@ -2,6 +2,15 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { API_BASE_URL } from '../config/api'
+import WorkoutCalendar from '../components/WorkoutCalendar' // 🛠️ Zaimportowanie modułu kalendarza
+
+// 🛠️ Słownik stylizacji wizualnej typów serii w historii (spójny z NewWorkout)
+const SERIES_TYPES = {
+  NORMAL: { label: (order) => order, bg: 'bg-zinc-800/20 text-textSecondary border-zinc-800' },
+  WARMUP: { label: () => 'W', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/20 shadow-[0_0_8px_rgba(245,158,11,0.05)]' },
+  DROP_SET: { label: () => 'D', bg: 'bg-purple-500/10 text-purple-400 border-purple-500/20 shadow-[0_0_8px_rgba(168,85,247,0.05)]' },
+  FAILURE: { label: () => 'F', bg: 'bg-red-500/10 text-red-400 border-red-500/20 shadow-[0_0_8px_rgba(239,68,68,0.05)]' }
+}
 
 export default function History({ 
   workoutsHistory, 
@@ -103,6 +112,7 @@ export default function History({
   return (
     <section className="bg-gymCard border border-zinc-800/40 p-4 md:p-6 rounded-xl text-left shadow-lg relative">
       
+      {/* NAGŁÓWEK HISTORII TRENINGÓW */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-zinc-800 pb-4 mb-4 gap-4">
         <div>
           <h2 className="text-xl md:text-2xl font-bold tracking-tight">Twoja historia aktywności 📅</h2>
@@ -121,6 +131,9 @@ export default function History({
           {isExporting ? '🔄 Generowanie...' : isPremiumUser ? '📊 Eksportuj do CSV' : '🔒 Eksportuj do CSV (PREMIUM)'}
         </button>
       </div>
+
+      {/* 🛠️ [INTEGRACJA] Miesięczny kalendarz regularności treningowej z kropkami sesji */}
+      <WorkoutCalendar workoutsHistory={workoutsHistory} />
       
       {workoutsHistory.length === 0 ? (
         <p className="text-zinc-500 italic mt-4 text-center py-6">Brak wpisów w historii.</p>
@@ -180,30 +193,51 @@ export default function History({
                   </p>
                 )}
                 
-                {/* 🛠️ [NOWOŚĆ] DODANO MASK-IMAGE GRADIENT DLA COMFORT SCROLLA NA MOBILE */}
+                {/* COMFORT SCROLL NA MOBILE */}
                 <div className="overflow-x-auto mt-4 -mx-4 px-4 sm:mx-0 sm:px-0 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)] sm:[mask-image:none]">
                   <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
                     <thead>
                       <tr className="text-left border-b border-zinc-700 text-zinc-400 text-xs font-semibold uppercase tracking-wider">
                         <th className="pb-2">Ćwiczenie</th>
-                        <th className="pb-2 text-center">Seria</th>
+                        <th className="pb-2 text-center w-16">Seria</th>
                         <th className="pb-2 text-center">Obciążenie</th>
                         <th className="pb-2 text-center">Reps</th>
                         <th className="pb-2 text-right">Est. 1RM</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-800 text-xs md:text-sm">
-                      {w.series.map(s => (
-                        <tr key={s.id} className="hover:bg-zinc-800/30 transition-colors">
-                          <td className="py-2.5 font-medium pr-2 text-zinc-200">{s.exerciseName}</td>
-                          <td className="py-2.5 text-center text-zinc-400">{s.order}</td>
-                          <td className="py-2.5 text-center text-zinc-200 font-semibold">{s.weight} kg</td>
-                          <td className="py-2.5 text-center text-zinc-400">{s.reps}</td>
-                          <td className="py-2.5 text-right text-gymRed font-bold">
-                            {s.estimatedOneRM ? `${s.estimatedOneRM.toFixed(1)} kg` : '-'}
-                          </td>
-                        </tr>
-                      ))}
+                      {w.series.map(s => {
+                        // Pobieramy konfigurację dla określonego typu serii z bazy
+                        const currentCfg = SERIES_TYPES[s.seriesType || 'NORMAL']
+                        const renderedLabel = currentCfg.label(s.order)
+
+                        return (
+                          <tr 
+                            key={s.id} 
+                            className={`transition-colors ${
+                              s.seriesType === 'WARMUP' ? 'bg-amber-500/[0.01] hover:bg-amber-500/[0.03]'
+                              : s.seriesType === 'DROP_SET' ? 'bg-purple-500/[0.01] hover:bg-purple-500/[0.03]'
+                              : s.seriesType === 'FAILURE' ? 'bg-red-500/[0.01] hover:bg-red-500/[0.03]'
+                              : 'hover:bg-zinc-800/30'
+                            }`}
+                          >
+                            <td className="py-2.5 font-medium pr-2 text-zinc-200">{s.exerciseName}</td>
+                            
+                            {/* ODZWIERCIEDLENIE BADGE TYPU SERII Z LOGGERA */}
+                            <td className="py-2.5 text-center flex justify-center">
+                              <span className={`inline-flex w-6 h-6 rounded-md border items-center justify-center font-mono text-[10px] font-black tracking-tighter ${currentCfg.bg}`}>
+                                {renderedLabel}
+                              </span>
+                            </td>
+
+                            <td className="py-2.5 text-center text-zinc-200 font-semibold">{s.weight} kg</td>
+                            <td className="py-2.5 text-center text-zinc-400">{s.reps}</td>
+                            <td className="py-2.5 text-right text-gymRed font-bold">
+                              {s.estimatedOneRM ? `${parseFloat(s.estimatedOneRM).toFixed(1)} kg` : '-'}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
