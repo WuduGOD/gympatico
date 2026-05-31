@@ -26,7 +26,7 @@ function AppContent() {
   const [stats, setStats] = useState(null)
   const [loadingData, setLoadingData] = useState(false)
 
-  // STAN OBSŁUGI DOLNEGO MENU "WIĘCEJ..." (BOTTOM SHEET)
+  // Stan obsługi dolnego menu "Więcej..." (Bottom Sheet Drawer)
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
 
   const navigate = useNavigate()
@@ -52,7 +52,8 @@ function AppContent() {
     currentSelectedExercise, setCurrentSelectedExercise, seriesWeight, setSeriesWeight, 
     seriesReps, setSeriesReps, localSeriesList, setLocalSeriesList, addSeriesToLocalList, 
     handleSaveWorkout, fetchWorkoutsData, removeSeriesFromLocalList, progressionData, 
-    fetchProgression, handleDeleteWorkout, hasMoreWorkouts, handleUpdateWorkout
+    fetchProgression, handleDeleteWorkout, hasMoreWorkouts, handleUpdateWorkout,
+    totalWorkoutsCount // <--- [FIXED] DODANO DO DESTRUKCJI Z HOOKA
   } = useWorkouts(token, exercises, showToast)
 
   const handleLoginSuccess = (userToken, userData) => {
@@ -244,7 +245,7 @@ function AppContent() {
 
   const onAddCustomExercise = async (name, muscleGroup) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/exercises`, {
+      const res = await fetch(`${API_BASE_URL}/危险/exercises`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -287,7 +288,6 @@ function AppContent() {
     }
   };
 
-  // Flaga logiczna podświetlająca ikonę "Więcej...", jeśli jesteśmy wewnątrz ukrytej podstrony
   const isMoreRouteActive = location.pathname === '/exercises' || location.pathname === '/social'
 
   return (
@@ -295,7 +295,7 @@ function AppContent() {
 
       {token && (
         <>
-          {/* GÓRNY HEADER GLOBALNY (DESKTOP) */}
+          {/* HEADER DESKTOP */}
           <header className="flex justify-between items-center border-b border-zinc-800/80 pb-4 mb-6 md:mb-8 gap-4">
             <div className="text-left">
               <h1 className="text-xl md:text-2xl font-black text-gymRed tracking-tight">🏋️‍♂️ GymPatico</h1>
@@ -317,67 +317,41 @@ function AppContent() {
             </button>
           </header>
 
-          {/* ZOPTYMALIZOWANA DOLNA BELKA NAWIGACYJNA MOBILNA (Zredukowana do 5 pozycji + FAB + Drawer) */}
+          {/* DOLNA BELKA MOBILNA (5 POZYCJI) */}
           <nav className="grid grid-cols-5 md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#181a20] border-t border-zinc-800/60 shadow-2xl z-[999] py-1 px-1 items-center">
-            
-            {/* 1. PANEL */}
             <button onClick={() => { navigate('/'); setIsMoreMenuOpen(false); }} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${location.pathname === '/' ? 'text-gymRed' : 'text-zinc-500'}`}>
               <span className="text-lg">📊</span><span>Panel</span>
             </button>
-            
-            {/* 2. STATYSTYKI */}
             <button onClick={() => { navigate('/stats'); setIsMoreMenuOpen(false); }} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${location.pathname === '/stats' ? 'text-gymRed' : 'text-zinc-500'}`}>
               <span className="text-lg">📈</span><span>Stats</span>
             </button>
-            
-            {/* 3. ŚRODKOWY FAB (+ NOWY TRENING) - DUŻY, WYRÓŻNIONY, SZYBKI DOTYK */}
             <div className="flex justify-center relative -top-3">
-              <button 
-                onClick={() => { navigate('/new-workout'); setIsMoreMenuOpen(false); }} 
-                className={`w-13 h-13 rounded-full flex items-center justify-center cursor-pointer shadow-xl shadow-red-950/50 border border-red-500/20 active:scale-90 transition-transform ${location.pathname === '/new-workout' ? 'bg-red-600 text-white' : 'bg-gymRed text-white'}`}
-              >
+              <button onClick={() => { navigate('/new-workout'); setIsMoreMenuOpen(false); }} className={`w-13 h-13 rounded-full flex items-center justify-center cursor-pointer shadow-xl shadow-red-950/50 border border-red-500/20 active:scale-90 transition-transform ${location.pathname === '/new-workout' ? 'bg-red-600 text-white' : 'bg-gymRed text-white'}`}>
                 <span className="text-xl font-bold">＋</span>
               </button>
             </div>
-            
-            {/* 4. HISTORIA */}
             <button onClick={() => { navigate('/history'); setIsMoreMenuOpen(false); }} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${location.pathname === '/history' ? 'text-gymRed' : 'text-zinc-500'}`}>
               <span className="text-lg">📅</span><span>Historia</span>
             </button>
-            
-            {/* 5. WIĘCEJ... TRIGGER INTERAKTYWNEGO DRAWERA */}
             <button onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${isMoreMenuOpen || isMoreRouteActive ? 'text-gymRed' : 'text-zinc-500'}`}>
               <span className="text-lg">☰</span><span>Więcej</span>
             </button>
           </nav>
 
-          {/* REAKTYWNY BOTTOM SHEET DLA UKRYTYCH OPCJI (ATLAS + GANG) */}
+          {/* BOTTOM SHEET DRAWER */}
           {isMoreMenuOpen && (
             <div className="fixed inset-0 z-[998] md:hidden animate-in fade-in duration-150">
-              {/* Tło zamazujące kliknięciem zamykające menu */}
               <div onClick={() => setIsMoreMenuOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-              
-              {/* Kontener wysuwany */}
               <div className="absolute bottom-16 left-0 right-0 bg-[#161920] border-t border-zinc-800 rounded-t-2xl p-4 flex flex-col gap-2.5 shadow-2xl animate-in slide-in-from-bottom-6 duration-200">
                 <div className="w-12 h-1 bg-zinc-800 rounded-full mx-auto mb-2" />
-                
-                {/* Opcja A: Atlas */}
-                <button 
-                  onClick={() => { navigate('/exercises'); setIsMoreMenuOpen(false); }} 
-                  className={`flex items-center gap-3.5 p-3.5 rounded-xl border text-left font-bold text-sm transition-all active:scale-[0.99] cursor-pointer ${location.pathname === '/exercises' ? 'border-gymRed/40 bg-gymRed/5 text-gymRed' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}
-                >
+                <button onClick={() => { navigate('/exercises'); setIsMoreMenuOpen(false); }} className={`flex items-center gap-3.5 p-3.5 rounded-xl border text-left font-bold text-sm transition-all cursor-pointer ${location.pathname === '/exercises' ? 'border-gymRed/40 bg-gymRed/5 text-gymRed' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}>
                   <span className="text-xl">📚</span>
                   <div>
                     <div>Atlas Ćwiczeń</div>
                     <div className="text-[11px] text-zinc-500 font-normal mt-0.5">Dodawaj własne i przeglądaj bazę ruchu</div>
                   </div>
                 </button>
-
-                {/* Opcja B: Społeczność */}
-                <button 
-                  onClick={() => { navigate('/social'); setIsMoreMenuOpen(false); }} 
-                  className={`flex items-center gap-3.5 p-3.5 rounded-xl border text-left font-bold text-sm transition-all active:scale-[0.99] cursor-pointer ${location.pathname === '/social' ? 'border-gymRed/40 bg-gymRed/5 text-gymRed' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}
-                >
+                <button onClick={() => { navigate('/social'); setIsMoreMenuOpen(false); }} className={`flex items-center gap-3.5 p-3.5 rounded-xl border text-left font-bold text-sm transition-all cursor-pointer ${location.pathname === '/social' ? 'border-gymRed/40 bg-gymRed/5 text-gymRed' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}>
                   <span className="text-xl">👥</span>
                   <div>
                     <div>Gang GymPatico</div>
@@ -419,7 +393,20 @@ function AppContent() {
             />
           ) : <Navigate to="/login" />} />
           
-          <Route path="/history" element={token ? <History workoutsHistory={workoutsHistory} onDeleteWorkout={onDeleteWorkout} onLoadMoreWorkouts={onLoadMoreWorkouts} hasMoreWorkouts={hasMoreWorkouts} onUpdateWorkout={onUpdateWorkoutMetadata} user={user} token={token} showToast={showToast} totalWorkoutsCount={totalWorkoutsCount} /> : <Navigate to="/login" />} />
+          <Route path="/history" element={token ? (
+            <History 
+              workoutsHistory={workoutsHistory} 
+              onDeleteWorkout={onDeleteWorkout} 
+              onLoadMoreWorkouts={onLoadMoreWorkouts} 
+              hasMoreWorkouts={hasMoreWorkouts} 
+              onUpdateWorkout={onUpdateWorkoutMetadata} 
+              user={user} 
+              token={token} 
+              showToast={showToast} 
+              totalWorkoutsCount={totalWorkoutsCount} 
+            />
+          ) : <Navigate to="/login" />} />
+          
           <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} /> : <Navigate to="/login" />} />
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
