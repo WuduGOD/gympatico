@@ -22,172 +22,149 @@ export default function NewWorkout({
     return 'selection'
   })
 
-  // Lista ćwiczeń załadowanych do bieżącej konfiguracji (treningu lub szablonu)
+  // Kolejność i lista bloków ćwiczeń wyświetlanych na ekranie
   const [sessionExercises, setSessionExercises] = useState([])
-  const [activeExId, setActiveExId] = useState(null)
-
-  // Szybkie inputy wartości
-  const [weight, setWeight] = useState('60')
-  const [reps, setReps] = useState('8')
-
-  // Stany dla aktywnego treningu (zapis jako szablon w locie na siłowni)
-  const [templateNameInput, setTemplateNameInput] = useState('')
-  const [saveAsTemplateCheckbox, setSaveAsTemplateCheckbox] = useState(false)
-
-  // Stany dedykowane dla kreatora szablonów "na sucho" (Couch Mode w domu)
+  
+  // Stany dla konfiguracji szablonu w domu (Couch Mode)
   const [customTemplateName, setCustomTemplateName] = useState('')
   const [templateSeriesList, setTemplateSeriesList] = useState([])
 
-  // Widok wewnętrzny atlasu: 'logger' (podgląd) | 'builder' (wyszukiwarka w dolnym Bottom Sheet)
-  const [view, setView] = useState('logger')
+  // Kontrola dolnego Drawera z atlasem ćwiczeń
+  const [isAtlasOpen, setIsAtlasOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  
+  // State dla bezpiecznego modalu anulowania treningu
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
+  
   const timerRef = useRef(null)
 
-  // State dla autorskiego modala anulowania treningu
-  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
-
-  // Synchronizacja trybu, jeśli dane zostały wyczyszczone z góry
+  // Automatyczna synchronizacja trybu przy czyszczeniu nadrzędnym
   useEffect(() => {
     if (localSeriesList.length === 0 && sessionExercises.length === 0 && !workoutName && activeMode === 'active_workout') {
       setActiveMode('selection')
     }
   }, [localSeriesList, sessionExercises, workoutName, activeMode])
 
-  const getSeriesForExercise = useCallback((exId) => {
-    if (activeMode === 'template_creator') {
-      return templateSeriesList.filter(s => s.exerciseId === exId)
+  // --- OBSŁUGA INTERFEJSU AKTYWNEGO TRENINGU (W LOCIE NA SIŁOWNI) ---
+
+  // Dodanie nowego ćwiczenia do aktywnego treningu lub szablonu
+  const handleAddExerciseToSession = (exId) => {
+    if (sessionExercises.includes(exId)) {
+      setIsAtlasOpen(false)
+      return
     }
-    return localSeriesList.filter(s => s.exerciseId === exId)
-  }, [localSeriesList, templateSeriesList, activeMode])
 
-  // Podpowiedź obciążenia z poprzedniej serii
-  useEffect(() => {
-    if (!activeExId) return
-    const list = activeMode === 'template_creator' ? templateSeriesList : localSeriesList
-    const lastSeries = list.filter(s => s.exerciseId === activeExId).at(-1)
-    if (lastSeries) {
-      setWeight(String(lastSeries.weight))
-      setReps(String(lastSeries.reps))
-    }
-  }, [activeExId, activeMode, templateSeriesList, localSeriesList])
-
-  const adjustWeight = (delta) => {
-    setWeight(prev => {
-      const val = Math.max(0, parseFloat(prev || 0) + delta)
-      return Number.isInteger(val) ? String(val) : val.toFixed(1)
-    })
-  }
-
-  const adjustReps = (delta) => {
-    setReps(prev => String(Math.max(1, parseInt(prev || 1) + delta)))
-  }
-
-  // Zapis serii do odpowiedniej tablicy (w zależności od trybu)
-  const confirmSeries = useCallback(() => {
-    if (!activeExId) return
-    const ex = exercises.find(e => e.id === activeExId)
-    if (!ex) return
-
-    const w = parseFloat(weight)
-    const r = parseInt(reps)
-    if (isNaN(w) || isNaN(r) || r < 1) return
-
-    const estimatedOneRm = r >= 1 && r <= 12 ? w * (1 + r / 30) : null
-    
-    if (activeMode === 'template_creator') {
-      const currentExSeries = templateSeriesList.filter(s => s.exerciseId === activeExId)
-      const newSeries = {
-        exerciseId: activeExId,
-        weight: w,
-        reps: r,
-        order: currentExSeries.length + 1
-      }
-      setTemplateSeriesList(prev => [...prev, newSeries])
-    } else {
-      const currentExSeries = localSeriesList.filter(s => s.exerciseId === activeExId)
-      const newSeries = {
-        exerciseId: activeExId,
-        exerciseName: ex.name,
-        weight: w,
-        reps: r,
-        order: currentExSeries.length + 1,
-        estimatedOneRm
-      }
-      setLocalSeriesList(prev => [...prev, newSeries])
-      if (timerRef.current?.start) timerRef.current.start()
-    }
-  }, [activeExId, weight, reps, exercises, activeMode, templateSeriesList, localSeriesList, setLocalSeriesList])
-
-  const removeLastSeries = (exId) => {
-    const setter = activeMode === 'template_creator' ? setTemplateSeriesList : setLocalSeriesList
-    setter(prev => {
-      const idx = [...prev].reverse().findIndex(s => s.exerciseId === exId)
-      if (idx === -1) return prev
-      const realIdx = prev.length - 1 - idx
-      return prev.filter((_, i) => i !== realIdx)
-    })
-  }
-
-  const addExerciseToSession = (exId) => {
-    if (sessionExercises.includes(exId)) return
     setSessionExercises(prev => [...prev, exId])
-    setActiveExId(exId)
+    setIsAtlasOpen(false)
     setSearchQuery('')
 
-    const list = activeMode === 'template_creator' ? templateSeriesList : localSeriesList
-    const lastSeries = list.filter(s => s.exerciseId === exId).at(-1)
-    setWeight(lastSeries ? String(lastSeries.weight) : '60')
-    setReps(lastSeries ? String(lastSeries.reps) : '8')
+    // Generujemy domyślnie 3 puste wiersze serii-placeholderów dla wybranego ćwiczenia
+    if (activeMode === 'template_creator') {
+      const defaultRows = [
+        { exerciseId: exId, weight: '', reps: '10', order: 1 },
+        { exerciseId: exId, weight: '', reps: '10', order: 2 },
+        { exerciseId: exId, weight: '', reps: '10', order: 3 }
+      ]
+      setTemplateSeriesList(prev => [...prev, ...defaultRows])
+    } else {
+      const defaultRows = [
+        { exerciseId: exId, weight: '', reps: '', order: 1, completed: false, estimatedOneRm: null },
+        { exerciseId: exId, weight: '', reps: '', order: 2, completed: false, estimatedOneRm: null },
+        { exerciseId: exId, weight: '', reps: '', order: 3, completed: false, estimatedOneRm: null }
+      ]
+      setLocalSeriesList(prev => [...prev, ...defaultRows])
+    }
   }
 
-  const removeExerciseFromSession = (exId) => {
+  // Usuwanie całego bloku ćwiczenia wraz z jego seriami
+  const handleRemoveExerciseFromSession = (exId) => {
     setSessionExercises(prev => prev.filter(id => id !== exId))
     if (activeMode === 'template_creator') {
       setTemplateSeriesList(prev => prev.filter(s => s.exerciseId !== exId))
     } else {
       setLocalSeriesList(prev => prev.filter(s => s.exerciseId !== exId))
     }
-    if (activeExId === exId) {
-      const remaining = sessionExercises.filter(id => id !== exId)
-      setActiveExId(remaining.at(-1) ?? null)
+  }
+
+  // Zarządzanie pojedynczymi wierszami serii (Zwiększanie/Zmniejszanie objętości bloku)
+  const handleAddRowToExercise = (exId) => {
+    if (activeMode === 'template_creator') {
+      const currentCount = templateSeriesList.filter(s => s.exerciseId === exId).length
+      const newRow = { exerciseId: exId, weight: '', reps: '10', order: currentCount + 1 }
+      setTemplateSeriesList(prev => [...prev, newRow])
+    } else {
+      const currentCount = localSeriesList.filter(s => s.exerciseId === exId).length
+      const newRow = { exerciseId: exId, weight: '', reps: '', order: currentCount + 1, completed: false, estimatedOneRm: null }
+      setLocalSeriesList(prev => [...prev, newRow])
     }
   }
+
+  const handleRemoveRowFromExercise = (exId) => {
+    const list = activeMode === 'template_creator' ? templateSeriesList : localSeriesList
+    const setter = activeMode === 'template_creator' ? setTemplateSeriesList : setLocalSeriesList
+    
+    // Szukamy indeksu ostatniej serii przypisanej do tego konkretnego ćwiczenia
+    const targetIdx = [...list].reverse().findIndex(s => s.exerciseId === exId)
+    if (targetIdx === -1) return
+    
+    const realIndex = list.length - 1 - targetIdx
+    setter(prev => prev.filter((_, i) => i !== realIndex))
+  }
+
+  // Inline edycja wartości wewnątrz tablicy stanów
+  const handleUpdateInlineValue = (globalIdx, field, val, modeStr) => {
+    const setter = modeStr === 'creator' ? setTemplateSeriesList : setLocalSeriesList
+    setter(prev => prev.map((item, i) => i === globalIdx ? { ...item, [field]: val } : item))
+  }
+
+  // Zaliczenie serii (Ptaszkiem ✓) -> Wyliczenie 1RM i aktywacja stopera
+  const handleToggleCompleteSeries = (globalIdx) => {
+    setLocalSeriesList(prev => prev.map((item, i) => {
+      if (i !== globalIdx) return item
+
+      const isTurningOn = !item.completed
+      const w = parseFloat(item.weight)
+      const r = parseInt(item.reps)
+
+      if (isTurningOn && (isNaN(w) || isNaN(r) || r < 1)) {
+        if (showToast) showToast('Wpisz poprawne wartości zanim zaliczysz serię! ⚠️', 'error')
+        return item
+      }
+
+      const oneRm = isTurningOn && r >= 1 && r <= 12 ? w * (1 + r / 30) : null
+      
+      if (isTurningOn && timerRef.current?.start) {
+        timerRef.current.start() // Odpalenie minutnika przerwy
+      }
+
+      return { ...item, completed: isTurningOn, estimatedOneRm: oneRm }
+    }))
+  }
+
+  // --- AKCJE KOŃCOWE / ZAPISY ---
 
   const handleStartTemplateCreator = () => {
     setCustomTemplateName('')
     setTemplateSeriesList([])
     setSessionExercises([])
-    setActiveExId(null)
-    setView('builder') // Od razu otwieramy wyszukiwarkę w drawerze
+    setIsAtlasOpen(true) // Od razu sugerujemy wybór ćwiczeń
     setActiveMode('template_creator')
   }
 
   const handleSaveCustomTemplate = async () => {
     const name = customTemplateName.trim() || 'Nowy Szablon'
     if (templateSeriesList.length === 0) {
-      if (showToast) showToast('Dodaj przynajmniej jedną serię do szablonu! 📋', 'error')
+      if (showToast) showToast('Szablon musi mieć przypisane ćwiczenia! 📋', 'error')
       return
     }
-    const ok = await onSaveTemplate(name, templateSeriesList)
-    if (ok) {
-      setActiveMode('selection')
-    }
-  }
-
-  const onSubmitWorkout = async (e) => {
-    e?.preventDefault()
-    if (saveAsTemplateCheckbox) {
-      const name = templateNameInput.trim() || workoutName.trim() || 'Mój szablon'
-      const templateSeries = localSeriesList.map((s, idx) => ({
-        exerciseId: s.exerciseId, 
-        weight: s.weight, 
-        reps: s.reps, 
-        order: idx + 1
-      }))
-      const ok = await onSaveTemplate(name, templateSeries)
-      if (!ok) return
-    }
-    handleSaveWorkout()
+    const cleanSeries = templateSeriesList.map((s, i) => ({
+      exerciseId: s.exerciseId,
+      weight: parseFloat(s.weight) || 0,
+      reps: parseInt(s.reps) || 10,
+      order: i + 1
+    }))
+    const ok = await onSaveTemplate(name, cleanSeries)
+    if (ok) setActiveMode('selection')
   }
 
   const handleLoadTemplate = (templateId) => {
@@ -197,27 +174,26 @@ export default function NewWorkout({
     setWorkoutName(tpl.name)
     const exIds = [...new Set(tpl.series.map(s => s.exerciseId))]
     setSessionExercises(exIds)
-    setActiveExId(exIds[0] ?? null)
 
-    const loadedSeries = tpl.series.map(s => {
+    // Mapowanie struktury bazy na interaktywne, czyste wiersze loggera
+    const mapped = tpl.series.map(s => {
       const ex = exercises.find(e => e.id === s.exerciseId)
       return {
         exerciseId: s.exerciseId,
-        exerciseName: ex?.name ?? 'Nieznane ćwiczenie',
-        weight: parseFloat(s.weight),
-        reps: parseInt(s.reps),
-        order: s.order,
-        estimatedOneRm: s.reps >= 1 && s.reps <= 12 ? parseFloat(s.weight) * (1 + parseInt(s.reps) / 30) : null
+        exerciseName: ex?.name ?? 'Ćwiczenie',
+        weight: '', // Czyste pole gotowe na faktyczny wynik dzisiejszy
+        reps: s.reps ? String(s.reps) : '', 
+        completed: false,
+        estimatedOneRm: null
       }
     })
-    setLocalSeriesList(loadedSeries)
+    setLocalSeriesList(mapped)
     setActiveMode('active_workout')
   }
 
   const handleStartEmptyWorkout = () => {
     setWorkoutName(`Trening rutynowy - ${new Date().toLocaleDateString()}`)
     setSessionExercises([])
-    setActiveExId(null)
     setLocalSeriesList([])
     setActiveMode('active_workout')
   }
@@ -231,19 +207,42 @@ export default function NewWorkout({
     setWorkoutComment('')
     setLocalSeriesList([])
     setSessionExercises([])
-    setActiveExId(null)
     setActiveMode('selection')
     setIsCancelModalOpen(false)
   }
 
-  const activeEx = exercises.find(e => e.id === activeExId)
-  const activeSeriesList = activeExId ? getSeriesForExercise(activeExId) : []
+  const onSubmitActiveWorkout = async (e) => {
+    e?.preventDefault()
+    // Odfiltrowujemy tylko te serie, które zostały faktycznie odznaczone jako zrobione
+    const finished = localSeriesList.filter(s => s.completed && s.weight && s.reps)
+    
+    if (finished.length === 0) {
+      if (showToast) showToast('Nie odznaczono żadnej ukończonej serii ptaszkiem ✓! ⚠️', 'error')
+      return
+    }
+
+    // Gwarancja prawidłowego sortowania kolejności w bazie
+    const normalized = finished.map((s, idx) => ({
+      ...s,
+      weight: parseFloat(s.weight),
+      reps: parseInt(s.reps),
+      order: idx + 1
+    }))
+
+    setLocalSeriesList(normalized)
+    
+    // Krótki flush na zatwierdzenie tablicy stanów hooka nadrzędnego
+    setTimeout(() => {
+      handleSaveWorkout()
+    }, 40)
+  }
+
+  // Filtrowanie i podział atlasu w szufladzie
   const filteredExercises = exercises.filter(e =>
-    !sessionExercises.includes(e.id) &&
     e.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  const grouped = filteredExercises.reduce((acc, ex) => {
+  const groupedExercises = filteredExercises.reduce((acc, ex) => {
     const g = ex.muscle_group || 'Inne'
     if (!acc[g]) acc[g] = []
     acc[g].push(ex)
@@ -251,7 +250,7 @@ export default function NewWorkout({
   }, {})
 
   // =========================================================================
-  // STAN 1: EKRAN WYBORU (Niezmieniony — Couch Mode)
+  // STAN 1: HOME / COUCH MODE (EKRAN STARTU I WYBORU)
   // =========================================================================
   if (activeMode === 'selection') {
     return (
@@ -290,9 +289,9 @@ export default function NewWorkout({
                     <div className="cursor-pointer flex-1" onClick={() => handleLoadTemplate(tpl.id)}>
                       <div className="flex justify-between items-start gap-2">
                         <h4 className="text-sm font-bold text-white group-hover:text-gymRed transition-colors truncate max-w-[80%]">{tpl.name}</h4>
-                        <span className="text-[9px] font-black text-gymRed bg-gymRed/10 px-2 py-0.5 rounded-full uppercase shrink-0">{tpl.series.length} serii</span>
+                        <span className="text-[9px] font-black text-gymRed bg-gymRed/10 px-2 py-0.5 rounded-full uppercase shrink-0">{uniqueExNames.length} ćw.</span>
                       </div>
-                      <p className="text-xs text-textSecondary mt-1.5 line-clamp-2 leading-relaxed">{uniqueExNames.join(', ')}{tpl.series.length > 3 ? '...' : ''}</p>
+                      <p className="text-xs text-textSecondary mt-1.5 line-clamp-2 leading-relaxed">{uniqueExNames.join(', ')}{uniqueExNames.length > 3 ? '...' : ''}</p>
                     </div>
                     <div className="flex justify-between items-center mt-3 pt-2 border-t border-zinc-800/40">
                       <button onClick={() => handleLoadTemplate(tpl.id)} className="text-xs font-bold text-gymRed hover:text-red-400 cursor-pointer bg-transparent border-none">Trenuj ➔</button>
@@ -309,20 +308,22 @@ export default function NewWorkout({
   }
 
   // =========================================================================
-  // STAN 2 & 3: INTERFEJS AKTYWNEGO KREATORA (Zmiana przycisku na Sticky + Bottom Drawer)
+  // STAN 2 & 3: WŁAŚCIWY LOGGER (AKTYWNY TRENING LUB PROJEKTOWANIE PLANU)
   // =========================================================================
   const isCreatorMode = activeMode === 'template_creator'
+  const currentGlobalList = isCreatorMode ? templateSeriesList : localSeriesList
 
   return (
-    <div className="max-w-[640px] mx-auto flex flex-col gap-4 text-left animate-in fade-in duration-200">
+    <div className="max-w-[640px] mx-auto flex flex-col gap-4 text-left animate-in fade-in duration-200 pb-20">
       
+      {/* PANEL STEROWANIA FORMULARZA */}
       <div className="flex items-start justify-between gap-3 border-b border-zinc-800 pb-3">
         <div>
           <h2 className={`text-xl font-black tracking-tight ${isCreatorMode ? 'text-gymPremium' : 'text-white'}`}>
             {isCreatorMode ? 'Projektowanie szablonu 📋' : 'Aktywny trening ⚡'}
           </h2>
           <p className="text-xs text-textSecondary mt-0.5">
-            {isCreatorMode ? 'Definiujesz domyślne ćwiczenia i serie.' : `${localSeriesList.length} serii zapisanych w tej sesji.`}
+            {isCreatorMode ? 'Definiujesz szkielet serii i powtórzeń.' : 'Wprowadź ciężary i odznaczaj ukończone serie.'}
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -330,9 +331,8 @@ export default function NewWorkout({
             Wyjdź ✕
           </button>
           <button 
-            onClick={isCreatorMode ? handleSaveCustomTemplate : onSubmitWorkout} 
-            disabled={isCreatorMode ? templateSeriesList.length === 0 : localSeriesList.length === 0}
-            className={`px-4 py-2 font-black text-xs rounded-gp-md cursor-pointer transition-all active:scale-95 shadow-md disabled:opacity-40 ${isCreatorMode ? 'bg-gymPremium text-gymDark' : 'bg-gymSuccess text-gymDark'}`}
+            onClick={isCreatorMode ? handleSaveCustomTemplate : onSubmitActiveWorkout} 
+            className={`px-4 py-2 font-black text-xs rounded-gp-md cursor-pointer transition-all active:scale-95 shadow-md ${isCreatorMode ? 'bg-gymPremium text-gymDark' : 'bg-gymSuccess text-gymDark'}`}
           >
             {isCreatorMode ? 'Zapisz plan' : 'Zakończ trening'}
           </button>
@@ -341,163 +341,213 @@ export default function NewWorkout({
 
       <input
         type="text"
-        placeholder={isCreatorMode ? "Podaj nazwę planu (np. Góra - Siła, Dół A)..." : "Nazwa dzisiejszego treningu..."}
+        placeholder={isCreatorMode ? "Podaj nazwę planu (np. Push Siła, Pull B)..." : "Nazwa dzisiejszej sesji..."}
         value={isCreatorMode ? customTemplateName : workoutName}
         onChange={e => isCreatorMode ? setCustomTemplateName(e.target.value) : setWorkoutName(e.target.value)}
         className="w-full p-3 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm font-bold outline-none focus:border-gymRed"
         required
       />
 
-      {!isCreatorMode && <RestTimerWrapper timerRef={timerRef} key={0} />}
+      {!isCreatorMode && <RestTimerWrapper timerRef={timerRef} />}
 
-      {sessionExercises.length > 0 && (
-        <div className="bg-gymCard border border-zinc-800/40 rounded-gp-lg overflow-hidden shadow-lg">
-          <div className="divide-y divide-zinc-800/50">
-            {sessionExercises.map(exId => {
-              const ex = exercises.find(e => e.id === exId)
-              if (!ex) return null
-              const series = getSeriesForExercise(exId)
-              const isActive = exId === activeExId
+      {/* RENDEROWANIE KART ELEMENTÓW NA OŚI SESJI */}
+      {sessionExercises.length === 0 ? (
+        <div className="text-center py-16 bg-gymCard/30 border border-dashed border-zinc-800 rounded-gp-lg p-6 text-textMuted text-xs italic">
+          Brak ćwiczeń w strukturze. Tapnij poniższy przycisk, aby rozbudować listę z atlasu.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {sessionExercises.map((exId) => {
+            const exerciseObj = exercises.find(e => e.id === exId)
+            if (!exerciseObj) return null
 
-              return (
-                <div key={exId} onClick={() => setActiveExId(exId)} className={`flex items-center p-3 gap-3 cursor-pointer transition-colors ${isActive ? 'bg-gymRed/5' : 'hover:bg-zinc-800/20'}`}>
-                  <div className={`w-2 h-2 rounded-full shrink-0 ${series.length > 0 ? (isCreatorMode ? 'text-gymPremium bg-gymPremium' : 'bg-gymSuccess') : 'bg-zinc-700'}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-sm truncate ${isActive ? (isCreatorMode ? 'text-gymPremium font-bold' : 'text-gymRed font-bold') : 'text-textPrimary'}`}>{ex.name}</div>
-                    {series.length > 0 && (
-                      <div className="text-xs text-textSecondary font-mono mt-0.5">
-                        {isCreatorMode ? `${series.length} zaplanowanych serii` : series.map(s => `${s.weight}×${s.reps}`).join('  ·  ')}
-                      </div>
-                    )}
+            // Pobieramy pod-zbiór rekordów serii przypisany wyłącznie do tej karty
+            const exerciseRows = currentGlobalList
+              .map((s, globalIndex) => ({ ...s, globalIndex }))
+              .filter(s => s.exerciseId === exId)
+
+            return (
+              <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg shadow-lg overflow-hidden animate-in fade-in duration-150">
+                
+                {/* NAGŁÓWEK KARTY ĆWICZENIA */}
+                <div className="px-4 py-3 bg-gymCardSecondary/40 border-b border-zinc-800/60 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-textPrimary leading-tight">{exerciseObj.name}</h3>
+                    <span className="text-[10px] font-bold text-textMuted uppercase tracking-wider">{exerciseObj.muscle_group || 'Inne'}</span>
                   </div>
-                  <button onClick={e => { e.stopPropagation(); removeExerciseFromSession(exId) }} className="p-1 text-textSecondary hover:text-gymDanger opacity-60 hover:opacity-100 transition-all cursor-pointer">
-                    <i className="ti ti-x text-sm" />
+                  <button 
+                    onClick={() => handleRemoveExerciseFromSession(exId)}
+                    className="p-1 text-textMuted hover:text-gymDanger transition-colors cursor-pointer text-sm"
+                    title="Usuń ćwiczenie z planu"
+                  >
+                    ✕
                   </button>
                 </div>
-              )
-            })}
-          </div>
 
-          {/* LOGGER INPUTÓW */}
-          {activeEx && (
-            <div className="p-4 border-t border-zinc-800 bg-gymCardSecondary/40">
-              <div className={`text-xs font-bold uppercase tracking-wider mb-3 ${isCreatorMode ? 'text-gymPremium' : 'text-gymRed'}`}>
-                {activeEx.name} — {isCreatorMode ? `DODAWANIE SERII DOCELOWEJ #${activeSeriesList.length + 1}` : `SERIA # ${activeSeriesList.length + 1}`}
-              </div>
+                {/* INTERAKTYWNA TABELA SERII INLINE */}
+                <div className="p-3">
+                  {exerciseRows.length === 0 ? (
+                    <p className="text-[11px] text-textMuted italic py-2">Brak zdefiniowanych wierszy serii.</p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {/* Nagłówki kolumn tabeli roboczej */}
+                      <div className="grid grid-cols-12 gap-2 text-center text-[10px] font-bold text-textMuted uppercase tracking-tight px-1">
+                        <div className="col-span-2 text-left">Seria</div>
+                        <div className="col-span-3">Poprzednio</div>
+                        <div className="col-span-3">Ciężar (kg)</div>
+                        <div className="col-span-2">Powt.</div>
+                        <div className="col-span-2">Status</div>
+                      </div>
 
-              <div className="mb-3">
-                <label className="text-[11px] font-semibold text-textSecondary block mb-1">{isCreatorMode ? 'Sugerowany ciężar (kg):' : 'Ciężar (kg):'}</label>
-                <div className="flex gap-2 items-center">
-                  <button onClick={() => adjustWeight(-2.5)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer text-textPrimary active:scale-95 transition-transform">−</button>
-                  <input type="number" step="0.5" value={weight} onChange={e => setWeight(e.target.value)} className="flex-1 h-11 text-center font-mono text-xl font-bold bg-gymCard border border-zinc-800 rounded-gp-md text-white outline-none focus:border-gymRed" />
-                  <button onClick={() => adjustWeight(2.5)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer text-textPrimary active:scale-95 transition-transform">+</button>
+                      {/* Wiersze danych */}
+                      {exerciseRows.map((s, localIdx) => (
+                        <div 
+                          key={s.globalIndex} 
+                          className={`grid grid-cols-12 gap-2 items-center text-center p-1 rounded transition-colors ${
+                            s.completed ? 'bg-gymSuccess/5 border-l-2 border-gymSuccess' : 'bg-transparent'
+                          }`}
+                        >
+                          {/* Numer serii */}
+                          <div className="col-span-2 text-left font-mono text-xs font-bold text-textSecondary px-1">
+                            {localIdx + 1}
+                          </div>
+
+                          {/* GHOST PLACEHOLDER (Cel sugerowany w tle) */}
+                          <div className="col-span-3 text-[11px] text-textMuted font-medium truncate font-mono">
+                            {isCreatorMode ? '—' : '60 kg x 8'}
+                          </div>
+
+                          {/* INPUT CIĘŻARU (W domu ukryty lub jako pole docelowe) */}
+                          <div className="col-span-3">
+                            <input 
+                              type="number"
+                              step="0.5"
+                              placeholder="0"
+                              disabled={s.completed}
+                              value={s.weight}
+                              onChange={e => handleUpdateInlineValue(s.globalIndex, 'weight', e.target.value, isCreatorMode ? 'creator' : 'workout')}
+                              className="w-full p-1.5 rounded bg-gymCardSecondary border border-zinc-800 text-center font-mono text-xs font-bold text-white outline-none focus:border-gymRed disabled:opacity-40"
+                            />
+                          </div>
+
+                          {/* INPUT POWTÓRZEŃ */}
+                          <div className="col-span-2">
+                            <input 
+                              type="number"
+                              placeholder="10"
+                              disabled={s.completed}
+                              value={s.reps}
+                              onChange={e => handleUpdateInlineValue(s.globalIndex, 'reps', e.target.value, isCreatorMode ? 'creator' : 'workout')}
+                              className="w-full p-1.5 rounded bg-gymCardSecondary border border-zinc-800 text-center font-mono text-xs font-bold text-white outline-none focus:border-gymRed disabled:opacity-40"
+                            />
+                          </div>
+
+                          {/* STATUS CHECKBOX (✓) LUB USUWANIE W KREATORZE */}
+                          <div className="col-span-2 flex justify-center">
+                            {isCreatorMode ? (
+                              <span className="text-textMuted text-xs font-bold">—</span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleCompleteSeries(s.globalIndex)}
+                                className={`w-7 h-7 rounded-md flex items-center justify-center font-black text-xs transition-all cursor-pointer border ${
+                                  s.completed 
+                                    ? 'bg-gymSuccess text-gymDark border-emerald-500' 
+                                    : 'bg-transparent text-textMuted border-zinc-800 hover:border-zinc-700 hover:text-white'
+                                }`}
+                              >
+                                ✓
+                              </button>
+                            )}
+                          </div>
+
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* KONTROLERY OBJĘTOŚCI POD KARTĄ ĆWICZENIA */}
+                  <div className="flex gap-2 justify-end mt-3 pt-2 border-t border-zinc-800/40 text-[11px]">
+                    <button 
+                      onClick={() => handleRemoveRowFromExercise(exId)} 
+                      disabled={exerciseRows.length === 0}
+                      className="px-2.5 py-1 rounded bg-zinc-800/60 border border-zinc-800 text-textSecondary hover:text-gymDanger disabled:opacity-30 transition-colors cursor-pointer font-bold"
+                    >
+                      － Seria
+                    </button>
+                    <button 
+                      onClick={() => handleAddRowToExercise(exId)}
+                      className="px-2.5 py-1 rounded bg-zinc-800/60 border border-zinc-800 text-textSecondary hover:text-white transition-colors cursor-pointer font-bold"
+                    >
+                      ＋ Seria
+                    </button>
+                  </div>
+
                 </div>
+
               </div>
-
-              <div className="mb-3">
-                <label className="text-[11px] font-semibold text-textSecondary block mb-1">{isCreatorMode ? 'Docelowa liczba powtórzeń:' : 'Powtórzenia:'}</label>
-                <div className="flex gap-2 items-center">
-                  <button onClick={() => adjustReps(-1)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer text-textPrimary active:scale-95 transition-transform">−</button>
-                  <input type="number" value={reps} onChange={e => setReps(e.target.value)} className="flex-1 h-11 text-center font-mono text-xl font-bold bg-gymCard border border-zinc-800 rounded-gp-md text-white outline-none focus:border-gymRed" />
-                  <button onClick={() => adjustReps(1)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer text-textPrimary active:scale-95 transition-transform">+</button>
-                </div>
-              </div>
-
-              <div className="flex gap-1 mb-4">
-                {[5, 6, 8, 10, 12, 15].map(r => (
-                  <button key={r} onClick={() => setReps(String(r))} className={`flex-1 py-1.5 rounded-gp-sm text-xs font-mono font-bold border transition-all cursor-pointer ${reps === String(r) ? (isCreatorMode ? 'border-gymPremium text-gymPremium bg-gymPremium/5' : 'border-gymRed text-gymRed bg-gymRed/5') : 'border-zinc-800 text-textSecondary bg-transparent hover:text-white'}`}>{r}</button>
-                ))}
-              </div>
-
-              <button 
-                onClick={confirmSeries} 
-                disabled={!weight || !reps} 
-                className={`w-full py-3 disabled:opacity-40 text-white font-bold text-sm rounded-gp-md cursor-pointer flex items-center justify-center gap-2 transition-all active:scale-[0.99] shadow-md ${isCreatorMode ? 'bg-gymPremium text-gymDark' : 'bg-gymRed hover:bg-gymRedHover'}`}
-              >
-                <i className="ti ti-check text-base" /> {isCreatorMode ? 'Dodaj serię do struktury szablonu' : 'Zapisz serię i włącz pauzę ⏱️'}
-              </button>
-
-              {activeSeriesList.length > 0 && (
-                <button onClick={() => removeLastSeries(activeExId)} className="w-full mt-2 py-1.5 border border-zinc-800 hover:border-zinc-700 bg-transparent text-textSecondary text-[11px] font-semibold rounded-gp-md cursor-pointer flex items-center justify-center gap-1 transition-colors">
-                  <i className="ti ti-arrow-back" /> Usuń ostatnią serię stąd
-                </button>
-              )}
-            </div>
-          )}
+            )
+          })}
         </div>
       )}
 
-      {!isCreatorMode && (
-        <textarea placeholder="Komentarz lub notatki do dzisiejszego treningu (opcjonalnie)..." value={workoutComment} onChange={e => setWorkoutComment(e.target.value)} className="w-full p-3 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed min-h-[64px] resize-none" />
-      )}
-
-      {!isCreatorMode && localSeriesList.length > 0 && (
-        <div className="bg-gymCardSecondary border border-zinc-800/40 rounded-gp-lg p-3 shadow-md mb-4">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input type="checkbox" checked={saveAsTemplateCheckbox} onChange={e => setSaveAsTemplateCheckbox(e.target.checked)} className="w-4 h-4 rounded border-zinc-800 bg-gymCard accent-gymRed cursor-pointer" />
-            <span className="text-xs font-bold text-textPrimary">Zapisz ten bieżący trening jako nowy szablon</span>
-          </label>
-          {saveAsTemplateCheckbox && (
-            <input type="text" placeholder={workoutName.trim() || 'Nazwa nowego szablonu'} value={templateNameInput} onChange={e => setTemplateNameInput(e.target.value)} maxLength={100} className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm font-medium outline-none focus:border-gymRed mt-2 animate-in slide-in-from-top-2 duration-150" />
-          )}
-        </div>
-      )}
-
-      {/* 🛠️ [NOWOŚĆ] STICKY ACTION BUTTON — Przyklejony idealnie nad dolną belką PWA */}
-      <div className="sticky bottom-16 left-0 right-0 z-40 bg-gradient-to-t from-gymDark via-gymDark to-transparent pt-6 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+      {/* 🛠️ STICKY FOOTER ACTION BAR — Zgodnie ze schematem, zakotwiczony idealny nad belką nawigacji PWA */}
+      <div className="fixed bottom-16 left-0 right-0 max-w-[640px] mx-auto z-40 bg-gradient-to-t from-gymDark via-gymDark to-transparent pt-6 pb-2 px-4 sm:px-0">
         <button 
-          onClick={() => setView('builder')} 
-          className="w-full py-3.5 bg-gymCardSecondary border border-dashed border-zinc-800 hover:border-zinc-600 text-textSecondary hover:text-white text-xs font-bold rounded-gp-md cursor-pointer flex items-center justify-center gap-1.5 transition-colors shadow-xl"
+          onClick={() => setIsAtlasOpen(true)} 
+          className="w-full py-3.5 bg-gymCardSecondary hover:bg-zinc-800/60 border border-dashed border-zinc-800 hover:border-zinc-600 text-textSecondary hover:text-white text-xs font-bold rounded-gp-md cursor-pointer flex items-center justify-center gap-1.5 transition-colors shadow-2xl"
         >
-          <span className="text-gymRed font-black text-sm">＋</span> Dodaj ćwiczenie z atlasu
+          <span className="text-gymRed font-black text-base">＋</span> Dodaj ćwiczenie do planu sesji
         </button>
       </div>
 
-      {/* 🛠️ [NOWOŚĆ] ATLAS JAKO INTEGRALNY BOTTOM SHEET DRAWER (ZAMIAST ROZWIJANIA INLINE) */}
-      {view === 'builder' && (
+      {/* 🛠️ ATLAS JAKO BOTTOM SHEET DRAWER PANEL */}
+      {isAtlasOpen && (
         <div className="fixed inset-0 z-[1000] md:z-[998] animate-in fade-in duration-150">
-          {/* Ciemny backdrop blokujący kliknięcia w tle */}
-          <div onClick={() => setView('logger')} className="absolute inset-0 bg-black/75 backdrop-blur-xs" />
+          <div onClick={() => setIsAtlasOpen(false)} className="absolute inset-0 bg-black/75 backdrop-blur-xs" />
           
-          {/* Wysuwany Drawer */}
-          <div className="absolute bottom-16 left-0 right-0 max-w-[640px] mx-auto bg-[#14161d] border-t border-zinc-800 rounded-t-2xl flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[72vh]">
+          <div className="absolute bottom-16 left-0 right-0 max-w-[640px] mx-auto bg-[#14161d] border-t border-zinc-800 rounded-t-2xl flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[70vh]">
             <div className="w-12 h-1 bg-zinc-800 rounded-full mx-auto my-2.5 shrink-0" />
             
             <div className="px-4 pb-3 pt-1 border-b border-zinc-800/80 flex items-center justify-between gap-3 shrink-0">
-              <div className="flex-1 relative">
-                <input 
-                  type="search" 
-                  placeholder="Wyszukaj ruch po nazwie..." 
-                  value={searchQuery} 
-                  onChange={e => setSearchQuery(e.target.value)} 
-                  autoFocus 
-                  className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed font-medium" 
-                />
-              </div>
-              <button onClick={() => setView('logger')} className="text-textSecondary hover:text-white font-bold text-xs px-3 py-2 bg-gymCardSecondary border border-zinc-800 rounded-gp-md cursor-pointer shrink-0 transition-colors">
-                Zamknij
+              <input 
+                type="search" 
+                placeholder="Wyszukaj ćwiczenie..." 
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
+                autoFocus 
+                className="flex-1 p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed font-medium" 
+              />
+              <button onClick={() => setIsAtlasOpen(false)} className="text-textSecondary hover:text-white font-bold text-xs px-3 py-2 bg-gymCardSecondary border border-zinc-800 rounded-gp-md cursor-pointer shrink-0 transition-colors">
+                Anuluj
               </button>
             </div>
             
-            {/* Lista przewijana wewnątrz sheetu */}
             <div className="overflow-y-auto divide-y divide-zinc-800/40 flex-1 pb-6">
-              {Object.entries(grouped).map(([group, exList]) => (
+              {Object.entries(groupedExercises).map(([group, exList]) => (
                 <div key={group} className="text-left">
                   <div className="px-4 py-1.5 text-[10px] font-bold text-textSecondary uppercase tracking-wider bg-gymCardSecondary/40 border-b border-zinc-800/20">{group}</div>
-                  {exList.map(ex => (
-                    <div 
-                      key={ex.id} 
-                      onClick={() => addExerciseToSession(ex.id)} 
-                      className="px-4 py-3 text-sm text-textPrimary hover:bg-gymRed/5 cursor-pointer flex items-center justify-between transition-colors border-b border-zinc-900/40"
-                    >
-                      <span className="font-medium">{ex.name}</span>
-                      <span className="text-gymRed font-bold text-base bg-gymRed/5 w-6 h-6 rounded-full flex items-center justify-center border border-red-500/10">＋</span>
-                    </div>
-                  ))}
+                  {exList.map(ex => {
+                    const isAlreadyAdded = sessionExercises.includes(ex.id)
+                    return (
+                      <div 
+                        key={ex.id} 
+                        onClick={() => handleAddExerciseToSession(ex.id)} 
+                        className={`px-4 py-3 text-sm text-textPrimary hover:bg-gymRed/5 cursor-pointer flex items-center justify-between transition-colors border-b border-zinc-900/40 ${
+                          isAlreadyAdded ? 'opacity-40 pointer-events-none bg-zinc-900/20' : ''
+                        }`}
+                      >
+                        <span className="font-medium">{ex.name}</span>
+                        <span className="text-gymRed font-bold text-base bg-gymRed/5 w-6 h-6 rounded-full flex items-center justify-center border border-red-500/10">
+                          {isAlreadyAdded ? '✓' : '＋'}
+                        </span>
+                      </div>
+                    )
+                  })}
                 </div>
               ))}
               {filteredExercises.length === 0 && (
-                <div className="p-12 text-center text-textSecondary text-xs italic">Nie znaleziono pozycji o nazwie &quot;{searchQuery}&quot;</div>
+                <div className="p-12 text-center text-textSecondary text-xs italic">Brak pozycji w bazie o nazwie &quot;{searchQuery}&quot;</div>
               )}
             </div>
           </div>
@@ -511,7 +561,7 @@ export default function NewWorkout({
           <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
             <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
             <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Anulować konfigurację?</h3>
-            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Wszystkie wprowadzone serie robocze zostaną bezpowrotnie usunięte z tej sesji.</p>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Wszystkie wprowadzone dane i wiersze zostaną usunięte z pamięci podręcznej.</p>
             <div className="flex gap-3">
               <button onClick={() => setIsCancelModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Kontynuuj</button>
               <button onClick={confirmExit} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm cursor-pointer shadow-lg shadow-red-950/20">Tak, anuluj</button>
