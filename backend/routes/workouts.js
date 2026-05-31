@@ -7,7 +7,7 @@ const checkLimits = require('../middleware/checkLimits');
 const { getUserPlan } = require('../utils/userHelpers'); // <--- NOWY IMPORT HELPERA (DRY)
 
 // 1. ZAPISANIE TRENINGU (Zoptymalizowany UNNEST Batch Insert + JIT Streak)
-router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   const { name, comment, series } = req.body;
   const userId = req.user.userId;
 
@@ -59,22 +59,27 @@ router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) =>
       sessionId, exerciseIds, weights, reps, orders, estimatedOneRMs, isAlternatives, seriesComments
     ]);
 
+    // 1. Pobranie parametrów użytkownika do wyliczenia streaka
     const userResult = await client.query('SELECT current_streak, weekly_target_workouts, last_workout_at FROM users WHERE id = $1', [userId]);
     const { current_streak, weekly_target_workouts, last_workout_at } = userResult.rows[0];
 
     const target = weekly_target_workouts ?? 3;
 
+    // [FIX SECURE TIMEZONE] Zliczamy treningi z POPRZEDNIEGO tygodnia kalendarzowego w strefie polskiej
     const lastWeekResult = await client.query(
       `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
-      AND started_at >= date_trunc('week', NOW() - INTERVAL '1 week') 
-      AND started_at < date_trunc('week', NOW())`, [userId]
+      AND started_at >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw' 
+      AND started_at < date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
     );
     const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count);
 
     let effectiveStreak = current_streak;
 
     if (last_workout_at) {
-      const startOfThisWeekResult = await client.query(`SELECT date_trunc('week', NOW()) as start_of_week`);
+      // [FIX SECURE TIMEZONE] Pobieramy start BIEŻĄCEGO tygodnia z uwzględnieniem strefy polskiej
+      const startOfThisWeekResult = await client.query(
+        `SELECT date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw' as start_of_week`
+      );
       const startOfThisWeek = new Date(startOfThisWeekResult.rows[0].start_of_week);
       const lastWorkoutDate = new Date(last_workout_at);
 
@@ -85,8 +90,10 @@ router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) =>
       }
     }
 
+    // [FIX SECURE TIMEZONE] Zliczamy treningi z BIEŻĄCEGO tygodnia kalendarzowego w strefie polskiej
     const thisWeekResult = await client.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 AND started_at >= date_trunc('week', NOW())`, [userId]
+      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
+      AND started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
     );
     const workoutsThisWeek = parseInt(thisWeekResult.rows[0].count);
 
@@ -112,14 +119,32 @@ router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) =>
   }
 });
 
-// 2. POBRANIE HISTORII TRENINGÓW (Zabezpieczona Paginacja DoS Guard)
+// 2. POBRANIE HISTORII TRENINGÓW (Zabezpieczona ściana widoczności 10 treningów dla FREE)
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   
-  const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
-  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  let limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  let offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
   try {
+    // Sprawdzamy status uprawnień użytkownika za pomocą ujednoliconego helpera
+    const plan = await getUserPlan(userId);
+
+    if (!plan) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    // TWARDE UKRYWANIE STARYCH TRENINGÓW DLA PLANU FREE (Absolute Visibility Wall)
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
+      if (offset >= 10) {
+        // Jeśli offset wychodzi poza 10, dla użytkownika FREE ta historia już "nie istnieje"
+        return res.json([]);
+      }
+      // Dociągamy limit tylko do krawędzi 10 dozwolonych rekordów
+      limit = Math.min(limit, 10 - offset);
+    }
+
+    // Pobieramy sesje treningowe mieszczące się w bezpiecznym oknie widoczności
     const sessionsQuery = `
       SELECT id, name, comment, started_at as "startedAt"
       FROM workout_sessions

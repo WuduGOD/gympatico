@@ -78,7 +78,6 @@ frontend/src/hooks/useWeightLogs.js
 frontend/src/hooks/useWorkouts.js
 frontend/src/index.css
 frontend/src/main.jsx
-frontend/src/styles.css
 frontend/src/views/Dashboard.jsx
 frontend/src/views/ExercisesList.jsx
 frontend/src/views/History.jsx
@@ -626,1093 +625,6 @@ export function useWeightLogs(token, showToast) {
 }
 </file>
 
-<file path="frontend/src/styles.css">
-/* =============================================================================
-   GymPatico — Design System (styles.css)
-   Wersja: 1.0 — propozycja do akceptacji (nie wdrożona)
-
-   Cel: spójny, profesjonalny wygląd dla każdego użytkownika siłowni
-   (komercyjna, domowa, klub fitness — bez estetyki „garażowej”).
-
-   Integracja (później):
-   1. <link> fontów w index.html (patrz komentarz na końcu)
-   2. import w main.jsx: import './styles.css' PRZED lub PO index.css
-   3. W index.css @theme — mapowanie aliasów gymRed/gymDark/gymCard (sekcja 2)
-   ============================================================================= */
-
-/* -----------------------------------------------------------------------------
-   1. DESIGN TOKENS
-   ----------------------------------------------------------------------------- */
-:root {
-  /* —— Brand —— */
-  --gp-brand-50: #fff1f0;
-  --gp-brand-100: #ffe0de;
-  --gp-brand-400: #f87171;
-  --gp-brand-500: #ef4444;   /* główny CTA */
-  --gp-brand-600: #dc2626;   /* hover CTA */
-  --gp-brand-700: #b91c1c;
-
-  /* —— Accent secondary (progres, linki, info) —— */
-  --gp-accent-400: #38bdf8;
-  --gp-accent-500: #0ea5e9;
-  --gp-accent-600: #0284c7;
-
-  /* —— Neutrals (warstwy tła) —— */
-  --gp-bg-base: #0c0e12;       /* tło aplikacji */
-  --gp-bg-elevated: #13161c;   /* header / nav */
-  --gp-bg-surface: #1a1f27;     /* karty */
-  --gp-bg-surface-2: #222833;   /* inputy, wiersze list */
-  --gp-bg-overlay: rgba(0, 0, 0, 0.72);
-
-  /* —— Tekst —— */
-  --gp-text-primary: #f4f6f9;
-  --gp-text-secondary: #9aa3b2;
-  --gp-text-muted: #6b7280;
-  --gp-text-inverse: #0c0e12;
-
-  /* —— Obramowania —— */
-  --gp-border-subtle: rgba(255, 255, 255, 0.06);
-  --gp-border-default: rgba(255, 255, 255, 0.1);
-  --gp-border-strong: rgba(255, 255, 255, 0.16);
-  --gp-border-focus: var(--gp-brand-500);
-
-  /* —— Semantyka —— */
-  --gp-success: #22c55e;
-  --gp-success-muted: rgba(34, 197, 94, 0.12);
-  --gp-warning: #f59e0b;
-  --gp-warning-muted: rgba(245, 158, 11, 0.14);
-  --gp-danger: #ef4444;
-  --gp-danger-muted: rgba(239, 68, 68, 0.12);
-  --gp-info: var(--gp-accent-500);
-  --gp-info-muted: rgba(14, 165, 233, 0.12);
-  --gp-premium: #d4a853;
-  --gp-premium-muted: rgba(212, 168, 83, 0.14);
-
-  /* —— Typografia —— */
-  --gp-font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, sans-serif;
-  --gp-font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
-
-  --gp-text-xs: 0.6875rem;   /* 11px */
-  --gp-text-sm: 0.8125rem;  /* 13px */
-  --gp-text-base: 0.9375rem; /* 15px */
-  --gp-text-lg: 1.125rem;
-  --gp-text-xl: 1.25rem;
-  --gp-text-2xl: 1.5rem;
-  --gp-text-3xl: 1.875rem;
-
-  --gp-leading-tight: 1.2;
-  --gp-leading-normal: 1.5;
-  --gp-tracking-tight: -0.02em;
-  --gp-tracking-wide: 0.06em;
-
-  /* —— Odstępy —— */
-  --gp-space-1: 0.25rem;
-  --gp-space-2: 0.5rem;
-  --gp-space-3: 0.75rem;
-  --gp-space-4: 1rem;
-  --gp-space-5: 1.25rem;
-  --gp-space-6: 1.5rem;
-  --gp-space-8: 2rem;
-
-  /* —— Zaokrąglenia —— */
-  --gp-radius-sm: 6px;
-  --gp-radius-md: 10px;
-  --gp-radius-lg: 14px;
-  --gp-radius-xl: 20px;
-  --gp-radius-full: 9999px;
-
-  /* Aliasy używane w NewWorkout / RestTimer (inline styles) */
-  --border-radius-sm: var(--gp-radius-sm);
-  --border-radius-md: var(--gp-radius-md);
-  --border-radius-lg: var(--gp-radius-lg);
-  --border-radius-xl: var(--gp-radius-xl);
-
-  /* —— Cienie —— */
-  --gp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --gp-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
-  --gp-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
-  --gp-shadow-glow-brand: 0 0 24px rgba(239, 68, 68, 0.2);
-  --gp-shadow-glow-accent: 0 0 20px rgba(14, 165, 233, 0.15);
-
-  /* —— Ruch —— */
-  --gp-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --gp-duration-fast: 120ms;
-  --gp-duration-normal: 200ms;
-  --gp-duration-slow: 320ms;
-
-  /* —— Layout —— */
-  --gp-header-height: 56px;
-  --gp-bottom-nav-height: 64px;
-  --gp-content-max: 720px;      /* kreator treningu */
-  --gp-content-wide: 1200px;   /* dashboard desktop */
-
-  /* —— Wykresy —— */
-  --gp-chart-line: var(--gp-brand-500);
-  --gp-chart-fill-start: rgba(239, 68, 68, 0.28);
-  --gp-chart-fill-end: rgba(239, 68, 68, 0);
-  --gp-chart-grid: rgba(255, 255, 255, 0.06);
-  --gp-chart-weight-line: var(--gp-accent-400);
-
-  /* =========================================================================
-     2. ALIASY — kompatybilność z obecnym kodem
-     (Tailwind: gymRed / gymDark / gymCard + inline var(--color-*))
-     ========================================================================= */
-
-  /* Tailwind @theme (index.css) — po akceptacji zaktualizuj tam też */
-  --color-gymRed: var(--gp-brand-500);
-  --color-gymDark: var(--gp-bg-base);
-  --color-gymCard: var(--gp-bg-surface);
-
-  /* NewWorkout / RestTimer — semantyczne tokeny */
-  --color-background-primary: var(--gp-bg-surface);
-  --color-background-secondary: var(--gp-bg-surface-2);
-  --color-background-info: var(--gp-info-muted);
-  --color-background-warning: var(--gp-warning-muted);
-  --color-background-success: var(--gp-success-muted);
-  --color-background-danger: var(--gp-danger-muted);
-
-  --color-text-primary: var(--gp-text-primary);
-  --color-text-secondary: var(--gp-text-secondary);
-  --color-text-info: var(--gp-accent-400);
-  --color-text-success: var(--gp-success);
-  --color-text-warning: var(--gp-warning);
-  --color-text-danger: var(--gp-danger);
-
-  --color-border-primary: var(--gp-border-default);
-  --color-border-secondary: var(--gp-border-strong);
-  --color-border-tertiary: var(--gp-border-subtle);
-  --color-border-info: rgba(14, 165, 233, 0.45);
-  --color-border-warning: rgba(245, 158, 11, 0.45);
-  --color-border-success: rgba(34, 197, 94, 0.4);
-
-  --font-mono: var(--gp-font-mono);
-}
-
-/* -----------------------------------------------------------------------------
-   3. RESET & BAZA
-   ----------------------------------------------------------------------------- */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html {
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
-
-html,
-body,
-#root {
-  min-height: 100%;
-}
-
-body {
-  margin: 0;
-  font-family: var(--gp-font-sans);
-  font-size: var(--gp-text-base);
-  line-height: var(--gp-leading-normal);
-  color: var(--gp-text-primary);
-  background-color: var(--gp-bg-base);
-  background-image:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(239, 68, 68, 0.08), transparent),
-    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(14, 165, 233, 0.05), transparent);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* Bezpieczne strefy (PWA / iPhone) */
-body {
-  padding-bottom: env(safe-area-inset-bottom, 0);
-}
-
-img,
-svg {
-  display: block;
-  max-width: 100%;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-  color: inherit;
-}
-
-button {
-  cursor: pointer;
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-/* Liczby w formularzach treningu — bez strzałek spinnerów */
-input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-input[type="number"] {
-  -moz-appearance: textfield;
-  appearance: textfield;
-}
-
-::selection {
-  background: rgba(239, 68, 68, 0.35);
-  color: var(--gp-text-primary);
-}
-
-:focus-visible {
-  outline: 2px solid var(--gp-border-focus);
-  outline-offset: 2px;
-}
-
-/* -----------------------------------------------------------------------------
-   4. TYPOGRAFIA
-   ----------------------------------------------------------------------------- */
-.gp-display {
-  font-size: var(--gp-text-3xl);
-  font-weight: 800;
-  letter-spacing: var(--gp-tracking-tight);
-  line-height: var(--gp-leading-tight);
-}
-
-.gp-h1 {
-  font-size: var(--gp-text-2xl);
-  font-weight: 700;
-  letter-spacing: var(--gp-tracking-tight);
-}
-
-.gp-h2 {
-  font-size: var(--gp-text-xl);
-  font-weight: 700;
-  letter-spacing: var(--gp-tracking-tight);
-}
-
-.gp-h3 {
-  font-size: var(--gp-text-lg);
-  font-weight: 600;
-}
-
-.gp-label {
-  font-size: var(--gp-text-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: var(--gp-tracking-wide);
-  color: var(--gp-text-secondary);
-}
-
-.gp-body {
-  font-size: var(--gp-text-base);
-  color: var(--gp-text-primary);
-}
-
-.gp-caption {
-  font-size: var(--gp-text-sm);
-  color: var(--gp-text-secondary);
-}
-
-.gp-mono {
-  font-family: var(--gp-font-mono);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-}
-
-/* -----------------------------------------------------------------------------
-   5. KARTY & POWIERZCHNIE
-   ----------------------------------------------------------------------------- */
-.gp-card {
-  background: var(--gp-bg-surface);
-  border: 1px solid var(--gp-border-subtle);
-  border-radius: var(--gp-radius-lg);
-  box-shadow: var(--gp-shadow-sm);
-}
-
-.gp-card--elevated {
-  box-shadow: var(--gp-shadow-md);
-}
-
-.gp-card__header {
-  padding: var(--gp-space-5) var(--gp-space-5) var(--gp-space-3);
-  border-bottom: 1px solid var(--gp-border-subtle);
-}
-
-.gp-card__body {
-  padding: var(--gp-space-5);
-}
-
-.gp-card__footer {
-  padding: var(--gp-space-4) var(--gp-space-5);
-  border-top: 1px solid var(--gp-border-subtle);
-}
-
-/* Panel z delikatnym akcentem (KPI, streak) */
-.gp-card--accent {
-  border-color: rgba(239, 68, 68, 0.2);
-  background: linear-gradient(
-    145deg,
-    var(--gp-bg-surface) 0%,
-    rgba(239, 68, 68, 0.04) 100%
-  );
-}
-
-/* -----------------------------------------------------------------------------
-   6. PRZYCISKI
-   ----------------------------------------------------------------------------- */
-.gp-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--gp-space-2);
-  min-height: 44px; /* touch target */
-  padding: 0 var(--gp-space-5);
-  font-size: var(--gp-text-sm);
-  font-weight: 700;
-  border-radius: var(--gp-radius-md);
-  border: 1px solid transparent;
-  transition:
-    background var(--gp-duration-normal) var(--gp-ease-out),
-    border-color var(--gp-duration-normal) var(--gp-ease-out),
-    transform var(--gp-duration-fast) var(--gp-ease-out),
-    box-shadow var(--gp-duration-normal) var(--gp-ease-out);
-}
-
-.gp-btn:active:not(:disabled) {
-  transform: scale(0.98);
-}
-
-.gp-btn--primary {
-  background: linear-gradient(180deg, var(--gp-brand-500) 0%, var(--gp-brand-600) 100%);
-  color: #fff;
-  box-shadow: var(--gp-shadow-sm), var(--gp-shadow-glow-brand);
-}
-
-.gp-btn--primary:hover:not(:disabled) {
-  background: linear-gradient(180deg, var(--gp-brand-400) 0%, var(--gp-brand-500) 100%);
-}
-
-.gp-btn--secondary {
-  background: var(--gp-bg-surface-2);
-  color: var(--gp-text-primary);
-  border-color: var(--gp-border-default);
-}
-
-.gp-btn--secondary:hover:not(:disabled) {
-  background: #2a3140;
-  border-color: var(--gp-border-strong);
-}
-
-.gp-btn--ghost {
-  background: transparent;
-  color: var(--gp-text-secondary);
-  border-color: var(--gp-border-subtle);
-}
-
-.gp-btn--ghost:hover:not(:disabled) {
-  color: var(--gp-text-primary);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.gp-btn--danger {
-  background: transparent;
-  color: var(--gp-danger);
-  border-color: rgba(239, 68, 68, 0.35);
-}
-
-.gp-btn--danger:hover:not(:disabled) {
-  background: var(--gp-danger-muted);
-}
-
-.gp-btn--success {
-  background: var(--gp-success);
-  color: var(--gp-text-inverse);
-}
-
-.gp-btn--block {
-  width: 100%;
-}
-
-.gp-btn--sm {
-  min-height: 36px;
-  padding: 0 var(--gp-space-3);
-  font-size: var(--gp-text-xs);
-}
-
-.gp-btn--lg {
-  min-height: 52px;
-  font-size: var(--gp-text-base);
-  border-radius: var(--gp-radius-lg);
-}
-
-/* Sticky CTA na dole ekranu (kreator treningu) */
-.gp-action-bar {
-  position: sticky;
-  bottom: calc(var(--gp-bottom-nav-height) + env(safe-area-inset-bottom, 0) + var(--gp-space-3));
-  z-index: 50;
-  padding: var(--gp-space-4);
-  margin: var(--gp-space-4) calc(-1 * var(--gp-space-4)) 0;
-  background: linear-gradient(to top, var(--gp-bg-base) 70%, transparent);
-}
-
-@media (min-width: 768px) {
-  .gp-action-bar {
-    bottom: var(--gp-space-4);
-  }
-}
-
-/* -----------------------------------------------------------------------------
-   7. POLA FORMULARZY
-   ----------------------------------------------------------------------------- */
-.gp-input,
-.gp-select,
-.gp-textarea {
-  width: 100%;
-  min-height: 44px;
-  padding: var(--gp-space-3) var(--gp-space-4);
-  font-size: var(--gp-text-sm);
-  color: var(--gp-text-primary);
-  background: var(--gp-bg-surface-2);
-  border: 1px solid var(--gp-border-subtle);
-  border-radius: var(--gp-radius-md);
-  transition: border-color var(--gp-duration-normal), box-shadow var(--gp-duration-normal);
-}
-
-.gp-input::placeholder,
-.gp-textarea::placeholder {
-  color: var(--gp-text-muted);
-}
-
-.gp-input:hover,
-.gp-select:hover,
-.gp-textarea:hover {
-  border-color: var(--gp-border-default);
-}
-
-.gp-input:focus,
-.gp-select:focus,
-.gp-textarea:focus {
-  outline: none;
-  border-color: var(--gp-border-focus);
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
-}
-
-.gp-textarea {
-  min-height: 80px;
-  resize: vertical;
-}
-
-/* Duże pole liczbowe — waga / powtórzenia */
-.gp-input--metric {
-  font-family: var(--gp-font-mono);
-  font-size: var(--gp-text-2xl);
-  font-weight: 600;
-  text-align: center;
-  min-height: 52px;
-  letter-spacing: 0.04em;
-}
-
-/* Stepper ± obok metryki */
-.gp-stepper {
-  display: flex;
-  align-items: center;
-  gap: var(--gp-space-2);
-}
-
-.gp-stepper__btn {
-  flex-shrink: 0;
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.25rem;
-  font-weight: 300;
-  color: var(--gp-text-primary);
-  background: var(--gp-bg-surface-2);
-  border: 1px solid var(--gp-border-default);
-  border-radius: var(--gp-radius-md);
-  transition: background var(--gp-duration-fast), border-color var(--gp-duration-fast);
-}
-
-.gp-stepper__btn:hover {
-  background: #2a3140;
-  border-color: var(--gp-border-strong);
-}
-
-.gp-stepper__btn:active {
-  transform: scale(0.96);
-}
-
-/* Chipy presetów (np. 8, 10, 12 reps) */
-.gp-chip-row {
-  display: flex;
-  gap: var(--gp-space-1);
-}
-
-.gp-chip {
-  flex: 1;
-  min-height: 36px;
-  font-family: var(--gp-font-mono);
-  font-size: var(--gp-text-sm);
-  font-weight: 500;
-  color: var(--gp-text-secondary);
-  background: transparent;
-  border: 1px solid var(--gp-border-subtle);
-  border-radius: var(--gp-radius-sm);
-  transition: all var(--gp-duration-fast);
-}
-
-.gp-chip:hover {
-  border-color: var(--gp-border-default);
-  color: var(--gp-text-primary);
-}
-
-.gp-chip--active {
-  color: var(--gp-accent-400);
-  background: var(--gp-info-muted);
-  border-color: var(--color-border-info);
-}
-
-/* Suwak celu tygodniowego */
-.gp-range {
-  width: 100%;
-  height: 6px;
-  border-radius: var(--gp-radius-full);
-  background: var(--gp-bg-surface-2);
-  accent-color: var(--gp-brand-500);
-  cursor: pointer;
-}
-
-/* -----------------------------------------------------------------------------
-   8. NAWIGACJA
-   ----------------------------------------------------------------------------- */
-.gp-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gp-space-4);
-  min-height: var(--gp-header-height);
-  padding-bottom: var(--gp-space-4);
-  margin-bottom: var(--gp-space-6);
-  border-bottom: 1px solid var(--gp-border-subtle);
-}
-
-.gp-logo {
-  font-size: var(--gp-text-xl);
-  font-weight: 800;
-  letter-spacing: var(--gp-tracking-tight);
-  color: var(--gp-text-primary);
-}
-
-.gp-logo span {
-  color: var(--gp-brand-500);
-}
-
-.gp-nav-desktop {
-  display: none;
-  align-items: center;
-  gap: var(--gp-space-2);
-}
-
-@media (min-width: 768px) {
-  .gp-nav-desktop {
-    display: flex;
-  }
-}
-
-.gp-nav-link {
-  padding: var(--gp-space-2) var(--gp-space-4);
-  font-size: var(--gp-text-xs);
-  font-weight: 700;
-  color: var(--gp-text-secondary);
-  background: var(--gp-bg-surface-2);
-  border: 1px solid transparent;
-  border-radius: var(--gp-radius-md);
-  transition: all var(--gp-duration-fast);
-}
-
-.gp-nav-link:hover {
-  color: var(--gp-text-primary);
-  background: #2a3140;
-}
-
-.gp-nav-link--active {
-  color: #fff;
-  background: var(--gp-brand-500);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: var(--gp-shadow-glow-brand);
-}
-
-/* Dolna nawigacja mobile */
-.gp-bottom-nav {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 900;
-  height: var(--gp-bottom-nav-height);
-  padding-bottom: env(safe-area-inset-bottom, 0);
-  background: rgba(19, 22, 28, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-top: 1px solid var(--gp-border-subtle);
-}
-
-@media (min-width: 768px) {
-  .gp-bottom-nav {
-    display: none;
-  }
-}
-
-.gp-bottom-nav__item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  font-size: 0.5625rem; /* 9px */
-  font-weight: 700;
-  color: var(--gp-text-muted);
-  background: transparent;
-  border: none;
-  transition: color var(--gp-duration-fast);
-}
-
-.gp-bottom-nav__item--active {
-  color: var(--gp-brand-500);
-}
-
-.gp-bottom-nav__icon {
-  font-size: 1.25rem;
-  line-height: 1;
-}
-
-/* -----------------------------------------------------------------------------
-   9. BADGES & STATUS
-   ----------------------------------------------------------------------------- */
-.gp-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gp-space-1);
-  padding: 0.2rem 0.5rem;
-  font-size: var(--gp-text-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border-radius: var(--gp-radius-sm);
-}
-
-.gp-badge--brand {
-  color: var(--gp-brand-400);
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-}
-
-.gp-badge--muscle {
-  color: var(--gp-accent-400);
-  background: var(--gp-info-muted);
-  border: 1px solid rgba(14, 165, 233, 0.25);
-}
-
-.gp-badge--custom {
-  color: var(--gp-premium);
-  background: var(--gp-premium-muted);
-  border: 1px solid rgba(212, 168, 83, 0.3);
-}
-
-.gp-badge--premium {
-  color: var(--gp-premium);
-  background: var(--gp-premium-muted);
-  border: 1px solid rgba(212, 168, 83, 0.35);
-}
-
-/* -----------------------------------------------------------------------------
-   10. TOAST, MODAL, ALERTY
-   ----------------------------------------------------------------------------- */
-.gp-toast {
-  position: fixed;
-  right: var(--gp-space-4);
-  bottom: calc(var(--gp-bottom-nav-height) + env(safe-area-inset-bottom, 0) + var(--gp-space-5));
-  z-index: 1100;
-  max-width: min(360px, calc(100vw - 2rem));
-  padding: var(--gp-space-4) var(--gp-space-5);
-  font-size: var(--gp-text-sm);
-  font-weight: 700;
-  color: #fff;
-  border-radius: var(--gp-radius-lg);
-  box-shadow: var(--gp-shadow-lg);
-  animation: gp-toast-in var(--gp-duration-slow) var(--gp-ease-out);
-}
-
-@media (min-width: 768px) {
-  .gp-toast {
-    bottom: var(--gp-space-6);
-  }
-}
-
-.gp-toast--success {
-  background: linear-gradient(135deg, #16a34a, #22c55e);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.gp-toast--error {
-  background: linear-gradient(135deg, var(--gp-brand-600), var(--gp-brand-500));
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-@keyframes gp-toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.gp-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9998;
-  background: var(--gp-bg-overlay);
-  backdrop-filter: blur(4px);
-}
-
-.gp-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--gp-space-4);
-}
-
-.gp-modal__panel {
-  width: 100%;
-  max-width: 400px;
-  padding: var(--gp-space-6);
-  text-align: center;
-  background: var(--gp-bg-surface);
-  border: 1px solid var(--gp-border-default);
-  border-radius: var(--gp-radius-xl);
-  box-shadow: var(--gp-shadow-lg);
-  animation: gp-modal-in var(--gp-duration-slow) var(--gp-ease-out);
-}
-
-@keyframes gp-modal-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.gp-alert {
-  padding: var(--gp-space-3) var(--gp-space-4);
-  font-size: var(--gp-text-sm);
-  font-weight: 600;
-  text-align: center;
-  border-radius: var(--gp-radius-md);
-}
-
-.gp-alert--error {
-  color: #fecaca;
-  background: var(--gp-danger-muted);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-}
-
-.gp-alert--success {
-  color: #bbf7d0;
-  background: var(--gp-success-muted);
-  border: 1px solid rgba(34, 197, 94, 0.25);
-}
-
-/* -----------------------------------------------------------------------------
-   11. LISTY & RANKING (historia, social, atlas)
-   ----------------------------------------------------------------------------- */
-.gp-list-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gp-space-3);
-  padding: var(--gp-space-3) var(--gp-space-4);
-  background: var(--gp-bg-surface-2);
-  border: 1px solid var(--gp-border-subtle);
-  border-radius: var(--gp-radius-md);
-  transition: border-color var(--gp-duration-fast), background var(--gp-duration-fast);
-}
-
-.gp-list-item:hover {
-  border-color: var(--gp-border-default);
-}
-
-.gp-list-item--me {
-  border-color: rgba(239, 68, 68, 0.35);
-  background: rgba(239, 68, 68, 0.06);
-}
-
-.gp-list-item--leader {
-  border-color: rgba(212, 168, 83, 0.3);
-  background: rgba(212, 168, 83, 0.05);
-}
-
-.gp-table-wrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  margin: 0 calc(-1 * var(--gp-space-4));
-  padding: 0 var(--gp-space-4);
-}
-
-@media (min-width: 640px) {
-  .gp-table-wrap {
-    margin: 0;
-    padding: 0;
-  }
-}
-
-.gp-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--gp-text-sm);
-}
-
-.gp-table th {
-  padding-bottom: var(--gp-space-2);
-  font-size: var(--gp-text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--gp-tracking-wide);
-  color: var(--gp-text-secondary);
-  text-align: left;
-  border-bottom: 1px solid var(--gp-border-default);
-}
-
-.gp-table td {
-  padding: var(--gp-space-3) var(--gp-space-2);
-  border-bottom: 1px solid var(--gp-border-subtle);
-}
-
-.gp-table tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
-}
-
-/* -----------------------------------------------------------------------------
-   12. WYKRESY (SVG — Dashboard, WeightChart)
-   ----------------------------------------------------------------------------- */
-.gp-chart {
-  width: 100%;
-  padding: var(--gp-space-3);
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--gp-border-subtle);
-  border-radius: var(--gp-radius-lg);
-}
-
-.gp-chart svg {
-  width: 100%;
-  height: auto;
-  max-height: 220px;
-}
-
-.gp-chart__empty {
-  padding: var(--gp-space-8) var(--gp-space-4);
-  text-align: center;
-  font-size: var(--gp-text-sm);
-  font-style: italic;
-  color: var(--gp-text-muted);
-}
-
-/* -----------------------------------------------------------------------------
-   13. KREATOR TRENINGU — kontener
-   ----------------------------------------------------------------------------- */
-.gp-workout {
-  max-width: var(--gp-content-max);
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--gp-space-4);
-}
-
-.gp-workout__exercise-row {
-  display: flex;
-  align-items: center;
-  gap: var(--gp-space-3);
-  padding: var(--gp-space-3) var(--gp-space-4);
-  cursor: pointer;
-  border-bottom: 1px solid var(--gp-border-subtle);
-  transition: background var(--gp-duration-fast);
-}
-
-.gp-workout__exercise-row--active {
-  background: var(--gp-info-muted);
-}
-
-.gp-workout__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--gp-border-strong);
-}
-
-.gp-workout__dot--done {
-  background: var(--gp-success);
-}
-
-.gp-workout__dot--active {
-  background: var(--gp-accent-400);
-}
-
-/* Timer przerwy — opakowanie (RestTimer root) */
-.gp-rest-timer {
-  border-radius: var(--gp-radius-lg);
-  border: 1px solid var(--gp-border-subtle);
-  background: var(--gp-bg-surface-2);
-  overflow: hidden;
-  transition: border-color var(--gp-duration-normal), background var(--gp-duration-normal);
-}
-
-.gp-rest-timer--running {
-  border-color: rgba(245, 158, 11, 0.45);
-  background: var(--gp-warning-muted);
-}
-
-.gp-rest-timer__bar {
-  height: 3px;
-  background: var(--gp-border-subtle);
-}
-
-.gp-rest-timer__bar-fill {
-  height: 100%;
-  background: var(--gp-warning);
-  transition: width 1s linear;
-}
-
-/* -----------------------------------------------------------------------------
-   14. KPI / STATYSTYKI
-   ----------------------------------------------------------------------------- */
-.gp-kpi-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--gp-space-4);
-}
-
-@media (min-width: 640px) {
-  .gp-kpi-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (min-width: 1024px) {
-  .gp-kpi-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-.gp-kpi {
-  position: relative;
-  padding: var(--gp-space-5);
-  overflow: hidden;
-  background: var(--gp-bg-surface);
-  border: 1px solid var(--gp-border-subtle);
-  border-radius: var(--gp-radius-lg);
-}
-
-.gp-kpi__value {
-  font-family: var(--gp-font-mono);
-  font-size: 2.25rem;
-  font-weight: 800;
-  letter-spacing: var(--gp-tracking-tight);
-  line-height: 1;
-}
-
-.gp-kpi__label {
-  margin-top: var(--gp-space-2);
-  font-size: var(--gp-text-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: var(--gp-tracking-wide);
-  color: var(--gp-text-secondary);
-}
-
-/* -----------------------------------------------------------------------------
-   15. UTILITIES
-   ----------------------------------------------------------------------------- */
-.gp-sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.gp-text-brand { color: var(--gp-brand-500); }
-.gp-text-muted { color: var(--gp-text-muted); }
-.gp-text-success { color: var(--gp-success); }
-.gp-text-center { text-align: center; }
-.gp-truncate {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.gp-loading {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gp-space-2);
-  font-size: var(--gp-text-sm);
-  font-weight: 700;
-  color: var(--gp-brand-500);
-  animation: gp-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes gp-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
-}
-
-.gp-page {
-  padding: var(--gp-space-4);
-  padding-bottom: calc(var(--gp-bottom-nav-height) + env(safe-area-inset-bottom, 0) + var(--gp-space-6));
-}
-
-@media (min-width: 768px) {
-  .gp-page {
-    padding: var(--gp-space-6);
-    padding-bottom: var(--gp-space-6);
-  }
-}
-
-/* -----------------------------------------------------------------------------
-   16. REDUCED MOTION
-   ----------------------------------------------------------------------------- */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-</file>
-
 <file path="frontend/src/views/ExercisesList.jsx">
 import React, { useState } from 'react'
 
@@ -2058,223 +970,6 @@ export default function LoginView({ onLoginSuccess }) {
       </div>
     </div>
   )
-}
-</file>
-
-<file path="frontend/src/views/RestTimer.jsx">
-import { useState, useEffect, useRef, useCallback } from 'react'
-
-const PRESETS = [60, 90, 120, 180]
-
-export default function RestTimer({ onFinish }) {
-  const [duration, setDuration] = useState(() => {
-    return parseInt(localStorage.getItem('gp_rest_duration') || '90', 10)
-  })
-  const [remaining, setRemaining] = useState(null)
-  const [isRunning, setIsRunning] = useState(false)
-  const intervalRef = useRef(null)
-  const audioCtxRef = useRef(null)
-
-  const getAudioCtx = () => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
-    }
-    return audioCtxRef.current
-  }
-
-  const playDone = useCallback(() => {
-    try {
-      const ctx = getAudioCtx()
-      const notes = [523.25, 659.25, 783.99]
-      notes.forEach((freq, i) => {
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.connect(gain)
-        gain.connect(ctx.destination)
-        osc.frequency.value = freq
-        osc.type = 'sine'
-        const start = ctx.currentTime + i * 0.15
-        gain.gain.setValueAtTime(0.3, start)
-        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.4)
-        osc.start(start)
-        osc.stop(start + 0.4)
-      })
-    } catch (_) {}
-    try { navigator.vibrate?.([150, 80, 150, 80, 300]) } catch (_) {}
-  }, [])
-
-  const clearTimer = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
-    }
-  }, [])
-
-  const stop = useCallback(() => {
-    clearTimer()
-    setIsRunning(false)
-    setRemaining(null)
-  }, [clearTimer])
-
-  // Publiczne API — wywoływane z NewWorkout po zapisaniu serii
-  const start = useCallback((overrideDuration) => {
-    clearTimer()
-    const d = overrideDuration ?? duration
-    setRemaining(d)
-    setIsRunning(true)
-  }, [clearTimer, duration])
-
-  useEffect(() => {
-    if (!isRunning || remaining === null) return
-    if (remaining <= 0) {
-      clearTimer()
-      setIsRunning(false)
-      setRemaining(0)
-      playDone()
-      onFinish?.()
-      return
-    }
-    intervalRef.current = setInterval(() => {
-      setRemaining(prev => prev - 1)
-    }, 1000)
-    return clearTimer
-  }, [isRunning, remaining, clearTimer, playDone, onFinish])
-
-  const addTime = (secs) => {
-    setRemaining(prev => Math.max(0, (prev ?? 0) + secs))
-    if (!isRunning) setIsRunning(true)
-  }
-
-  const changeDuration = (d) => {
-    setDuration(d)
-    localStorage.setItem('gp_rest_duration', String(d))
-  }
-
-  const mins = Math.floor((remaining ?? duration) / 60)
-  const secs = (remaining ?? duration) % 60
-  const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`
-  const progress = remaining !== null ? remaining / duration : 1
-
-  return { start, stop, TimerUI: (
-    <div
-      style={{
-        borderRadius: 'var(--border-radius-lg)',
-        border: `0.5px solid ${isRunning ? 'var(--color-border-warning)' : 'var(--color-border-tertiary)'}`,
-        background: isRunning ? 'var(--color-background-warning)' : 'var(--color-background-secondary)',
-        overflow: 'hidden',
-        transition: 'background 0.3s, border-color 0.3s'
-      }}
-    >
-      {/* Progress bar */}
-      <div style={{ height: '3px', background: 'var(--color-border-tertiary)' }}>
-        <div
-          style={{
-            height: '3px',
-            width: `${progress * 100}%`,
-            background: isRunning ? 'var(--color-text-warning)' : 'var(--color-border-secondary)',
-            transition: 'width 1s linear, background 0.3s',
-            borderRadius: '0 2px 2px 0'
-          }}
-        />
-      </div>
-
-      <div style={{ padding: '10px 12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          {/* Timer display */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <i
-              className={`ti ti-${isRunning ? 'player-pause' : 'clock'}`}
-              aria-hidden="true"
-              style={{
-                fontSize: '18px',
-                color: isRunning ? 'var(--color-text-warning)' : 'var(--color-text-secondary)'
-              }}
-            />
-            <div>
-              <div
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '22px',
-                  fontWeight: '500',
-                  color: isRunning
-                    ? (remaining <= 10 ? 'var(--color-text-danger)' : 'var(--color-text-warning)')
-                    : 'var(--color-text-secondary)',
-                  letterSpacing: '0.05em',
-                  lineHeight: 1
-                }}
-              >
-                {timeStr}
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
-                {isRunning ? 'przerwa' : 'gotowy'}
-              </div>
-            </div>
-          </div>
-
-          {/* Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {isRunning && (
-              <>
-                <button
-                  onClick={() => addTime(30)}
-                  style={{
-                    fontSize: '11px',
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    border: '0.5px solid var(--color-border-secondary)',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    color: 'var(--color-text-secondary)'
-                  }}
-                >
-                  +30s
-                </button>
-                <button
-                  onClick={stop}
-                  style={{
-                    fontSize: '11px',
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    border: '0.5px solid var(--color-border-secondary)',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    color: 'var(--color-text-secondary)'
-                  }}
-                >
-                  Pomiń
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Duration presets */}
-        {!isRunning && (
-          <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
-            {PRESETS.map(p => (
-              <button
-                key={p}
-                onClick={() => changeDuration(p)}
-                style={{
-                  flex: 1,
-                  fontSize: '11px',
-                  padding: '3px 0',
-                  borderRadius: '5px',
-                  border: `0.5px solid ${duration === p ? 'var(--color-border-info)' : 'var(--color-border-tertiary)'}`,
-                  background: duration === p ? 'var(--color-background-info)' : 'transparent',
-                  cursor: 'pointer',
-                  color: duration === p ? 'var(--color-text-info)' : 'var(--color-text-secondary)',
-                  fontFamily: 'var(--font-mono)'
-                }}
-              >
-                {p}s
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )}
 }
 </file>
 
@@ -2746,52 +1441,6 @@ module.exports = router;
 }
 </file>
 
-<file path="frontend/src/index.css">
-@import "tailwindcss";
-
-/* Konfiguracja motywu w stylu Tailwind v4 */
-@theme {
-  --color-gymRed: #ef4444;
-  --color-gymDark: #0c0e12;
-  --color-gymCard: #1a1f27;
-}
-
-/* Globalne reguły dla aplikacji GymPatico */
-@layer base {
-  html, body {
-    background-color: var(--color-gymDark);
-    color: white;
-    margin: 0;
-    padding: 0;
-    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-
-  input[type="number"]::-webkit-inner-spin-button,
-  input[type="number"]::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-}
-
-/* Szybkie klasy komponentowe w v4 */
-@utility btn-primary {
-  background-color: var(--color-gymRed);
-  color: white;
-  font-weight: bold;
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  transition: all 0.2s;
-  
-  &:hover {
-    opacity: 0.9;
-  }
-  &:active {
-    transform: scale(0.95);
-  }
-}
-</file>
-
 <file path="frontend/src/views/History.jsx">
 import React, { useState } from 'react'
 import { API_BASE_URL } from '../config/api'
@@ -3032,6 +1681,140 @@ export default function History({
 }
 </file>
 
+<file path="frontend/src/views/RestTimer.jsx">
+import { useState, useEffect, useRef, useCallback } from 'react'
+
+const PRESETS = [60, 90, 120, 180]
+
+export default function RestTimer({ onFinish }) {
+  const [duration, setDuration] = useState(() => parseInt(localStorage.getItem('gp_rest_duration') || '90', 10))
+  const [remaining, setRemaining] = useState(null)
+  const [isRunning, setIsRunning] = useState(false)
+  const intervalRef = useRef(null)
+  const audioCtxRef = useRef(null)
+
+  const getAudioCtx = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
+    }
+    return audioCtxRef.current
+  }
+
+  const playDone = useCallback(() => {
+    try {
+      const ctx = getAudioCtx()
+      const notes = [523.25, 659.25, 783.99]
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.frequency.value = freq
+        osc.type = 'sine'
+        const start = ctx.currentTime + i * 0.15
+        gain.gain.setValueAtTime(0.3, start)
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.4)
+        osc.start(start)
+        osc.stop(start + 0.4)
+      })
+    } catch (_) {}
+    try { navigator.vibrate?.([150, 80, 150, 80, 300]) } catch (_) {}
+  }, [])
+
+  const clearTimer = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+  }, [])
+
+  const stop = useCallback(() => {
+    clearTimer()
+    setIsRunning(false)
+    setRemaining(null)
+  }, [clearTimer])
+
+  const start = useCallback((overrideDuration) => {
+    clearTimer()
+    const d = overrideDuration ?? duration
+    setRemaining(d)
+    setIsRunning(true)
+  }, [clearTimer, duration])
+
+  useEffect(() => {
+    if (!isRunning || remaining === null) return
+    if (remaining <= 0) {
+      clearTimer()
+      setIsRunning(false)
+      setRemaining(0)
+      playDone()
+      onFinish?.()
+      return
+    }
+    intervalRef.current = setInterval(() => {
+      setRemaining(prev => prev - 1)
+    }, 1000)
+    return clearTimer
+  }, [isRunning, remaining, clearTimer, playDone, onFinish])
+
+  const addTime = (secs) => {
+    setRemaining(prev => Math.max(0, (prev ?? 0) + secs))
+    if (!isRunning) setIsRunning(true)
+  }
+
+  const changeDuration = (d) => {
+    setDuration(d)
+    localStorage.setItem('gp_rest_duration', String(d))
+  }
+
+  const mins = Math.floor((remaining ?? duration) / 60)
+  const secs = (remaining ?? duration) % 60
+  const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`
+  const progress = remaining !== null ? remaining / duration : 1
+
+  return { start, stop, TimerUI: (
+    <div className={`rounded-gp-lg border overflow-hidden transition-all duration-300 shadow-md ${isRunning ? 'border-gymWarning/40 bg-gymWarning/5 shadow-[0_0_15px_rgba(245,158,11,0.02)]' : 'border-zinc-800/80 bg-gymCardSecondary/40'}`}>
+      
+      {/* Pasek Progresu */}
+      <div className="h-[3px] bg-zinc-800">
+        <div className={`h-full rounded-r transition-all duration-1000 linear ${isRunning ? 'bg-gymWarning' : 'bg-zinc-700'}`} style={{ width: `${progress * 100}%` }} />
+      </div>
+
+      <div className="p-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <i className={`ti ti-${isRunning ? 'player-pause' : 'clock'} text-lg ${isRunning ? 'text-gymWarning animate-pulse' : 'text-textSecondary'}`} />
+            <div>
+              <div className={`font-mono text-2xl font-bold tracking-wider leading-none ${isRunning ? (remaining <= 10 ? 'text-gymRed' : 'text-gymWarning') : 'text-textSecondary'}`}>{timeStr}</div>
+              <div className="text-[10px] text-textSecondary font-semibold uppercase tracking-wider mt-1">{isRunning ? 'Odliczanie przerwy' : 'Minutnik gotowy'}</div>
+            </div>
+          </div>
+
+          {/* Kontrolki */}
+          <div className="flex items-center gap-1.5">
+            {isRunning && (
+              <>
+                <button onClick={() => addTime(30)} className="text-xs px-2.5 py-1 rounded-gp-sm border border-zinc-800 hover:border-zinc-700 bg-gymCard text-textSecondary hover:text-white cursor-pointer transition-colors font-semibold font-mono">+30s</button>
+                <button onClick={stop} className="text-xs px-2.5 py-1 rounded-gp-sm border border-zinc-800 hover:border-gymRed bg-gymCard text-textSecondary hover:text-gymRed cursor-pointer transition-colors font-semibold">Pomiń ✕</button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Presety */}
+        {!isRunning && (
+          <div className="flex gap-1 mt-2.5">
+            {PRESETS.map(p => (
+              <button key={p} onClick={() => changeDuration(p)} className={`flex-1 py-1.5 rounded-gp-sm text-xs font-mono font-bold border transition-all cursor-pointer ${duration === p ? 'border-gymWarning text-gymWarning bg-gymWarning/5' : 'border-zinc-800 text-textSecondary bg-transparent hover:text-white'}`}>{p}s</button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )}
+}
+</file>
+
 <file path="frontend/src/views/StatsView.jsx">
 import React from 'react'
 
@@ -3142,47 +1925,6 @@ export default function StatsView({ stats, loading }) {
     </div>
   )
 }
-</file>
-
-<file path="frontend/vite.config.js">
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
-import { VitePWA } from 'vite-plugin-pwa' // <--- NOWY IMPORT
-
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss(),
-    VitePWA({ // <--- KONFIGURACJA PWA
-      registerType: 'autoUpdate', // Automatyczna aktualizacja plików w pamięci podręcznej
-      injectRegister: 'auto',
-      includeAssets: ['favicon.svg'], // Pliki do bezwzględnego cache'owania
-      manifest: {
-        name: 'GymPatico Trening',
-        short_name: 'GymPatico',
-        description: 'Twoja garażowa aplikacja treningowa i atlas ćwiczeń',
-        theme_color: '#121212',       // Kolor paska systemowego na telefonie
-        background_color: '#121212',  // Kolor ekranu powitalnego (Splash screen)
-        display: 'standalone',        // KLUCZOWE: Odpalanie bez paska przeglądarki!
-        orientation: 'portrait',
-        icons: [                      // Ikony wymagane przez Android/iOS do instalacji
-          {
-            src: 'pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png'
-          },
-          {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png'
-          }
-        ]
-      }
-    })
-  ],
-})
 </file>
 
 <file path="backend/routes/auth.js">
@@ -3519,37 +2261,42 @@ export function useWorkouts(token, exercises) {
 }
 </file>
 
-<file path="frontend/src/main.jsx">
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import './styles.css'
-import App from './App.jsx'
+<file path="frontend/src/index.css">
+@import "tailwindcss";
 
-// --- GLOBALNY INTERCEPTOR SIECIOWY (FAIL-SAFE FOR JWT EXPIRATION) ---
-const { fetch: originalFetch } = window;
-window.fetch = async (...args) => {
-  const response = await originalFetch(...args);
+/* Komercyjny Design System GymPatico zmapowany na silnik Tailwind v4 */
+@theme {
+  --color-gymDark: #0c0e12;           /* Głębokie, eleganckie tło aplikacji */
+  --color-gymCard: #1a1f27;           /* Powierzchnia głównych sekcji i kart */
+  --color-gymCardSecondary: #222833;  /* Tło dla inputów, selektorów i wierszy list */
+  --color-gymRed: #ef4444;            /* Główny kolor akcji i CTA */
+  --color-gymRedHover: #dc2626;       /* Stan hover dla przycisków */
   
-  // Jeśli serwer odbił nas z powodu braku lub wygaśnięcia tokenu
-  if (response.status === 401 || response.status === 403) {
-    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
-    
-    // BEZPIECZNIK: Ignorujemy próby autoryzacji (złe hasło nie może triggerować globalnego wylogowania)
-    if (url && !url.includes('/api/auth/login') && !url.includes('/api/auth/register')) {
-      // Emitujemy globalne zdarzenie w oknie przeglądarki
-      window.dispatchEvent(new Event('gympatico-unauthorized'));
-    }
+  --color-gymSuccess: #22c55e;
+  --color-gymWarning: #f59e0b;
+  --color-gymDanger: #ef4444;
+  --color-gymPremium: #d4a853;        /* Prestiżowe złoto subskrypcji premium */
+
+  --color-textPrimary: #f4f6f9;       /* Czytelny biało-szary tekst główny */
+  --color-textSecondary: #9aa3b2;     /* Tekst pomocniczy i opisy */
+  --color-textMuted: #6b7280;         /* Wygaszone labele i placeholder */
+
+  /* Zaokrąglenia interfejsu mobilnego */
+  --radius-gp-sm: 6px;
+  --radius-gp-md: 10px;
+  --radius-gp-lg: 14px;
+  --radius-gp-xl: 20px;
+}
+
+@layer base {
+  html, body {
+    background-color: var(--color-gymDark);
+    color: var(--color-textPrimary);
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    padding-bottom: env(safe-area-inset-bottom, 0); /* Bezpieczna strefa dla iPhone'ów */
   }
-  
-  return response;
-};
-
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+}
 </file>
 
 <file path="backend/routes/friends.js">
@@ -3702,627 +2449,36 @@ router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => 
 module.exports = router;
 </file>
 
-<file path="frontend/src/views/NewWorkout.jsx">
-import React, { useState, useRef, useCallback, useEffect } from 'react'
-import RestTimer from './RestTimer'
+<file path="frontend/src/main.jsx">
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
 
-export default function NewWorkout({
-  exercises,
-  templates,
-  onSaveTemplate,
-  onDeleteTemplate,
-  workoutName,
-  setWorkoutName,
-  workoutComment,
-  setWorkoutComment,
-  localSeriesList,
-  setLocalSeriesList,
-  handleSaveWorkout,
-}) {
-  // Ćwiczenia aktywne w tej sesji — lista budowana ręcznie lub z szablonu
-  const [sessionExercises, setSessionExercises] = useState([])
-  const [activeExId, setActiveExId] = useState(null)
-
-  // Szybki input — waga i powtórzenia z podpowiedzią z poprzedniej serii
-  const [weight, setWeight] = useState('60')
-  const [reps, setReps] = useState('8')
-
-  // Szablon
-  const [templateNameInput, setTemplateNameInput] = useState('')
-  const [saveAsTemplateCheckbox, setSaveAsTemplateCheckbox] = useState(false)
-
-  // Widok — 'builder' (dodawanie ćwiczeń) lub 'logger' (logowanie serii)
-  const [view, setView] = useState('logger')
-
-  // Filtr atlasu przy dodawaniu ćwiczeń
-  const [searchQuery, setSearchQuery] = useState('')
-
-  // Rest timer — hook zwracający { start, stop, TimerUI }
-  const [timerKey, setTimerKey] = useState(0)
-  const timerRef = useRef(null)
-
-  // Grupowanie serii po ćwiczeniu dla widoku chipów
-  const getSeriesForExercise = useCallback((exId) =>
-    localSeriesList.filter(s => s.exerciseId === exId),
-  [localSeriesList])
-
-  // Aktualizuj wagę/powtórzenia gdy zmienia się aktywne ćwiczenie — podpowiedź z ostatniej serii
-  useEffect(() => {
-    if (!activeExId) return
-    const lastSeries = localSeriesList.filter(s => s.exerciseId === activeExId).at(-1)
-    if (lastSeries) {
-      setWeight(String(lastSeries.weight))
-      setReps(String(lastSeries.reps))
-    }
-  }, [activeExId]) // celowo tylko activeExId — nie chcemy resetować przy każdym zapisie
-
-  const adjustWeight = (delta) => {
-    setWeight(prev => {
-      const val = Math.max(0, parseFloat(prev || 0) + delta)
-      return Number.isInteger(val) ? String(val) : val.toFixed(1)
-    })
-  }
-
-  const adjustReps = (delta) => {
-    setReps(prev => String(Math.max(1, parseInt(prev || 1) + delta)))
-  }
-
-  // Zapisanie serii + natychmiastowy start timera
-  const confirmSeries = useCallback(() => {
-    if (!activeExId) return
-    const ex = exercises.find(e => e.id === activeExId)
-    if (!ex) return
-
-    const w = parseFloat(weight)
-    const r = parseInt(reps)
-    if (isNaN(w) || isNaN(r) || r < 1) return
-
-    const estimatedOneRm = r >= 1 && r <= 12 ? w * (1 + r / 30) : null
-
-    const seriesForEx = localSeriesList.filter(s => s.exerciseId === activeExId)
-    const newSeries = {
-      exerciseId: activeExId,
-      exerciseName: ex.name,
-      weight: w,
-      reps: r,
-      order: seriesForEx.length + 1,
-      estimatedOneRm
-    }
-
-    setLocalSeriesList(prev => [...prev, newSeries])
-
-    // Twardy autostart timera — zawsze, bez pytania
-    if (timerRef.current?.start) {
-      timerRef.current.start()
-    }
-  }, [activeExId, weight, reps, exercises, localSeriesList, setLocalSeriesList])
-
-  // Usunięcie ostatniej serii danego ćwiczenia
-  const removeLastSeries = (exId) => {
-    setLocalSeriesList(prev => {
-      const idx = [...prev].reverse().findIndex(s => s.exerciseId === exId)
-      if (idx === -1) return prev
-      const realIdx = prev.length - 1 - idx
-      return prev.filter((_, i) => i !== realIdx)
-    })
-  }
-
-  // Dodanie ćwiczenia do sesji
-  const addExerciseToSession = (exId) => {
-    if (sessionExercises.includes(exId)) return
-    setSessionExercises(prev => [...prev, exId])
-    setActiveExId(exId)
-    setView('logger')
-    setSearchQuery('')
-
-    // Ustaw domyślne wartości przy pierwszym dodaniu
-    const lastSeries = localSeriesList.filter(s => s.exerciseId === exId).at(-1)
-    setWeight(lastSeries ? String(lastSeries.weight) : '60')
-    setReps(lastSeries ? String(lastSeries.reps) : '8')
-  }
-
-  const removeExerciseFromSession = (exId) => {
-    setSessionExercises(prev => prev.filter(id => id !== exId))
-    setLocalSeriesList(prev => prev.filter(s => s.exerciseId !== exId))
-    if (activeExId === exId) {
-      const remaining = sessionExercises.filter(id => id !== exId)
-      setActiveExId(remaining.at(-1) ?? null)
+// --- GLOBALNY INTERCEPTOR SIECIOWY (FAIL-SAFE FOR JWT EXPIRATION) ---
+const { fetch: originalFetch } = window;
+window.fetch = async (...args) => {
+  const response = await originalFetch(...args);
+  
+  // Jeśli serwer odbił nas z powodu braku lub wygaśnięcia tokenu
+  if (response.status === 401 || response.status === 403) {
+    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+    
+    // BEZPIECZNIK: Ignorujemy próby autoryzacji (złe hasło nie może triggerować globalnego wylogowania)
+    if (url && !url.includes('/api/auth/login') && !url.includes('/api/auth/register')) {
+      // Emitujemy globalne zdarzenie w oknie przeglądarki
+      window.dispatchEvent(new Event('gympatico-unauthorized'));
     }
   }
+  
+  return response;
+};
 
-  // Załadowanie szablonu
-  const handleLoadTemplate = (templateId) => {
-    const tpl = templates?.find(t => t.id === templateId)
-    if (!tpl) return
-
-    setWorkoutName(tpl.name)
-
-    const exIds = [...new Set(tpl.series.map(s => s.exerciseId))]
-    setSessionExercises(exIds)
-    setActiveExId(exIds[0] ?? null)
-
-    const loadedSeries = tpl.series.map(s => {
-      const ex = exercises.find(e => e.id === s.exerciseId)
-      const w = parseFloat(s.weight)
-      const r = parseInt(s.reps)
-      return {
-        exerciseId: s.exerciseId,
-        exerciseName: ex?.name ?? 'Nieznane ćwiczenie',
-        weight: w,
-        reps: r,
-        order: s.order,
-        estimatedOneRm: r >= 1 && r <= 12 ? w * (1 + r / 30) : null
-      }
-    })
-    setLocalSeriesList(loadedSeries)
-
-    const first = tpl.series.find(s => s.exerciseId === exIds[0])
-    if (first) {
-      setWeight(String(first.weight))
-      setReps(String(first.reps))
-    }
-  }
-
-  const onSubmitWorkout = async (e) => {
-    e?.preventDefault()
-    if (saveAsTemplateCheckbox) {
-      const name = templateNameInput.trim() || workoutName.trim() || 'Mój szablon'
-      const templateSeries = localSeriesList.map((s, idx) => ({
-        exerciseId: s.exerciseId, weight: s.weight, reps: s.reps, order: idx + 1
-      }))
-      const ok = await onSaveTemplate(name, templateSeries)
-      if (!ok) return
-    }
-    handleSaveWorkout()
-  }
-
-  const activeEx = exercises.find(e => e.id === activeExId)
-  const activeSeriesList = activeExId ? getSeriesForExercise(activeExId) : []
-  const totalSeries = localSeriesList.length
-
-  const filteredExercises = exercises.filter(e =>
-    !sessionExercises.includes(e.id) &&
-    e.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  // Grupuj po muscle_group
-  const grouped = filteredExercises.reduce((acc, ex) => {
-    const g = ex.muscle_group || 'Inne'
-    if (!acc[g]) acc[g] = []
-    acc[g].push(ex)
-    return acc
-  }, {})
-
-  return (
-    <div style={{ maxWidth: '640px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-
-      {/* NAGŁÓWEK + przycisk zakończenia */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
-        <div>
-          <h2 style={{ fontSize: '20px', fontWeight: '500', margin: 0 }}>Kreator treningu</h2>
-          <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '2px 0 0' }}>
-            {totalSeries > 0 ? `${totalSeries} ${totalSeries === 1 ? 'seria' : 'serii'} zapisanych` : 'Brak serii — dodaj ćwiczenia poniżej'}
-          </p>
-        </div>
-        {totalSeries > 0 && (
-          <button
-            onClick={onSubmitWorkout}
-            style={{
-              padding: '8px 16px',
-              borderRadius: 'var(--border-radius-md)',
-              background: '#e63946',
-              color: 'white',
-              border: 'none',
-              fontSize: '13px',
-              fontWeight: '500',
-              cursor: 'pointer',
-              flexShrink: 0
-            }}
-          >
-            Zakończ sesję
-          </button>
-        )}
-      </div>
-
-      {/* SZABLONY */}
-      {templates?.length > 0 && (
-        <div style={{
-          background: 'var(--color-background-secondary)',
-          borderRadius: 'var(--border-radius-lg)',
-          border: '0.5px solid var(--color-border-tertiary)',
-          padding: '12px'
-        }}>
-          <div style={{ fontSize: '11px', fontWeight: '500', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-            Wczytaj szablon
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {templates.map(tpl => (
-              <div key={tpl.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button
-                  onClick={() => handleLoadTemplate(tpl.id)}
-                  style={{
-                    flex: 1,
-                    textAlign: 'left',
-                    padding: '7px 10px',
-                    borderRadius: 'var(--border-radius-md)',
-                    border: '0.5px solid var(--color-border-secondary)',
-                    background: 'var(--color-background-primary)',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: 'var(--color-text-primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}
-                >
-                  <span>{tpl.name}</span>
-                  <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', fontWeight: '400' }}>
-                    {tpl.series.length} serii
-                  </span>
-                </button>
-                <button
-                  onClick={() => onDeleteTemplate(tpl.id)}
-                  title="Usuń szablon"
-                  style={{
-                    padding: '7px 8px',
-                    borderRadius: 'var(--border-radius-md)',
-                    border: '0.5px solid var(--color-border-tertiary)',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    color: 'var(--color-text-secondary)',
-                    lineHeight: 1
-                  }}
-                >
-                  <i className="ti ti-trash" aria-hidden="true" style={{ fontSize: '14px' }} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* NAZWA TRENINGU */}
-      <input
-        type="text"
-        placeholder="Nazwa treningu (np. Push — klatka + ramiona)"
-        value={workoutName}
-        onChange={e => setWorkoutName(e.target.value)}
-        style={{ width: '100%', boxSizing: 'border-box' }}
-        required
-      />
-
-      {/* REST TIMER */}
-      <RestTimerWrapper timerRef={timerRef} key={timerKey} />
-
-      {/* GŁÓWNY PANEL — lista ćwiczeń + input serii */}
-      {sessionExercises.length > 0 && (
-        <div style={{
-          background: 'var(--color-background-primary)',
-          border: '0.5px solid var(--color-border-tertiary)',
-          borderRadius: 'var(--border-radius-lg)',
-          overflow: 'hidden'
-        }}>
-          {/* Lista ćwiczeń */}
-          <div style={{ borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-            {sessionExercises.map(exId => {
-              const ex = exercises.find(e => e.id === exId)
-              if (!ex) return null
-              const series = getSeriesForExercise(exId)
-              const isActive = exId === activeExId
-              const isDone = series.length > 0
-
-              return (
-                <div
-                  key={exId}
-                  onClick={() => {
-                    setActiveExId(exId)
-                    const last = series.at(-1)
-                    if (last) {
-                      setWeight(String(last.weight))
-                      setReps(String(last.reps))
-                    }
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '10px 12px',
-                    gap: '10px',
-                    cursor: 'pointer',
-                    borderBottom: '0.5px solid var(--color-border-tertiary)',
-                    background: isActive ? 'var(--color-background-info)' : 'transparent',
-                    transition: 'background 0.1s'
-                  }}
-                >
-                  <div style={{
-                    width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
-                    background: isDone
-                      ? 'var(--color-text-success)'
-                      : isActive
-                        ? 'var(--color-text-info)'
-                        : 'var(--color-border-secondary)'
-                  }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: '13px',
-                      fontWeight: isActive ? '500' : '400',
-                      color: isActive ? 'var(--color-text-info)' : 'var(--color-text-primary)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      {ex.name}
-                    </div>
-                    {series.length > 0 && (
-                      <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '1px' }}>
-                        {series.map(s => `${s.weight}×${s.reps}`).join('  ·  ')}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); removeExerciseFromSession(exId) }}
-                    title="Usuń ćwiczenie z sesji"
-                    style={{
-                      padding: '4px 6px',
-                      borderRadius: '5px',
-                      border: 'none',
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      color: 'var(--color-text-secondary)',
-                      lineHeight: 1,
-                      opacity: 0.6
-                    }}
-                  >
-                    <i className="ti ti-x" aria-hidden="true" style={{ fontSize: '13px' }} />
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Panel szybkiego zapisu aktywnego ćwiczenia */}
-          {activeEx && (
-            <div style={{ padding: '12px' }}>
-              <div style={{ fontSize: '11px', fontWeight: '500', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' }}>
-                {activeEx.name} — seria #{activeSeriesList.length + 1}
-              </div>
-
-              {/* Waga */}
-              <div style={{ marginBottom: '8px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Ciężar (kg)</div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <button onClick={() => adjustWeight(-2.5)} style={{ width: '44px', height: '44px', borderRadius: 'var(--border-radius-md)', border: '0.5px solid var(--color-border-secondary)', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '300' }}>−</button>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={weight}
-                    onChange={e => setWeight(e.target.value)}
-                    style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '20px', fontWeight: '500', height: '44px' }}
-                  />
-                  <button onClick={() => adjustWeight(2.5)} style={{ width: '44px', height: '44px', borderRadius: 'var(--border-radius-md)', border: '0.5px solid var(--color-border-secondary)', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '300' }}>+</button>
-                </div>
-              </div>
-
-              {/* Powtórzenia */}
-              <div style={{ marginBottom: '12px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Powtórzenia</div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <button onClick={() => adjustReps(-1)} style={{ width: '44px', height: '44px', borderRadius: 'var(--border-radius-md)', border: '0.5px solid var(--color-border-secondary)', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '300' }}>−</button>
-                  <input
-                    type="number"
-                    value={reps}
-                    onChange={e => setReps(e.target.value)}
-                    style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '20px', fontWeight: '500', height: '44px' }}
-                  />
-                  <button onClick={() => adjustReps(1)} style={{ width: '44px', height: '44px', borderRadius: 'var(--border-radius-md)', border: '0.5px solid var(--color-border-secondary)', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '300' }}>+</button>
-                </div>
-              </div>
-
-              {/* Szybkie presety powtórzeń */}
-              <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
-                {[5, 6, 8, 10, 12, 15].map(r => (
-                  <button
-                    key={r}
-                    onClick={() => setReps(String(r))}
-                    style={{
-                      flex: 1,
-                      fontSize: '12px',
-                      padding: '5px 0',
-                      borderRadius: '5px',
-                      border: `0.5px solid ${reps === String(r) ? 'var(--color-border-info)' : 'var(--color-border-tertiary)'}`,
-                      background: reps === String(r) ? 'var(--color-background-info)' : 'transparent',
-                      cursor: 'pointer',
-                      color: reps === String(r) ? 'var(--color-text-info)' : 'var(--color-text-secondary)',
-                      fontFamily: 'var(--font-mono)'
-                    }}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
-
-              {/* PRZYCISK — zapisz i start timera */}
-              <button
-                onClick={confirmSeries}
-                disabled={!weight || !reps}
-                style={{
-                  width: '100%',
-                  padding: '13px',
-                  borderRadius: 'var(--border-radius-md)',
-                  background: '#e63946',
-                  color: 'white',
-                  border: 'none',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  opacity: (!weight || !reps) ? 0.4 : 1
-                }}
-              >
-                <i className="ti ti-check" aria-hidden="true" style={{ fontSize: '16px' }} />
-                Zapisz serię
-              </button>
-
-              {/* Ostatnie serie — cofnij */}
-              {activeSeriesList.length > 0 && (
-                <button
-                  onClick={() => removeLastSeries(activeExId)}
-                  style={{
-                    width: '100%',
-                    marginTop: '6px',
-                    padding: '6px',
-                    borderRadius: 'var(--border-radius-md)',
-                    border: '0.5px solid var(--color-border-tertiary)',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    fontSize: '11px',
-                    color: 'var(--color-text-secondary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <i className="ti ti-arrow-back" aria-hidden="true" style={{ fontSize: '13px' }} />
-                  Cofnij ostatnią serię
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* DODAJ ĆWICZENIE — przycisk przełączający widok */}
-      <button
-        onClick={() => setView(v => v === 'builder' ? 'logger' : 'builder')}
-        style={{
-          width: '100%',
-          padding: '10px',
-          borderRadius: 'var(--border-radius-md)',
-          border: '0.5px dashed var(--color-border-secondary)',
-          background: 'transparent',
-          cursor: 'pointer',
-          fontSize: '13px',
-          color: 'var(--color-text-secondary)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '6px'
-        }}
-      >
-        <i className={`ti ti-${view === 'builder' ? 'x' : 'plus'}`} aria-hidden="true" style={{ fontSize: '16px' }} />
-        {view === 'builder' ? 'Zamknij atlas' : 'Dodaj ćwiczenie'}
-      </button>
-
-      {/* ATLAS ĆWICZEŃ */}
-      {view === 'builder' && (
-        <div style={{
-          background: 'var(--color-background-primary)',
-          border: '0.5px solid var(--color-border-tertiary)',
-          borderRadius: 'var(--border-radius-lg)',
-          overflow: 'hidden'
-        }}>
-          <div style={{ padding: '10px 12px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-            <input
-              type="search"
-              placeholder="Szukaj ćwiczenia..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              autoFocus
-              style={{ width: '100%', boxSizing: 'border-box' }}
-            />
-          </div>
-          <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
-            {Object.entries(grouped).map(([group, exList]) => (
-              <div key={group}>
-                <div style={{ padding: '6px 12px', fontSize: '10px', fontWeight: '500', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--color-background-secondary)', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-                  {group}
-                </div>
-                {exList.map(ex => (
-                  <div
-                    key={ex.id}
-                    onClick={() => addExerciseToSession(ex.id)}
-                    style={{
-                      padding: '10px 12px',
-                      cursor: 'pointer',
-                      borderBottom: '0.5px solid var(--color-border-tertiary)',
-                      fontSize: '13px',
-                      color: 'var(--color-text-primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      transition: 'background 0.1s'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--color-background-secondary)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    {ex.name}
-                    <i className="ti ti-plus" aria-hidden="true" style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }} />
-                  </div>
-                ))}
-              </div>
-            ))}
-            {filteredExercises.length === 0 && (
-              <div style={{ padding: '20px 12px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                Brak wyników dla &quot;{searchQuery}&quot;
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* KOMENTARZ */}
-      <textarea
-        placeholder="Notatki do treningu (opcjonalnie)"
-        value={workoutComment}
-        onChange={e => setWorkoutComment(e.target.value)}
-        style={{ width: '100%', boxSizing: 'border-box', minHeight: '60px', resize: 'none' }}
-      />
-
-      {/* ZAPISZ JAKO SZABLON */}
-      {localSeriesList.length > 0 && (
-        <div style={{
-          background: 'var(--color-background-secondary)',
-          borderRadius: 'var(--border-radius-lg)',
-          border: '0.5px solid var(--color-border-tertiary)',
-          padding: '12px'
-        }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={saveAsTemplateCheckbox}
-              onChange={e => setSaveAsTemplateCheckbox(e.target.checked)}
-              style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#e63946' }}
-            />
-            <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-primary)' }}>
-              Zapisz jako szablon
-            </span>
-          </label>
-          {saveAsTemplateCheckbox && (
-            <input
-              type="text"
-              placeholder={workoutName.trim() || 'Nazwa szablonu'}
-              value={templateNameInput}
-              onChange={e => setTemplateNameInput(e.target.value)}
-              maxLength={100}
-              style={{ width: '100%', boxSizing: 'border-box', marginTop: '10px' }}
-            />
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Wrapper komponent — mostuje ref do imperatywnego API timera
-function RestTimerWrapper({ timerRef }) {
-  const timer = RestTimer({ onFinish: () => {} })
-  timerRef.current = { start: timer.start, stop: timer.stop }
-  return timer.TimerUI
-}
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
 </file>
 
 <file path="frontend/src/views/Social.jsx">
@@ -4474,6 +2630,53 @@ export default function Social({
     </div>
   )
 }
+</file>
+
+<file path="frontend/vite.config.js">
+// frontend/vite.config.js
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { VitePWA } from 'vite-plugin-pwa'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      injectRegister: 'auto',
+      includeAssets: ['favicon.svg'],
+      
+      // JAWNA KONFIGURACJA WORKBOX (Eliminacja ostrzeżenia o braku .wasm i poprawne cache'owanie)
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,svg,png,ico}']
+      },
+      
+      manifest: {
+        name: 'GymPatico - Profesjonalny Dziennik Treningowy',
+        short_name: 'GymPatico',
+        description: 'Zaawansowany dziennik treningowy, analityka progresu siłowego oraz kompletny atlas ćwiczeń dla kulturystów i amatorów sportów siłowych.',
+        theme_color: '#0c0e12',
+        background_color: '#0c0e12',
+        display: 'standalone',
+        orientation: 'portrait',
+        icons: [
+          {
+            src: 'pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png'
+          }
+        ]
+      }
+    })
+  ],
+})
 </file>
 
 <file path="init.sql">
@@ -5285,6 +3488,481 @@ router.patch('/:sessionId', authenticateToken, async (req, res) => {
 });
 
 module.exports = router;
+</file>
+
+<file path="frontend/src/views/NewWorkout.jsx">
+// frontend/src/views/NewWorkout.jsx
+import React, { useState, useRef, useCallback, useEffect } from 'react'
+import RestTimer from './RestTimer'
+
+export default function NewWorkout({
+  exercises,
+  templates,
+  onSaveTemplate,
+  onDeleteTemplate,
+  workoutName,
+  setWorkoutName,
+  workoutComment,
+  setWorkoutComment,
+  localSeriesList,
+  setLocalSeriesList,
+  handleSaveWorkout,
+}) {
+  // GŁÓWNY STEROWNIK TRYBU: 'selection' | 'active_workout' | 'template_creator'
+  const [activeMode, setActiveMode] = useState(() => {
+    if (localSeriesList.length > 0) return 'active_workout'
+    return 'selection'
+  })
+
+  // Lista ćwiczeń załadowanych do bieżącej konfiguracji (treningu lub szablonu)
+  const [sessionExercises, setSessionExercises] = useState([])
+  const [activeExId, setActiveExId] = useState(null)
+
+  // Szybkie inputy wartości
+  const [weight, setWeight] = useState('60')
+  const [reps, setReps] = useState('8')
+
+  // Stan dedykowany dla kreatora szablonów "na sucho"
+  const [customTemplateName, setCustomTemplateName] = useState('')
+  const [templateSeriesList, setTemplateSeriesList] = useState([])
+
+  // Widok wewnętrzny atlasu: 'logger' (podgląd) | 'builder' (wyszukiwarka ćwiczeń)
+  const [view, setView] = useState('logger')
+  const [searchQuery, setSearchQuery] = useState('')
+  const timerRef = useRef(null)
+
+  // Synchronizacja trybu, jeśli dane zostały wyczyszczone z góry
+  useEffect(() => {
+    if (localSeriesList.length === 0 && sessionExercises.length === 0 && !workoutName && activeMode === 'active_workout') {
+      setActiveMode('selection')
+    }
+  }, [localSeriesList, sessionExercises, workoutName, activeMode])
+
+  const getSeriesForExercise = useCallback((exId) => {
+    if (activeMode === 'template_creator') {
+      return templateSeriesList.filter(s => s.exerciseId === exId)
+    }
+    return localSeriesList.filter(s => s.exerciseId === exId)
+  }, [localSeriesList, templateSeriesList, activeMode])
+
+  // Podpowiedź obciążenia
+  useEffect(() => {
+    if (!activeExId) return
+    const list = activeMode === 'template_creator' ? templateSeriesList : localSeriesList
+    const lastSeries = list.filter(s => s.exerciseId === activeExId).at(-1)
+    if (lastSeries) {
+      setWeight(String(lastSeries.weight))
+      setReps(String(lastSeries.reps))
+    }
+  }, [activeExId, activeMode, templateSeriesList, localSeriesList])
+
+  const adjustWeight = (delta) => {
+    setWeight(prev => {
+      const val = Math.max(0, parseFloat(prev || 0) + delta)
+      return Number.isInteger(val) ? String(val) : val.toFixed(1)
+    })
+  }
+
+  const adjustReps = (delta) => {
+    setReps(prev => String(Math.max(1, parseInt(prev || 1) + delta)))
+  }
+
+  // Zapis serii (w zależności od wybranego trybu)
+  const confirmSeries = useCallback(() => {
+    if (!activeExId) return
+    const ex = exercises.find(e => e.id === activeExId)
+    if (!ex) return
+
+    const w = parseFloat(weight)
+    const r = parseInt(reps)
+    if (isNaN(w) || isNaN(r) || r < 1) return
+
+    const estimatedOneRm = r >= 1 && r <= 12 ? w * (1 + r / 30) : null
+    
+    if (activeMode === 'template_creator') {
+      const currentExSeries = templateSeriesList.filter(s => s.exerciseId === activeExId)
+      const newSeries = {
+        exerciseId: activeExId,
+        weight: w,
+        reps: r,
+        order: currentExSeries.length + 1
+      }
+      setTemplateSeriesList(prev => [...prev, newSeries])
+    } else {
+      const currentExSeries = localSeriesList.filter(s => s.exerciseId === activeExId)
+      const newSeries = {
+        exerciseId: activeExId,
+        exerciseName: ex.name,
+        weight: w,
+        reps: r,
+        order: currentExSeries.length + 1,
+        estimatedOneRm
+      }
+      setLocalSeriesList(prev => [...prev, newSeries])
+      if (timerRef.current?.start) timerRef.current.start()
+    }
+  }, [activeExId, weight, reps, exercises, activeMode, templateSeriesList, localSeriesList, setLocalSeriesList])
+
+  const removeLastSeries = (exId) => {
+    const setter = activeMode === 'template_creator' ? setTemplateSeriesList : setLocalSeriesList
+    setter(prev => {
+      const idx = [...prev].reverse().findIndex(s => s.exerciseId === exId)
+      if (idx === -1) return prev
+      const realIdx = prev.length - 1 - idx
+      return prev.filter((_, i) => i !== realIdx)
+    })
+  }
+
+  const addExerciseToSession = (exId) => {
+    if (sessionExercises.includes(exId)) return
+    setSessionExercises(prev => [...prev, exId])
+    setActiveExId(exId)
+    setView('logger')
+    setSearchQuery('')
+
+    const list = activeMode === 'template_creator' ? templateSeriesList : localSeriesList
+    const lastSeries = list.filter(s => s.exerciseId === exId).at(-1)
+    setWeight(lastSeries ? String(lastSeries.weight) : '60')
+    setReps(lastSeries ? String(lastSeries.reps) : '8')
+  }
+
+  const removeExerciseFromSession = (exId) => {
+    setSessionExercises(prev => prev.filter(id => id !== exId))
+    if (activeMode === 'template_creator') {
+      setTemplateSeriesList(prev => prev.filter(s => s.exerciseId !== exId))
+    } else {
+      setLocalSeriesList(prev => prev.filter(s => s.exerciseId !== exId))
+    }
+    if (activeExId === exId) {
+      const remaining = sessionExercises.filter(id => id !== exId)
+      setActiveExId(remaining.at(-1) ?? null)
+    }
+  }
+
+  // Aktywacja trybu tworzenia szablonu na sucho
+  const handleStartTemplateCreator = () => {
+    setCustomTemplateName('')
+    setTemplateSeriesList([])
+    setSessionExercises([])
+    setActiveExId(null)
+    setView('builder') // Od razu otwieramy atlas, żeby wybierać ćwiczenia
+    setActiveMode('template_creator')
+  }
+
+  const handleSaveCustomTemplate = async () => {
+    const name = customTemplateName.trim() || 'Nowy Szablon'
+    if (templateSeriesList.length === 0) {
+      alert('Dodaj przynajmniej jedną serię do szablonu!')
+      return
+    }
+    const ok = await onSaveTemplate(name, templateSeriesList)
+    if (ok) {
+      setActiveMode('selection')
+    }
+  }
+
+  // Wczytanie gotowego szablonu na siłowni
+  const handleLoadTemplate = (templateId) => {
+    const tpl = templates?.find(t => t.id === templateId)
+    if (!tpl) return
+
+    setWorkoutName(tpl.name)
+    const exIds = [...new Set(tpl.series.map(s => s.exerciseId))]
+    setSessionExercises(exIds)
+    setActiveExId(exIds[0] ?? null)
+
+    const loadedSeries = tpl.series.map(s => {
+      const ex = exercises.find(e => e.id === s.exerciseId)
+      return {
+        exerciseId: s.exerciseId,
+        exerciseName: ex?.name ?? 'Nieznane ćwiczenie',
+        weight: parseFloat(s.weight),
+        reps: parseInt(s.reps),
+        order: s.order,
+        estimatedOneRm: s.reps >= 1 && s.reps <= 12 ? parseFloat(s.weight) * (1 + parseInt(s.reps) / 30) : null
+      }
+    })
+    setLocalSeriesList(loadedSeries)
+    setActiveMode('active_workout')
+  }
+
+  const handleStartEmptyWorkout = () => {
+    setWorkoutName(`Trening rutynowy - ${new Date().toLocaleDateString()}`)
+    setSessionExercises([])
+    setActiveExId(null)
+    setLocalSeriesList([])
+    setActiveMode('active_workout')
+  }
+
+  const handleExitToSelection = () => {
+    if (window.confirm("Czy chcesz opuścić kreator? Niezapisane zmiany zostaną utracone.")) {
+      setWorkoutName('')
+      setWorkoutComment('')
+      setLocalSeriesList([])
+      setSessionExercises([])
+      setActiveExId(null)
+      setActiveMode('selection')
+    }
+  }
+
+  const activeEx = exercises.find(e => e.id === activeExId)
+  const activeSeriesList = activeExId ? getSeriesForExercise(activeExId) : []
+  const filteredExercises = exercises.filter(e =>
+    !sessionExercises.includes(e.id) &&
+    e.name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
+  const grouped = filteredExercises.reduce((acc, ex) => {
+    const g = ex.muscle_group || 'Inne'
+    if (!acc[g]) acc[g] = []
+    acc[g].push(ex)
+    return acc
+  }, {})
+
+  // =========================================================================
+  // STAN 1: EKRAN WYBORU (Home / Couch Mode)
+  // =========================================================================
+  if (activeMode === 'selection') {
+    return (
+      <div className="max-w-[640px] mx-auto flex flex-col gap-6 text-left animate-in fade-in duration-200">
+        <div>
+          <h2 className="text-2xl font-black tracking-tight text-white">Trening i Plany 🚀</h2>
+          <p className="text-xs text-textSecondary mt-0.5">Wybierz szablon na dziś lub skonfiguruj nowy plan w domu.</p>
+        </div>
+
+        {/* AKCJE GŁÓWNE */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button onClick={handleStartEmptyWorkout} className="p-4 bg-gymCard hover:bg-zinc-800/40 border border-zinc-800 rounded-gp-lg text-left transition-all active:scale-[0.99] cursor-pointer flex items-center justify-between group">
+            <div>
+              <h3 className="text-sm font-bold text-white group-hover:text-gymRed transition-colors">Pusty trening ➕</h3>
+              <p className="text-[11px] text-textSecondary mt-0.5">Zaloguj spontaniczną sesję.</p>
+            </div>
+          </button>
+          
+          <button onClick={handleStartTemplateCreator} className="p-4 bg-gymCardSecondary hover:bg-zinc-800/40 border border-zinc-800/60 rounded-gp-lg text-left transition-all active:scale-[0.99] cursor-pointer flex items-center justify-between group">
+            <div>
+              <h3 className="text-sm font-bold text-gymPremium group-hover:text-amber-400 transition-colors">Stwórz nowy szablon 📋</h3>
+              <p className="text-[11px] text-textSecondary mt-0.5">Rozpisz plan na sucho poza treningiem.</p>
+            </div>
+          </button>
+        </div>
+
+        {/* LISTA SZABLONÓW */}
+        <div className="flex flex-col gap-3">
+          <h3 className="text-xs font-bold text-textSecondary uppercase tracking-wider">Twoje Szablony ({templates?.length || 0})</h3>
+          {(!templates || templates.length === 0) ? (
+            <p className="text-xs text-textMuted italic bg-gymCard/20 p-6 rounded-gp-lg text-center border border-dashed border-zinc-800">Brak szablonów. Kliknij przycisk powyżej, aby dodać swój pierwszy plan!</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {templates.map(tpl => {
+                const uniqueExNames = [...new Set(tpl.series.map(s => exercises.find(e => e.id === s.exerciseId)?.name || 'Ćwiczenie'))].slice(0, 3)
+                return (
+                  <div key={tpl.id} className="bg-gymCard border border-zinc-800/60 rounded-gp-lg p-4 flex flex-col justify-between shadow-md group min-h-[135px]">
+                    <div className="cursor-pointer flex-1" onClick={() => handleLoadTemplate(tpl.id)}>
+                      <div className="flex justify-between items-start gap-2">
+                        <h4 className="text-sm font-bold text-white group-hover:text-gymRed transition-colors truncate max-w-[80%]">{tpl.name}</h4>
+                        <span className="text-[9px] font-black text-gymRed bg-gymRed/10 px-2 py-0.5 rounded-full uppercase shrink-0">{tpl.series.length} serii</span>
+                      </div>
+                      <p className="text-xs text-textSecondary mt-1.5 line-clamp-2 leading-relaxed">{uniqueExNames.join(', ')}{tpl.series.length > 3 ? '...' : ''}</p>
+                    </div>
+                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-zinc-800/40">
+                      <button onClick={() => handleLoadTemplate(tpl.id)} className="text-xs font-bold text-gymRed hover:text-red-400 cursor-pointer bg-transparent border-none">Trenuj ➔</button>
+                      <button onClick={() => onDeleteTemplate(tpl.id)} className="text-textMuted hover:text-gymDanger transition-colors cursor-pointer bg-transparent border-none p-1"><i className="ti ti-trash text-xs" /></button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // =========================================================================
+  // STAN 2 & 3: INTERFEJS AKTYWNEGO KREATORA (Trening LUB Tworzenie Planu)
+  // =========================================================================
+  const isCreatorMode = activeMode === 'template_creator'
+
+  return (
+    <div className="max-w-[640px] mx-auto flex flex-col gap-4 text-left animate-in fade-in duration-200">
+      
+      {/* PANEL KONTROLNY NAGŁÓWKA */}
+      <div className="flex items-start justify-between gap-3 border-b border-zinc-800 pb-3">
+        <div>
+          <h2 className={`text-xl font-black tracking-tight ${isCreatorMode ? 'text-gymPremium' : 'text-white'}`}>
+            {isCreatorMode ? 'Projektowanie szablonu 📋' : 'Aktywny trening ⚡'}
+          </h2>
+          <p className="text-xs text-textSecondary mt-0.5">
+            {isCreatorMode ? 'Definiujesz domyślne ćwiczenia i serie.' : `${localSeriesList.length} serii zapisanych w tej sesji.`}
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <button onClick={handleExitToSelection} className="px-3 py-2 border border-zinc-800 hover:bg-zinc-800/30 text-textSecondary font-bold text-xs rounded-gp-md cursor-pointer transition-colors">
+            Wyjdź ✕
+          </button>
+          <button 
+            onClick={isCreatorMode ? handleSaveCustomTemplate : onSubmitWorkout} 
+            disabled={isCreatorMode ? templateSeriesList.length === 0 : localSeriesList.length === 0}
+            className={`px-4 py-2 font-black text-xs rounded-gp-md cursor-pointer transition-all active:scale-95 shadow-md disabled:opacity-40 ${isCreatorMode ? 'bg-gymPremium text-gymDark' : 'bg-gymSuccess text-gymDark'}`}
+          >
+            {isCreatorMode ? 'Zapisz plan' : 'Zakończ trening'}
+          </button>
+        </div>
+      </div>
+
+      {/* INPUT NAZWY (Dynamiczny nagłówek) */}
+      <input
+        type="text"
+        placeholder={isCreatorMode ? "Podaj nazwę planu (np. Góra - Siła, Dół A)..." : "Nazwa dzisiejszego treningu..."}
+        value={isCreatorMode ? customTemplateName : workoutName}
+        onChange={e => isCreatorMode ? setCustomTemplateName(e.target.value) : setWorkoutName(e.target.value)}
+        className="w-full p-3 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm font-bold outline-none focus:border-gymRed"
+        required
+      />
+
+      {/* MINUTNIK (Pokazujemy go TYLKO, gdy ktoś faktycznie ćwiczy na siłowni!) */}
+      {!isCreatorMode && <RestTimerWrapper timerRef={timerRef} key={0} />}
+
+      {/* PANEL ZBUDOWANYCH ĆWICZEŃ */}
+      {sessionExercises.length > 0 && (
+        <div className="bg-gymCard border border-zinc-800/40 rounded-gp-lg overflow-hidden shadow-lg">
+          <div className="divide-y divide-zinc-800/50">
+            {sessionExercises.map(exId => {
+              const ex = exercises.find(e => e.id === exId)
+              if (!ex) return null
+              const series = getSeriesForExercise(exId)
+              const isActive = exId === activeExId
+
+              return (
+                <div key={exId} onClick={() => setActiveExId(exId)} className={`flex items-center p-3 gap-3 cursor-pointer transition-colors ${isActive ? 'bg-gymRed/5' : 'hover:bg-zinc-800/20'}`}>
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${series.length > 0 ? (isCreatorMode ? 'text-gymPremium bg-gymPremium' : 'bg-gymSuccess') : 'bg-zinc-700'}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-sm truncate ${isActive ? (isCreatorMode ? 'text-gymPremium font-bold' : 'text-gymRed font-bold') : 'text-textPrimary'}`}>{ex.name}</div>
+                    {series.length > 0 && (
+                      <div className="text-xs text-textSecondary font-mono mt-0.5">
+                        {isCreatorMode ? `${series.length} zaplanowanych serii` : series.map(s => `${s.weight}×${s.reps}`).join('  ·  ')}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); removeExerciseFromSession(exId) }} className="p-1 text-textSecondary hover:text-gymDanger opacity-60 hover:opacity-100 transition-all cursor-pointer">
+                    <i className="ti ti-x text-sm" />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* LOGGER / CREATOR POJEDYNCZEJ SERII ĆWICZENIA */}
+          {activeEx && (
+            <div className="p-4 border-t border-zinc-800 bg-gymCardSecondary/40">
+              <div className={`text-xs font-bold uppercase tracking-wider mb-3 ${isCreatorMode ? 'text-gymPremium' : 'text-gymRed'}`}>
+                {activeEx.name} — {isCreatorMode ? `DODAWANIE SERII DOCELOWEJ #${activeSeriesList.length + 1}` : `SERIA # ${activeSeriesList.length + 1}`}
+              </div>
+
+              {/* INPUT CIĘŻARU */}
+              <div className="mb-3">
+                <label className="text-[11px] font-semibold text-textSecondary block mb-1">{isCreatorMode ? 'Sugerowany ciężar (kg):' : 'Ciężar (kg):'}</label>
+                <div className="flex gap-2 items-center">
+                  <button onClick={() => adjustWeight(-2.5)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer text-textPrimary active:scale-95 transition-transform">−</button>
+                  <input type="number" step="0.5" value={weight} onChange={e => setWeight(e.target.value)} className="flex-1 h-11 text-center font-mono text-xl font-bold bg-gymCard border border-zinc-800 rounded-gp-md text-white outline-none focus:border-gymRed" />
+                  <button onClick={() => adjustWeight(2.5)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer text-textPrimary active:scale-95 transition-transform">+</button>
+                </div>
+              </div>
+
+              {/* INPUT POWTÓRZEŃ */}
+              <div className="mb-3">
+                <label className="text-[11px] font-semibold text-textSecondary block mb-1">{isCreatorMode ? 'Docelowa liczba powtórzeń:' : 'Powtórzenia:'}</label>
+                <div className="flex gap-2 items-center">
+                  <button onClick={() => adjustReps(-1)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer text-textPrimary active:scale-95 transition-transform">−</button>
+                  <input type="number" value={reps} onChange={e => setReps(e.target.value)} className="flex-1 h-11 text-center font-mono text-xl font-bold bg-gymCard border border-zinc-800 rounded-gp-md text-white outline-none focus:border-gymRed" />
+                  <button onClick={() => adjustReps(1)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer text-textPrimary active:scale-95 transition-transform">+</button>
+                </div>
+              </div>
+
+              {/* PRESETY */}
+              <div className="flex gap-1 mb-4">
+                {[5, 6, 8, 10, 12, 15].map(r => (
+                  <button key={r} onClick={() => setReps(String(r))} className={`flex-1 py-1.5 rounded-gp-sm text-xs font-mono font-bold border transition-all cursor-pointer ${reps === String(r) ? (isCreatorMode ? 'border-gymPremium text-gymPremium bg-gymPremium/5' : 'border-gymRed text-gymRed bg-gymRed/5') : 'border-zinc-800 text-textSecondary bg-transparent hover:text-white'}`}>{r}</button>
+                ))}
+              </div>
+
+              {/* PRZYCISK DOPISANIA SERII */}
+              <button 
+                onClick={confirmSeries} 
+                disabled={!weight || !reps} 
+                className={`w-full py-3 disabled:opacity-40 text-white font-bold text-sm rounded-gp-md cursor-pointer flex items-center justify-center gap-2 transition-all active:scale-[0.99] shadow-md ${isCreatorMode ? 'bg-gymPremium text-gymDark' : 'bg-gymRed hover:bg-gymRedHover'}`}
+              >
+                <i className="ti ti-check text-base" /> {isCreatorMode ? 'Dodaj serię do struktury szablonu' : 'Zapisz serię i włącz pauzę ⏱️'}
+              </button>
+
+              {activeSeriesList.length > 0 && (
+                <button onClick={() => removeLastSeries(activeExId)} className="w-full mt-2 py-1.5 border border-zinc-800 hover:border-zinc-700 bg-transparent text-textSecondary text-[11px] font-semibold rounded-gp-md cursor-pointer flex items-center justify-center gap-1 transition-colors">
+                  <i className="ti ti-arrow-back" /> Usuń ostatnią serię stąd
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* PRZYCISK ELEMENTU ATLASU */}
+      <button onClick={() => setView(v => v === 'builder' ? 'logger' : 'builder')} className="w-full py-2.5 border border-dashed border-zinc-800 hover:border-zinc-600 bg-transparent text-textSecondary hover:text-white text-xs font-bold rounded-gp-md cursor-pointer flex items-center justify-center gap-1.5 transition-colors">
+        <i className={`ti ti-${view === 'builder' ? 'x' : 'plus'} text-base`} />
+        {view === 'builder' ? 'Ukryj atlas ćwiczeń' : 'Dodaj ćwiczenie z atlasu kapitałowego'}
+      </button>
+
+      {/* ATLAS ĆWICZEŃ */}
+      {view === 'builder' && (
+        <div className="bg-gymCard border border-zinc-800/40 rounded-gp-lg overflow-hidden shadow-xl animate-in fade-in duration-150">
+          <div className="p-3 border-b border-zinc-800">
+            <input type="search" placeholder="Wpisz nazwę szukanego ćwiczenia..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} autoFocus className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-sm outline-none focus:border-gymRed" />
+          </div>
+          <div className="max-h-[320px] overflow-y-auto divide-y divide-zinc-800/40">
+            {Object.entries(grouped).map(([group, exList]) => (
+              <div key={group} className="text-left">
+                <div className="px-3 py-1 text-[10px] font-bold text-textSecondary uppercase tracking-wider bg-gymCardSecondary/60 border-b border-zinc-800/30">{group}</div>
+                {exList.map(ex => (
+                  <div key={ex.id} onClick={() => addExerciseToSession(ex.id)} className="px-3 py-2.5 text-sm text-textPrimary hover:bg-zinc-800/30 cursor-pointer flex items-center justify-between transition-colors">
+                    <span>{ex.name}</span>
+                    <i className="ti ti-plus text-textMuted" />
+                  </div>
+                ))}
+              </div>
+            ))}
+            {filteredExercises.length === 0 && (
+              <div className="p-6 text-center text-textSecondary text-xs italic">Brak wyników dla frazy "{searchQuery}"</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* NOTATKI (Tylko podczas realnego treningu) */}
+      {!isCreatorMode && (
+        <textarea placeholder="Komentarz lub notatki do dzisiejszego treningu (opcjonalnie)..." value={workoutComment} onChange={e => setWorkoutComment(e.target.value)} className="w-full p-3 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed min-h-[64px] resize-none" />
+      )}
+
+      {/* ZAPIS JAKO SZABLON (Tylko podczas realnego treningu, jako funkcja zapisu w locie) */}
+      {!isCreatorMode && localSeriesList.length > 0 && (
+        <div className="bg-gymCardSecondary border border-zinc-800/40 rounded-gp-lg p-3 shadow-md">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" checked={saveAsTemplateCheckbox} onChange={e => setSaveAsTemplateCheckbox(e.target.checked)} className="w-4 h-4 rounded border-zinc-800 bg-gymCard accent-gymRed cursor-pointer" />
+            <span className="text-xs font-bold text-textPrimary">Zapisz ten bieżący trening jako nowy szablon</span>
+          </label>
+          {saveAsTemplateCheckbox && (
+            <input type="text" placeholder={workoutName.trim() || 'Nazwa nowego szablonu'} value={templateNameInput} onChange={e => setTemplateNameInput(e.target.value)} maxLength={100} className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm font-medium outline-none focus:border-gymRed mt-2 animate-in slide-in-from-top-2 duration-150" />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RestTimerWrapper({ timerRef }) {
+  const timer = RestTimer({ onFinish: () => {} })
+  timerRef.current = { start: timer.start, stop: timer.stop }
+  return timer.TimerUI
+}
 </file>
 
 <file path="backend/index.js">

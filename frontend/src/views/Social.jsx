@@ -88,7 +88,7 @@ export default function Social({
               const isSecond = idx === 1;
               const isThird = idx === 2;
               const isMe = f.id === user?.id;
-              const isPremium = f.is_premium === true || f.isPremium === true;
+              const isPremium = f.isPremium;
 
               return (
                 <div 

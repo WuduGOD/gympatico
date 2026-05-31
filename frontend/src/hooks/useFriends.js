@@ -10,17 +10,23 @@ export function useFriends(token) {
   // Stabilizacja pobierania modułu społecznościowego
   const fetchFriendsData = useCallback(async () => {
     if (!token) return;
-    const headers = { 'Authorization': `Bearer ${token}` };
-    const [friendsRes, requestsRes] = await Promise.all([
-      fetch(`${API_BASE_URL}/api/friends`, { headers }),
-      fetch(`${API_BASE_URL}/api/friends/requests`, { headers })
-    ]);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/friends`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Błąd pobierania gangu');
+      const data = await res.json();
 
-    if (!friendsRes.ok) throw new Error('Błąd pobierania znajomych');
-    if (!requestsRes.ok) throw new Error('Błąd pobierania zaproszeń');
+      // TWARDA NORMALIZACJA: Gwarantujemy frontowi jeden, pewny klucz camelCase
+      const normalizedFriends = data.map(friend => ({
+        ...friend,
+        isPremium: friend.is_premium === true || friend.isPremium === true
+      }));
 
-    setFriends(await friendsRes.json());
-    setPendingRequests(await requestsRes.json());
+      setFriends(normalizedFriends);
+    } catch (err) {
+      console.error(err.message);
+    }
   }, [token]);
 
   const handleSendFriendRequest = async (targetNick) => {

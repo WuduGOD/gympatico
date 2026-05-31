@@ -16,10 +16,10 @@ export default function Dashboard({
 
   // Każdorazowa zmiana ćwiczenia w selektorze dzwoni do bazy po świeżą progresję 1RM
   useEffect(() => {
-    if (selectedExercise) {
-      fetchProgression(selectedExercise)
+    if (selectedExerciseId) {
+      fetchProgression(selectedExerciseId);
     }
-  }, [selectedExercise, fetchProgression])
+  }, [selectedExerciseId, fetchProgression]);
 
   // Automatyczne ustawienie pierwszego ćwiczenia, jeśli baza na starcie była pusta
   useEffect(() => {

@@ -29,7 +29,11 @@ export default function NewWorkout({
   const [weight, setWeight] = useState('60')
   const [reps, setReps] = useState('8')
 
-  // Stan dedykowany dla kreatora szablonów "na sucho"
+  // [FIX] Stany dla aktywnego treningu (zapis jako szablon w locie na siłowni)
+  const [templateNameInput, setTemplateNameInput] = useState('')
+  const [saveAsTemplateCheckbox, setSaveAsTemplateCheckbox] = useState(false)
+
+  // Stany dedykowane dla kreatora szablonów "na sucho" (Couch Mode w domu)
   const [customTemplateName, setCustomTemplateName] = useState('')
   const [templateSeriesList, setTemplateSeriesList] = useState([])
 
@@ -52,7 +56,7 @@ export default function NewWorkout({
     return localSeriesList.filter(s => s.exerciseId === exId)
   }, [localSeriesList, templateSeriesList, activeMode])
 
-  // Podpowiedź obciążenia
+  // Podpowiedź obciążenia z poprzedniej serii
   useEffect(() => {
     if (!activeExId) return
     const list = activeMode === 'template_creator' ? templateSeriesList : localSeriesList
@@ -74,7 +78,7 @@ export default function NewWorkout({
     setReps(prev => String(Math.max(1, parseInt(prev || 1) + delta)))
   }
 
-  // Zapis serii (w zależności od wybranego trybu)
+  // Zapis serii do odpowiedniej tablicy (w zależności od trybu)
   const confirmSeries = useCallback(() => {
     if (!activeExId) return
     const ex = exercises.find(e => e.id === activeExId)
@@ -152,10 +156,11 @@ export default function NewWorkout({
     setTemplateSeriesList([])
     setSessionExercises([])
     setActiveExId(null)
-    setView('builder') // Od razu otwieramy atlas, żeby wybierać ćwiczenia
+    setView('builder')
     setActiveMode('template_creator')
   }
 
+  // Zapis szablonu ułożonego w domu
   const handleSaveCustomTemplate = async () => {
     const name = customTemplateName.trim() || 'Nowy Szablon'
     if (templateSeriesList.length === 0) {
@@ -166,6 +171,23 @@ export default function NewWorkout({
     if (ok) {
       setActiveMode('selection')
     }
+  }
+
+  // Zapis aktywnego treningu (+ opcjonalny szablon w locie)
+  const onSubmitWorkout = async (e) => {
+    e?.preventDefault()
+    if (saveAsTemplateCheckbox) {
+      const name = templateNameInput.trim() || workoutName.trim() || 'Mój szablon'
+      const templateSeries = localSeriesList.map((s, idx) => ({
+        exerciseId: s.exerciseId, 
+        weight: s.weight, 
+        reps: s.reps, 
+        order: idx + 1
+      }))
+      const ok = await onSaveTemplate(name, templateSeries)
+      if (!ok) return
+    }
+    handleSaveWorkout()
   }
 
   // Wczytanie gotowego szablonu na siłowni
@@ -237,7 +259,6 @@ export default function NewWorkout({
           <p className="text-xs text-textSecondary mt-0.5">Wybierz szablon na dziś lub skonfiguruj nowy plan w domu.</p>
         </div>
 
-        {/* AKCJE GŁÓWNE */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button onClick={handleStartEmptyWorkout} className="p-4 bg-gymCard hover:bg-zinc-800/40 border border-zinc-800 rounded-gp-lg text-left transition-all active:scale-[0.99] cursor-pointer flex items-center justify-between group">
             <div>
@@ -254,7 +275,6 @@ export default function NewWorkout({
           </button>
         </div>
 
-        {/* LISTA SZABLONÓW */}
         <div className="flex flex-col gap-3">
           <h3 className="text-xs font-bold text-textSecondary uppercase tracking-wider">Twoje Szablony ({templates?.length || 0})</h3>
           {(!templates || templates.length === 0) ? (
@@ -294,7 +314,6 @@ export default function NewWorkout({
   return (
     <div className="max-w-[640px] mx-auto flex flex-col gap-4 text-left animate-in fade-in duration-200">
       
-      {/* PANEL KONTROLNY NAGŁÓWKA */}
       <div className="flex items-start justify-between gap-3 border-b border-zinc-800 pb-3">
         <div>
           <h2 className={`text-xl font-black tracking-tight ${isCreatorMode ? 'text-gymPremium' : 'text-white'}`}>
@@ -318,7 +337,6 @@ export default function NewWorkout({
         </div>
       </div>
 
-      {/* INPUT NAZWY (Dynamiczny nagłówek) */}
       <input
         type="text"
         placeholder={isCreatorMode ? "Podaj nazwę planu (np. Góra - Siła, Dół A)..." : "Nazwa dzisiejszego treningu..."}
@@ -328,10 +346,8 @@ export default function NewWorkout({
         required
       />
 
-      {/* MINUTNIK (Pokazujemy go TYLKO, gdy ktoś faktycznie ćwiczy na siłowni!) */}
       {!isCreatorMode && <RestTimerWrapper timerRef={timerRef} key={0} />}
 
-      {/* PANEL ZBUDOWANYCH ĆWICZEŃ */}
       {sessionExercises.length > 0 && (
         <div className="bg-gymCard border border-zinc-800/40 rounded-gp-lg overflow-hidden shadow-lg">
           <div className="divide-y divide-zinc-800/50">
@@ -360,14 +376,12 @@ export default function NewWorkout({
             })}
           </div>
 
-          {/* LOGGER / CREATOR POJEDYNCZEJ SERII ĆWICZENIA */}
           {activeEx && (
             <div className="p-4 border-t border-zinc-800 bg-gymCardSecondary/40">
               <div className={`text-xs font-bold uppercase tracking-wider mb-3 ${isCreatorMode ? 'text-gymPremium' : 'text-gymRed'}`}>
                 {activeEx.name} — {isCreatorMode ? `DODAWANIE SERII DOCELOWEJ #${activeSeriesList.length + 1}` : `SERIA # ${activeSeriesList.length + 1}`}
               </div>
 
-              {/* INPUT CIĘŻARU */}
               <div className="mb-3">
                 <label className="text-[11px] font-semibold text-textSecondary block mb-1">{isCreatorMode ? 'Sugerowany ciężar (kg):' : 'Ciężar (kg):'}</label>
                 <div className="flex gap-2 items-center">
@@ -377,7 +391,6 @@ export default function NewWorkout({
                 </div>
               </div>
 
-              {/* INPUT POWTÓRZEŃ */}
               <div className="mb-3">
                 <label className="text-[11px] font-semibold text-textSecondary block mb-1">{isCreatorMode ? 'Docelowa liczba powtórzeń:' : 'Powtórzenia:'}</label>
                 <div className="flex gap-2 items-center">
@@ -387,14 +400,12 @@ export default function NewWorkout({
                 </div>
               </div>
 
-              {/* PRESETY */}
               <div className="flex gap-1 mb-4">
                 {[5, 6, 8, 10, 12, 15].map(r => (
                   <button key={r} onClick={() => setReps(String(r))} className={`flex-1 py-1.5 rounded-gp-sm text-xs font-mono font-bold border transition-all cursor-pointer ${reps === String(r) ? (isCreatorMode ? 'border-gymPremium text-gymPremium bg-gymPremium/5' : 'border-gymRed text-gymRed bg-gymRed/5') : 'border-zinc-800 text-textSecondary bg-transparent hover:text-white'}`}>{r}</button>
                 ))}
               </div>
 
-              {/* PRZYCISK DOPISANIA SERII */}
               <button 
                 onClick={confirmSeries} 
                 disabled={!weight || !reps} 
@@ -413,13 +424,11 @@ export default function NewWorkout({
         </div>
       )}
 
-      {/* PRZYCISK ELEMENTU ATLASU */}
       <button onClick={() => setView(v => v === 'builder' ? 'logger' : 'builder')} className="w-full py-2.5 border border-dashed border-zinc-800 hover:border-zinc-600 bg-transparent text-textSecondary hover:text-white text-xs font-bold rounded-gp-md cursor-pointer flex items-center justify-center gap-1.5 transition-colors">
         <i className={`ti ti-${view === 'builder' ? 'x' : 'plus'} text-base`} />
         {view === 'builder' ? 'Ukryj atlas ćwiczeń' : 'Dodaj ćwiczenie z atlasu kapitałowego'}
       </button>
 
-      {/* ATLAS ĆWICZEŃ */}
       {view === 'builder' && (
         <div className="bg-gymCard border border-zinc-800/40 rounded-gp-lg overflow-hidden shadow-xl animate-in fade-in duration-150">
           <div className="p-3 border-b border-zinc-800">
@@ -444,12 +453,11 @@ export default function NewWorkout({
         </div>
       )}
 
-      {/* NOTATKI (Tylko podczas realnego treningu) */}
       {!isCreatorMode && (
         <textarea placeholder="Komentarz lub notatki do dzisiejszego treningu (opcjonalnie)..." value={workoutComment} onChange={e => setWorkoutComment(e.target.value)} className="w-full p-3 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed min-h-[64px] resize-none" />
       )}
 
-      {/* ZAPIS JAKO SZABLON (Tylko podczas realnego treningu, jako funkcja zapisu w locie) */}
+      {/* [FIXED] POPRAWNE MAPOWANIE Z DEKLARACJĄ USESTATE */}
       {!isCreatorMode && localSeriesList.length > 0 && (
         <div className="bg-gymCardSecondary border border-zinc-800/40 rounded-gp-lg p-3 shadow-md">
           <label className="flex items-center gap-2 cursor-pointer select-none">
