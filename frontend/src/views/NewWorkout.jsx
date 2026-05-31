@@ -33,8 +33,11 @@ export default function NewWorkout({
   const [isAtlasOpen, setIsAtlasOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   
-  // 🛠️ Stan aktywnego filtra grupy mięśniowej
+  // Stan aktywnego filtra grupy mięśniowej
   const [selectedMuscleFilter, setSelectedMuscleFilter] = useState('Wszystkie')
+
+  // 🛠️ [NOWOŚĆ] Stan obsługi modalu z podglądem animacji i instrukcji ćwiczenia
+  const [infoExercise, setInfoExercise] = useState(null)
   
   // State dla bezpiecznego modalu anulowania treningu
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
@@ -191,7 +194,7 @@ export default function NewWorkout({
       return {
         exerciseId: s.exerciseId,
         exerciseName: ex?.name ?? 'Ćwiczenie',
-        weight: '', // Czyste pole gotowe na faktyczny wynik dzisiejszy
+        weight: '', 
         reps: s.reps ? String(s.reps) : '', 
         completed: false,
         estimatedOneRm: null
@@ -223,7 +226,6 @@ export default function NewWorkout({
 
   const onSubmitActiveWorkout = async (e) => {
     e?.preventDefault()
-    // Odfiltrowujemy tylko te serie, które zostały faktycznie odznaczone jako zrobione
     const finished = localSeriesList.filter(s => s.completed && s.weight && s.reps)
     
     if (finished.length === 0) {
@@ -231,7 +233,6 @@ export default function NewWorkout({
       return
     }
 
-    // Gwarancja prawidłowego sortowania kolejności w bazie
     const normalized = finished.map((s, idx) => ({
       ...s,
       weight: parseFloat(s.weight),
@@ -241,13 +242,12 @@ export default function NewWorkout({
 
     setLocalSeriesList(normalized)
     
-    // Krótki flush na zatwierdzenie tablicy stanów hooka nadrzędnego
     setTimeout(() => {
       handleSaveWorkout()
     }, 40)
   }
 
-  // 🛠️ Zaktualizowane filtrowanie hybrydowe (Wyszukiwarka + Grupa mięśniowa)
+  // Filtrowanie hybrydowe (Wyszukiwarka + Grupa mięśniowa)
   const filteredExercises = exercises.filter(e => {
     const matchesSearch = e.name.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesMuscle = selectedMuscleFilter === 'Wszystkie' || e.muscle_group === selectedMuscleFilter
@@ -261,8 +261,11 @@ export default function NewWorkout({
     return acc
   }, {})
 
+  const isCreatorMode = activeMode === 'template_creator'
+  const currentGlobalList = isCreatorMode ? templateSeriesList : localSeriesList
+
   // =========================================================================
-  // STAN 1: HOME / COUCH MODE (EKRAN STARTU I WYBORU)
+  // STAN 1: HOME / COUCH MODE
   // =========================================================================
   if (activeMode === 'selection') {
     return (
@@ -319,12 +322,6 @@ export default function NewWorkout({
     )
   }
 
-  // =========================================================================
-  // STAN 2 & 3: WŁAŚCIWY LOGGER (AKTYWNY TRENING LUB PROJEKTOWANIE PLANU)
-  // =========================================================================
-  const isCreatorMode = activeMode === 'template_creator'
-  const currentGlobalList = isCreatorMode ? templateSeriesList : localSeriesList
-
   return (
     <div className="max-w-[640px] mx-auto flex flex-col gap-4 text-left animate-in fade-in duration-200 pb-20">
       
@@ -373,7 +370,6 @@ export default function NewWorkout({
             const exerciseObj = exercises.find(e => e.id === exId)
             if (!exerciseObj) return null
 
-            // Pobieramy pod-zbiór rekordów serii przypisany wyłącznie do tej karty
             const exerciseRows = currentGlobalList
               .map((s, globalIndex) => ({ ...s, globalIndex }))
               .filter(s => s.exerciseId === exId)
@@ -381,16 +377,25 @@ export default function NewWorkout({
             return (
               <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg shadow-lg overflow-hidden animate-in fade-in duration-150">
                 
-                {/* NAGŁÓWEK KARTY ĆWICZENIA */}
+                {/* NAGŁÓWEK KARTY ĆWICZENIA (Zintegrowane Info ⓘ) */}
                 <div className="px-4 py-3 bg-gymCardSecondary/40 border-b border-zinc-800/60 flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-bold text-textPrimary leading-tight">{exerciseObj.name}</h3>
-                    <span className="text-[10px] font-bold text-textMuted uppercase tracking-wider">{exerciseObj.muscle_group || 'Inne'}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div>
+                      <h3 className="text-sm font-bold text-textPrimary leading-tight truncate">{exerciseObj.name}</h3>
+                      <span className="text-[10px] font-bold text-textMuted uppercase tracking-wider">{exerciseObj.muscle_group || 'Inne'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setInfoExercise(exerciseObj)}
+                      className="p-1 text-textMuted hover:text-white transition-colors cursor-pointer text-xs bg-zinc-800/40 hover:bg-zinc-800/80 rounded-md shrink-0 font-bold"
+                      title="Podgląd instrukcji"
+                    >
+                      ⓘ
+                    </button>
                   </div>
                   <button 
                     onClick={() => handleRemoveExerciseFromSession(exId)}
-                    className="p-1 text-textMuted hover:text-gymDanger transition-colors cursor-pointer text-sm"
-                    title="Usuń ćwiczenie z planu"
+                    className="p-1 text-textMuted hover:text-gymDanger transition-colors cursor-pointer text-sm shrink-0"
                   >
                     ✕
                   </button>
@@ -402,7 +407,6 @@ export default function NewWorkout({
                     <p className="text-[11px] text-textMuted italic py-2">Brak zdefiniowanych wierszy serii.</p>
                   ) : (
                     <div className="flex flex-col gap-2">
-                      {/* Nagłówki kolumn tabeli roboczej */}
                       <div className="grid grid-cols-12 gap-2 text-center text-[10px] font-bold text-textMuted uppercase tracking-tight px-1">
                         <div className="col-span-2 text-left">Seria</div>
                         <div className="col-span-3">Poprzednio</div>
@@ -411,7 +415,6 @@ export default function NewWorkout({
                         <div className="col-span-2">Status</div>
                       </div>
 
-                      {/* Wiersze danych */}
                       {exerciseRows.map((s, localIdx) => (
                         <div 
                           key={s.globalIndex} 
@@ -419,17 +422,14 @@ export default function NewWorkout({
                             s.completed ? 'bg-gymSuccess/5 border-l-2 border-gymSuccess' : 'bg-transparent'
                           }`}
                         >
-                          {/* Numer serii */}
                           <div className="col-span-2 text-left font-mono text-xs font-bold text-textSecondary px-1">
                             {localIdx + 1}
                           </div>
 
-                          {/* GHOST PLACEHOLDER (Cel sugerowany w tle) */}
                           <div className="col-span-3 text-[11px] text-textMuted font-medium truncate font-mono">
                             {isCreatorMode ? '—' : '60 kg x 8'}
                           </div>
 
-                          {/* INPUT CIĘŻARU (W domu ukryty lub jako pole docelowe) */}
                           <div className="col-span-3">
                             <input 
                               type="number"
@@ -442,7 +442,6 @@ export default function NewWorkout({
                             />
                           </div>
 
-                          {/* INPUT POWTÓRZEŃ */}
                           <div className="col-span-2">
                             <input 
                               type="number"
@@ -454,7 +453,6 @@ export default function NewWorkout({
                             />
                           </div>
 
-                          {/* STATUS CHECKBOX (✓) LUB USUWANIE W KREATORZE */}
                           <div className="col-span-2 flex justify-center">
                             {isCreatorMode ? (
                               <span className="text-textMuted text-xs font-bold">—</span>
@@ -478,7 +476,6 @@ export default function NewWorkout({
                     </div>
                   )}
 
-                  {/* KONTROLERY OBJĘTOŚCI POD KARTĄ ĆWICZENIA */}
                   <div className="flex gap-2 justify-end mt-3 pt-2 border-t border-zinc-800/40 text-[11px]">
                     <button 
                       onClick={() => handleRemoveRowFromExercise(exId)} 
@@ -503,7 +500,7 @@ export default function NewWorkout({
         </div>
       )}
 
-      {/* 🛠️ STICKY FOOTER ACTION BAR — Zgodnie ze schematem, zakotwiczony idealny nad belką nawigacji PWA */}
+      {/* STICKY FOOTER ACTION BAR */}
       <div className="fixed bottom-16 left-0 right-0 max-w-[640px] mx-auto z-40 bg-gradient-to-t from-gymDark via-gymDark to-transparent pt-6 pb-2 px-4 sm:px-0">
         <button 
           onClick={() => setIsAtlasOpen(true)} 
@@ -513,16 +510,14 @@ export default function NewWorkout({
         </button>
       </div>
 
-      {/* 🛠️ ATLAS JAKO BOTTOM SHEET DRAWER PANEL */}
+      {/* ATLAS JAKO BOTTOM SHEET DRAWER PANEL */}
       {isAtlasOpen && (
         <div className="fixed inset-0 z-[1000] md:z-[998] animate-in fade-in duration-150">
           <div onClick={() => setIsAtlasOpen(false)} className="absolute inset-0 bg-black/75 backdrop-blur-xs" />
           
-          {/* Wysokość dopasowana optymalnie (max-h-[75vh]), aby pomieścić dodatkowy rząd kapsułek */}
           <div className="absolute bottom-16 left-0 right-0 max-w-[640px] mx-auto bg-[#14161d] border-t border-zinc-800 rounded-t-2xl flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[75vh]">
             <div className="w-12 h-1 bg-zinc-800 rounded-full mx-auto my-2.5 shrink-0" />
             
-            {/* PRZEBUDOWANY PANEL WYSZUKIWANIA (Dodany wiersz filtracji) */}
             <div className="px-4 pb-3 pt-1 border-b border-zinc-800/80 flex flex-col gap-3 shrink-0">
               <div className="flex items-center justify-between gap-3">
                 <input 
@@ -538,7 +533,6 @@ export default function NewWorkout({
                 </button>
               </div>
 
-              {/* POZIOMY PASEK FILTRÓW GRUP ANATOMICZNYCH (Minimalistyczny z ukrytym scrollem) */}
               <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-2 px-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden select-none">
                 {uniqueMuscleGroups.map(group => {
                   const isActive = selectedMuscleFilter === group
@@ -574,8 +568,22 @@ export default function NewWorkout({
                           isAlreadyAdded ? 'opacity-40 pointer-events-none bg-zinc-900/20' : ''
                         }`}
                       >
-                        <span className="font-medium">{ex.name}</span>
-                        <span className="text-gymRed font-bold text-base bg-gymRed/5 w-6 h-6 rounded-full flex items-center justify-center border border-red-500/10">
+                        {/* 🛠️ Wyrównany kontener z odizolowaną ikonką Info ⓘ */}
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span className="font-medium truncate">{ex.name}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation(); // Kluczowe! Zapobiega dodaniu ćwiczenia pod spodem
+                              setInfoExercise(ex);
+                            }}
+                            className="p-1 text-textMuted hover:text-white transition-colors cursor-pointer text-[11px] bg-zinc-800/50 hover:bg-zinc-700 rounded-md font-bold shrink-0"
+                            title="Instrukcja wideo"
+                          >
+                            ⓘ
+                          </button>
+                        </div>
+                        <span className="text-gymRed font-bold text-base bg-gymRed/5 w-6 h-6 rounded-full flex items-center justify-center border border-red-500/10 ml-2 shrink-0">
                           {isAlreadyAdded ? '✓' : '＋'}
                         </span>
                       </div>
@@ -584,9 +592,62 @@ export default function NewWorkout({
                 </div>
               ))}
               {filteredExercises.length === 0 && (
-                <div className="p-12 text-center text-textSecondary text-xs italic">Brak pozycji spełniających kryteria filtrów.</div>
+                <div className="p-12 text-center text-textSecondary text-xs italic">Brak pozycji w bazie o nazwie &quot;{searchQuery}&quot;</div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🛠️ [NOWOŚĆ] INTERAKTYWNY MODAL DETALI - PRZYGOTOWANY POD WIDEO MULTIMEDIA */}
+      {infoExercise && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div onClick={() => setInfoExercise(null)} className="absolute inset-0 bg-black/80 backdrop-blur-xs" />
+          
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl relative z-10 text-left animate-in zoom-in-95 duration-150">
+            
+            {/* Odtwarzacz wideo z auto-pętlą i fallbackiem */}
+            {infoExercise.video_url ? (
+              <video 
+                src={infoExercise.video_url} 
+                autoPlay 
+                muted 
+                loop 
+                playsInline 
+                className="w-full h-44 object-cover bg-black border-b border-zinc-800"
+              />
+            ) : (
+              <div className="w-full h-44 bg-zinc-900/60 border-b border-zinc-800 flex flex-col items-center justify-center text-center p-4 text-textMuted select-none">
+                <span className="text-2xl mb-1">🏋️‍♂️</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Pętla ruchu 3D / Video</span>
+                <span className="text-[9px] text-zinc-600 mt-1 max-w-[220px]">Zostanie wyrenderowana automatycznie po przypisaniu linku MP4 w bazie.</span>
+              </div>
+            )}
+
+            {/* Treść merytoryczna */}
+            <div className="p-5">
+              <span className="text-[10px] font-black text-gymRed uppercase tracking-wider block mb-0.5">
+                {infoExercise.muscle_group || 'Inne'}
+              </span>
+              <h3 className="text-base font-black text-white tracking-tight mb-3">
+                {infoExercise.name}
+              </h3>
+              
+              <div className="text-xs text-zinc-400 leading-relaxed bg-zinc-900/40 border border-zinc-800/60 p-3 rounded-xl max-h-36 overflow-y-auto font-medium">
+                {infoExercise.description ? infoExercise.description : (
+                  <span className="italic text-zinc-600 text-[11px]">Brak opisu technicznego dla tego ćwiczenia. Instrukcja zostanie zaciągnięta automatycznie z kolumny opisowej bazy danych.</span>
+                )}
+              </div>
+
+              <button 
+                type="button"
+                onClick={() => setInfoExercise(null)} 
+                className="w-full mt-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center"
+              >
+                Zamknij podgląd
+              </button>
+            </div>
+
           </div>
         </div>
       )}
