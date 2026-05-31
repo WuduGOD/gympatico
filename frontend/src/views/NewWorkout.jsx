@@ -14,6 +14,7 @@ export default function NewWorkout({
   localSeriesList,
   setLocalSeriesList,
   handleSaveWorkout,
+  showToast
 }) {
   // GŁÓWNY STEROWNIK TRYBU: 'selection' | 'active_workout' | 'template_creator'
   const [activeMode, setActiveMode] = useState(() => {
@@ -29,7 +30,7 @@ export default function NewWorkout({
   const [weight, setWeight] = useState('60')
   const [reps, setReps] = useState('8')
 
-  // [FIX] Stany dla aktywnego treningu (zapis jako szablon w locie na siłowni)
+  // Stany dla aktywnego treningu (zapis jako szablon w locie na siłowni)
   const [templateNameInput, setTemplateNameInput] = useState('')
   const [saveAsTemplateCheckbox, setSaveAsTemplateCheckbox] = useState(false)
 
@@ -37,10 +38,13 @@ export default function NewWorkout({
   const [customTemplateName, setCustomTemplateName] = useState('')
   const [templateSeriesList, setTemplateSeriesList] = useState([])
 
-  // Widok wewnętrzny atlasu: 'logger' (podgląd) | 'builder' (wyszukiwarka ćwiczeń)
+  // Widok wewnętrzny atlasu: 'logger' (podgląd) | 'builder' (wyszukiwarka w dolnym Bottom Sheet)
   const [view, setView] = useState('logger')
   const [searchQuery, setSearchQuery] = useState('')
   const timerRef = useRef(null)
+
+  // State dla autorskiego modala anulowania treningu
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
 
   // Synchronizacja trybu, jeśli dane zostały wyczyszczone z góry
   useEffect(() => {
@@ -128,7 +132,6 @@ export default function NewWorkout({
     if (sessionExercises.includes(exId)) return
     setSessionExercises(prev => [...prev, exId])
     setActiveExId(exId)
-    setView('logger')
     setSearchQuery('')
 
     const list = activeMode === 'template_creator' ? templateSeriesList : localSeriesList
@@ -150,21 +153,19 @@ export default function NewWorkout({
     }
   }
 
-  // Aktywacja trybu tworzenia szablonu na sucho
   const handleStartTemplateCreator = () => {
     setCustomTemplateName('')
     setTemplateSeriesList([])
     setSessionExercises([])
     setActiveExId(null)
-    setView('builder')
+    setView('builder') // Od razu otwieramy wyszukiwarkę w drawerze
     setActiveMode('template_creator')
   }
 
-  // Zapis szablonu ułożonego w domu
   const handleSaveCustomTemplate = async () => {
     const name = customTemplateName.trim() || 'Nowy Szablon'
     if (templateSeriesList.length === 0) {
-      alert('Dodaj przynajmniej jedną serię do szablonu!')
+      if (showToast) showToast('Dodaj przynajmniej jedną serię do szablonu! 📋', 'error')
       return
     }
     const ok = await onSaveTemplate(name, templateSeriesList)
@@ -173,7 +174,6 @@ export default function NewWorkout({
     }
   }
 
-  // Zapis aktywnego treningu (+ opcjonalny szablon w locie)
   const onSubmitWorkout = async (e) => {
     e?.preventDefault()
     if (saveAsTemplateCheckbox) {
@@ -190,7 +190,6 @@ export default function NewWorkout({
     handleSaveWorkout()
   }
 
-  // Wczytanie gotowego szablonu na siłowni
   const handleLoadTemplate = (templateId) => {
     const tpl = templates?.find(t => t.id === templateId)
     if (!tpl) return
@@ -224,14 +223,17 @@ export default function NewWorkout({
   }
 
   const handleExitToSelection = () => {
-    if (window.confirm("Czy chcesz opuścić kreator? Niezapisane zmiany zostaną utracone.")) {
-      setWorkoutName('')
-      setWorkoutComment('')
-      setLocalSeriesList([])
-      setSessionExercises([])
-      setActiveExId(null)
-      setActiveMode('selection')
-    }
+    setIsCancelModalOpen(true)
+  }
+
+  const confirmExit = () => {
+    setWorkoutName('')
+    setWorkoutComment('')
+    setLocalSeriesList([])
+    setSessionExercises([])
+    setActiveExId(null)
+    setActiveMode('selection')
+    setIsCancelModalOpen(false)
   }
 
   const activeEx = exercises.find(e => e.id === activeExId)
@@ -249,7 +251,7 @@ export default function NewWorkout({
   }, {})
 
   // =========================================================================
-  // STAN 1: EKRAN WYBORU (Home / Couch Mode)
+  // STAN 1: EKRAN WYBORU (Niezmieniony — Couch Mode)
   // =========================================================================
   if (activeMode === 'selection') {
     return (
@@ -307,7 +309,7 @@ export default function NewWorkout({
   }
 
   // =========================================================================
-  // STAN 2 & 3: INTERFEJS AKTYWNEGO KREATORA (Trening LUB Tworzenie Planu)
+  // STAN 2 & 3: INTERFEJS AKTYWNEGO KREATORA (Zmiana przycisku na Sticky + Bottom Drawer)
   // =========================================================================
   const isCreatorMode = activeMode === 'template_creator'
 
@@ -376,6 +378,7 @@ export default function NewWorkout({
             })}
           </div>
 
+          {/* LOGGER INPUTÓW */}
           {activeEx && (
             <div className="p-4 border-t border-zinc-800 bg-gymCardSecondary/40">
               <div className={`text-xs font-bold uppercase tracking-wider mb-3 ${isCreatorMode ? 'text-gymPremium' : 'text-gymRed'}`}>
@@ -424,42 +427,12 @@ export default function NewWorkout({
         </div>
       )}
 
-      <button onClick={() => setView(v => v === 'builder' ? 'logger' : 'builder')} className="w-full py-2.5 border border-dashed border-zinc-800 hover:border-zinc-600 bg-transparent text-textSecondary hover:text-white text-xs font-bold rounded-gp-md cursor-pointer flex items-center justify-center gap-1.5 transition-colors">
-        <i className={`ti ti-${view === 'builder' ? 'x' : 'plus'} text-base`} />
-        {view === 'builder' ? 'Ukryj atlas ćwiczeń' : 'Dodaj ćwiczenie z atlasu kapitałowego'}
-      </button>
-
-      {view === 'builder' && (
-        <div className="bg-gymCard border border-zinc-800/40 rounded-gp-lg overflow-hidden shadow-xl animate-in fade-in duration-150">
-          <div className="p-3 border-b border-zinc-800">
-            <input type="search" placeholder="Wpisz nazwę szukanego ćwiczenia..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} autoFocus className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-sm outline-none focus:border-gymRed" />
-          </div>
-          <div className="max-h-[320px] overflow-y-auto divide-y divide-zinc-800/40">
-            {Object.entries(grouped).map(([group, exList]) => (
-              <div key={group} className="text-left">
-                <div className="px-3 py-1 text-[10px] font-bold text-textSecondary uppercase tracking-wider bg-gymCardSecondary/60 border-b border-zinc-800/30">{group}</div>
-                {exList.map(ex => (
-                  <div key={ex.id} onClick={() => addExerciseToSession(ex.id)} className="px-3 py-2.5 text-sm text-textPrimary hover:bg-zinc-800/30 cursor-pointer flex items-center justify-between transition-colors">
-                    <span>{ex.name}</span>
-                    <i className="ti ti-plus text-textMuted" />
-                  </div>
-                ))}
-              </div>
-            ))}
-            {filteredExercises.length === 0 && (
-              <div className="p-6 text-center text-textSecondary text-xs italic">Brak wyników dla frazy "{searchQuery}"</div>
-            )}
-          </div>
-        </div>
-      )}
-
       {!isCreatorMode && (
         <textarea placeholder="Komentarz lub notatki do dzisiejszego treningu (opcjonalnie)..." value={workoutComment} onChange={e => setWorkoutComment(e.target.value)} className="w-full p-3 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed min-h-[64px] resize-none" />
       )}
 
-      {/* [FIXED] POPRAWNE MAPOWANIE Z DEKLARACJĄ USESTATE */}
       {!isCreatorMode && localSeriesList.length > 0 && (
-        <div className="bg-gymCardSecondary border border-zinc-800/40 rounded-gp-lg p-3 shadow-md">
+        <div className="bg-gymCardSecondary border border-zinc-800/40 rounded-gp-lg p-3 shadow-md mb-4">
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input type="checkbox" checked={saveAsTemplateCheckbox} onChange={e => setSaveAsTemplateCheckbox(e.target.checked)} className="w-4 h-4 rounded border-zinc-800 bg-gymCard accent-gymRed cursor-pointer" />
             <span className="text-xs font-bold text-textPrimary">Zapisz ten bieżący trening jako nowy szablon</span>
@@ -467,6 +440,83 @@ export default function NewWorkout({
           {saveAsTemplateCheckbox && (
             <input type="text" placeholder={workoutName.trim() || 'Nazwa nowego szablonu'} value={templateNameInput} onChange={e => setTemplateNameInput(e.target.value)} maxLength={100} className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm font-medium outline-none focus:border-gymRed mt-2 animate-in slide-in-from-top-2 duration-150" />
           )}
+        </div>
+      )}
+
+      {/* 🛠️ [NOWOŚĆ] STICKY ACTION BUTTON — Przyklejony idealnie nad dolną belką PWA */}
+      <div className="sticky bottom-16 left-0 right-0 z-40 bg-gradient-to-t from-gymDark via-gymDark to-transparent pt-6 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+        <button 
+          onClick={() => setView('builder')} 
+          className="w-full py-3.5 bg-gymCardSecondary border border-dashed border-zinc-800 hover:border-zinc-600 text-textSecondary hover:text-white text-xs font-bold rounded-gp-md cursor-pointer flex items-center justify-center gap-1.5 transition-colors shadow-xl"
+        >
+          <span className="text-gymRed font-black text-sm">＋</span> Dodaj ćwiczenie z atlasu
+        </button>
+      </div>
+
+      {/* 🛠️ [NOWOŚĆ] ATLAS JAKO INTEGRALNY BOTTOM SHEET DRAWER (ZAMIAST ROZWIJANIA INLINE) */}
+      {view === 'builder' && (
+        <div className="fixed inset-0 z-[1000] md:z-[998] animate-in fade-in duration-150">
+          {/* Ciemny backdrop blokujący kliknięcia w tle */}
+          <div onClick={() => setView('logger')} className="absolute inset-0 bg-black/75 backdrop-blur-xs" />
+          
+          {/* Wysuwany Drawer */}
+          <div className="absolute bottom-16 left-0 right-0 max-w-[640px] mx-auto bg-[#14161d] border-t border-zinc-800 rounded-t-2xl flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[72vh]">
+            <div className="w-12 h-1 bg-zinc-800 rounded-full mx-auto my-2.5 shrink-0" />
+            
+            <div className="px-4 pb-3 pt-1 border-b border-zinc-800/80 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex-1 relative">
+                <input 
+                  type="search" 
+                  placeholder="Wyszukaj ruch po nazwie..." 
+                  value={searchQuery} 
+                  onChange={e => setSearchQuery(e.target.value)} 
+                  autoFocus 
+                  className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed font-medium" 
+                />
+              </div>
+              <button onClick={() => setView('logger')} className="text-textSecondary hover:text-white font-bold text-xs px-3 py-2 bg-gymCardSecondary border border-zinc-800 rounded-gp-md cursor-pointer shrink-0 transition-colors">
+                Zamknij
+              </button>
+            </div>
+            
+            {/* Lista przewijana wewnątrz sheetu */}
+            <div className="overflow-y-auto divide-y divide-zinc-800/40 flex-1 pb-6">
+              {Object.entries(grouped).map(([group, exList]) => (
+                <div key={group} className="text-left">
+                  <div className="px-4 py-1.5 text-[10px] font-bold text-textSecondary uppercase tracking-wider bg-gymCardSecondary/40 border-b border-zinc-800/20">{group}</div>
+                  {exList.map(ex => (
+                    <div 
+                      key={ex.id} 
+                      onClick={() => addExerciseToSession(ex.id)} 
+                      className="px-4 py-3 text-sm text-textPrimary hover:bg-gymRed/5 cursor-pointer flex items-center justify-between transition-colors border-b border-zinc-900/40"
+                    >
+                      <span className="font-medium">{ex.name}</span>
+                      <span className="text-gymRed font-bold text-base bg-gymRed/5 w-6 h-6 rounded-full flex items-center justify-center border border-red-500/10">＋</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {filteredExercises.length === 0 && (
+                <div className="p-12 text-center text-textSecondary text-xs italic">Nie znaleziono pozycji o nazwie &quot;{searchQuery}&quot;</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REAKTYWNY MODAL POTWIERDZENIA WYJŚCIA */}
+      {isCancelModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={() => setIsCancelModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Anulować konfigurację?</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Wszystkie wprowadzone serie robocze zostaną bezpowrotnie usunięte z tej sesji.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setIsCancelModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Kontynuuj</button>
+              <button onClick={confirmExit} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm cursor-pointer shadow-lg shadow-red-950/20">Tak, anuluj</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

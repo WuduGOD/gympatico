@@ -127,24 +127,26 @@ router.get('/', authenticateToken, async (req, res) => {
   let offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
   try {
-    // Sprawdzamy status uprawnień użytkownika za pomocą ujednoliconego helpera
     const plan = await getUserPlan(userId);
 
     if (!plan) {
       return res.status(404).json({ error: "Użytkownik nie istnieje." });
     }
 
-    // TWARDE UKRYWANIE STARYCH TRENINGÓW DLA PLANU FREE (Absolute Visibility Wall)
+    // Pobieramy całkowitą liczbę treningów użytkownika z bazy
+    const countQuery = 'SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1';
+    const countResult = await pool.query(countQuery, [userId]);
+    let totalCount = parseInt(countResult.rows[0].count, 10);
+
+    // Sztywne cięcie widoczności i licznika dla planu darmowego
     if (!plan.is_premium && plan.role !== 'TRAINER') {
+      totalCount = Math.min(totalCount, 10);
       if (offset >= 10) {
-        // Jeśli offset wychodzi poza 10, dla użytkownika FREE ta historia już "nie istnieje"
-        return res.json([]);
+        return res.json({ workouts: [], totalCount: totalCount });
       }
-      // Dociągamy limit tylko do krawędzi 10 dozwolonych rekordów
       limit = Math.min(limit, 10 - offset);
     }
 
-    // Pobieramy sesje treningowe mieszczące się w bezpiecznym oknie widoczności
     const sessionsQuery = `
       SELECT id, name, comment, started_at as "startedAt"
       FROM workout_sessions
@@ -156,7 +158,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const sessions = sessionsResult.rows;
 
     if (sessions.length === 0) {
-      return res.json([]);
+      return res.json({ workouts: [], totalCount: totalCount });
     }
 
     const sessionIds = sessions.map(s => s.id);
@@ -186,7 +188,7 @@ router.get('/', authenticateToken, async (req, res) => {
       };
     });
 
-    res.json(historyData);
+    res.json({ workouts: historyData, totalCount: totalCount });
   } catch (error) {
     res.status(500).json({ error: "Błąd serwera podczas pobierania historii", details: error.message });
   }

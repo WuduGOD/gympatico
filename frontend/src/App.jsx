@@ -1,3 +1,4 @@
+// frontend/src/App.jsx
 import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 
@@ -25,6 +26,9 @@ function AppContent() {
   const [stats, setStats] = useState(null)
   const [loadingData, setLoadingData] = useState(false)
 
+  // STAN OBSŁUGI DOLNEGO MENU "WIĘCEJ..." (BOTTOM SHEET)
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
+
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -35,7 +39,6 @@ function AppContent() {
     setTimeout(() => setToast({ message: '', type: 'success' }), 3500)
   }
 
-  // Integracja customowych hooków domenowych
   const { weightLogs, weightInput, setWeightInput, handleAddWeight, fetchWeightLogs, handleDeleteWeight } = useWeightLogs(token, showToast)
   const { 
     friends, pendingRequests, friendNickInput, setFriendNickInput, 
@@ -50,10 +53,9 @@ function AppContent() {
     seriesReps, setSeriesReps, localSeriesList, setLocalSeriesList, addSeriesToLocalList, 
     handleSaveWorkout, fetchWorkoutsData, removeSeriesFromLocalList, progressionData, 
     fetchProgression, handleDeleteWorkout, hasMoreWorkouts, handleUpdateWorkout
-  } = useWorkouts(token, exercises)
+  } = useWorkouts(token, exercises, showToast)
 
   const handleLoginSuccess = (userToken, userData) => {
-    // Normalizacja obiektu usera podczas logowania, by zawierał is_premium zgodne z resztą aplikacji
     const normalizedLoginUser = {
       ...userData,
       is_premium: userData.isPremium || userData.is_premium || false
@@ -72,6 +74,7 @@ function AppContent() {
     setToken(null);
     setUser(null);
     setLocalSeriesList([]); 
+    setIsMoreMenuOpen(false)
     navigate('/login');
   }, [navigate, setLocalSeriesList]);
 
@@ -85,7 +88,6 @@ function AppContent() {
     setStats(data);
   }, [token]);
 
-  // Globalny, zabezpieczony mechanizm synchronizacji stanów z bazą
   const fetchAllData = useCallback(async () => {
     if (!token) return;
     setLoadingData(true);
@@ -113,10 +115,9 @@ function AppContent() {
       })
         .then(res => { if (!res.ok) throw new Error('Błąd profilu'); return res.json(); })
         .then(data => {
-          // FIX SECURE CACHE: Normalizujemy klucze i bezwzględnie aktualizujemy localStorage świeżymi danymi z Supabase
           const normalizedUser = {
             ...data,
-            isPremium: data.is_premium, // zachowanie kompatybilności wstecznej dla starszych odwołań camelCase
+            isPremium: data.is_premium, 
           };
           setUser(normalizedUser);
           localStorage.setItem('gp_user', JSON.stringify(normalizedUser));
@@ -137,13 +138,12 @@ function AppContent() {
     } finally {
       setLoadingData(false);
     }
-  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates]);
+  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates, fetchProgression]);
 
   useEffect(() => {
     fetchAllData()
   }, [token, fetchAllData])
 
-  // Automatyczne wylogowanie po wygaśnięciu tokenu
   useEffect(() => {
     const handleSessionExpired = () => {
       handleLogout(); 
@@ -156,7 +156,6 @@ function AppContent() {
     };
   }, [handleLogout]);
 
-  // Handlery operacji comfort-flow
   const onUpdateWeeklyTarget = async (newTarget) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/auth/weekly-target`, {
@@ -167,7 +166,6 @@ function AppContent() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować celu.');
       
-      // FIX SECURE CACHE: Aktualizujemy localStorage również przy ręcznej zmianie parametrów celu
       setUser(prev => {
         const updatedUser = { ...prev, weekly_target_workouts: data.weekly_target_workouts };
         localStorage.setItem('gp_user', JSON.stringify(updatedUser));
@@ -289,12 +287,15 @@ function AppContent() {
     }
   };
 
+  // Flaga logiczna podświetlająca ikonę "Więcej...", jeśli jesteśmy wewnątrz ukrytej podstrony
+  const isMoreRouteActive = location.pathname === '/exercises' || location.pathname === '/social'
+
   return (
     <div className="p-4 md:p-6 font-sans bg-gymDark text-white min-h-screen relative">
 
       {token && (
         <>
-          {/* GÓRNY HEADER GLOBALNY */}
+          {/* GÓRNY HEADER GLOBALNY (DESKTOP) */}
           <header className="flex justify-between items-center border-b border-zinc-800/80 pb-4 mb-6 md:mb-8 gap-4">
             <div className="text-left">
               <h1 className="text-xl md:text-2xl font-black text-gymRed tracking-tight">🏋️‍♂️ GymPatico</h1>
@@ -316,27 +317,76 @@ function AppContent() {
             </button>
           </header>
 
-          {/* DOLNA BELKA NAWIGACYJNA MOBILNA */}
-          <nav className="grid grid-cols-6 md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#1e1e1e] border-t border-zinc-800/80 shadow-2xl z-[999] py-1 px-0.5">
-            <button onClick={() => navigate('/')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/' ? 'text-gymRed' : 'text-zinc-500'}`}>
+          {/* ZOPTYMALIZOWANA DOLNA BELKA NAWIGACYJNA MOBILNA (Zredukowana do 5 pozycji + FAB + Drawer) */}
+          <nav className="grid grid-cols-5 md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#181a20] border-t border-zinc-800/60 shadow-2xl z-[999] py-1 px-1 items-center">
+            
+            {/* 1. PANEL */}
+            <button onClick={() => { navigate('/'); setIsMoreMenuOpen(false); }} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${location.pathname === '/' ? 'text-gymRed' : 'text-zinc-500'}`}>
               <span className="text-lg">📊</span><span>Panel</span>
             </button>
-            <button onClick={() => navigate('/stats')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/stats' ? 'text-gymRed' : 'text-zinc-500'}`}>
+            
+            {/* 2. STATYSTYKI */}
+            <button onClick={() => { navigate('/stats'); setIsMoreMenuOpen(false); }} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${location.pathname === '/stats' ? 'text-gymRed' : 'text-zinc-500'}`}>
               <span className="text-lg">📈</span><span>Stats</span>
             </button>
-            <button onClick={() => navigate('/exercises')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/exercises' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-lg">📚</span><span>Atlas</span>
+            
+            {/* 3. ŚRODKOWY FAB (+ NOWY TRENING) - DUŻY, WYRÓŻNIONY, SZYBKI DOTYK */}
+            <div className="flex justify-center relative -top-3">
+              <button 
+                onClick={() => { navigate('/new-workout'); setIsMoreMenuOpen(false); }} 
+                className={`w-13 h-13 rounded-full flex items-center justify-center cursor-pointer shadow-xl shadow-red-950/50 border border-red-500/20 active:scale-90 transition-transform ${location.pathname === '/new-workout' ? 'bg-red-600 text-white' : 'bg-gymRed text-white'}`}
+              >
+                <span className="text-xl font-bold">＋</span>
+              </button>
+            </div>
+            
+            {/* 4. HISTORIA */}
+            <button onClick={() => { navigate('/history'); setIsMoreMenuOpen(false); }} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${location.pathname === '/history' ? 'text-gymRed' : 'text-zinc-500'}`}>
+              <span className="text-lg">📅</span><span>Historia</span>
             </button>
-            <button onClick={() => navigate('/new-workout')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/new-workout' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-lg">➕</span><span>Trening</span>
-            </button>
-            <button onClick={() => navigate('/history')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/history' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-xl">📅</span><span>Historia</span>
-            </button>
-            <button onClick={() => navigate('/social')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/social' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-xl">👥</span><span>Gang</span>
+            
+            {/* 5. WIĘCEJ... TRIGGER INTERAKTYWNEGO DRAWERA */}
+            <button onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${isMoreMenuOpen || isMoreRouteActive ? 'text-gymRed' : 'text-zinc-500'}`}>
+              <span className="text-lg">☰</span><span>Więcej</span>
             </button>
           </nav>
+
+          {/* REAKTYWNY BOTTOM SHEET DLA UKRYTYCH OPCJI (ATLAS + GANG) */}
+          {isMoreMenuOpen && (
+            <div className="fixed inset-0 z-[998] md:hidden animate-in fade-in duration-150">
+              {/* Tło zamazujące kliknięciem zamykające menu */}
+              <div onClick={() => setIsMoreMenuOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+              
+              {/* Kontener wysuwany */}
+              <div className="absolute bottom-16 left-0 right-0 bg-[#161920] border-t border-zinc-800 rounded-t-2xl p-4 flex flex-col gap-2.5 shadow-2xl animate-in slide-in-from-bottom-6 duration-200">
+                <div className="w-12 h-1 bg-zinc-800 rounded-full mx-auto mb-2" />
+                
+                {/* Opcja A: Atlas */}
+                <button 
+                  onClick={() => { navigate('/exercises'); setIsMoreMenuOpen(false); }} 
+                  className={`flex items-center gap-3.5 p-3.5 rounded-xl border text-left font-bold text-sm transition-all active:scale-[0.99] cursor-pointer ${location.pathname === '/exercises' ? 'border-gymRed/40 bg-gymRed/5 text-gymRed' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}
+                >
+                  <span className="text-xl">📚</span>
+                  <div>
+                    <div>Atlas Ćwiczeń</div>
+                    <div className="text-[11px] text-zinc-500 font-normal mt-0.5">Dodawaj własne i przeglądaj bazę ruchu</div>
+                  </div>
+                </button>
+
+                {/* Opcja B: Społeczność */}
+                <button 
+                  onClick={() => { navigate('/social'); setIsMoreMenuOpen(false); }} 
+                  className={`flex items-center gap-3.5 p-3.5 rounded-xl border text-left font-bold text-sm transition-all active:scale-[0.99] cursor-pointer ${location.pathname === '/social' ? 'border-gymRed/40 bg-gymRed/5 text-gymRed' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}
+                >
+                  <span className="text-xl">👥</span>
+                  <div>
+                    <div>Gang GymPatico</div>
+                    <div className="text-[11px] text-zinc-500 font-normal mt-0.5">Ranking streaków, zaproszenia i społeczność</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -346,13 +396,12 @@ function AppContent() {
         </div>
       )}
 
-      <main className="pb-20 md:pb-0">
+      <main className="pb-24 md:pb-0">
         <Routes>
           <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
-          <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={handleAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} /> : <Navigate to="/login" />} />
+          <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={handleAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} workoutsHistory={workoutsHistory} templates={templates} /> : <Navigate to="/login" />} />
           <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} onDeleteExercise={onDeleteCustomExercise} /> : <Navigate to="/login" />} />
           
-          {/* ZAKTUALIZOWANA ŚCIEŻKA KREATORA TRENINGU — ODCHUDZONA Z PROPSÓW STRUKTURALNYCH */}
           <Route path="/new-workout" element={token ? (
             <NewWorkout
               exercises={exercises}
@@ -366,10 +415,11 @@ function AppContent() {
               localSeriesList={localSeriesList}
               setLocalSeriesList={setLocalSeriesList}
               handleSaveWorkout={onSaveWorkout}
+              showToast={showToast}
             />
           ) : <Navigate to="/login" />} />
           
-          <Route path="/history" element={token ? <History workoutsHistory={workoutsHistory} onDeleteWorkout={onDeleteWorkout} onLoadMoreWorkouts={onLoadMoreWorkouts} hasMoreWorkouts={hasMoreWorkouts} onUpdateWorkout={onUpdateWorkoutMetadata} user={user} token={token} /> : <Navigate to="/login" />} />
+          <Route path="/history" element={token ? <History workoutsHistory={workoutsHistory} onDeleteWorkout={onDeleteWorkout} onLoadMoreWorkouts={onLoadMoreWorkouts} hasMoreWorkouts={hasMoreWorkouts} onUpdateWorkout={onUpdateWorkoutMetadata} user={user} token={token} showToast={showToast} totalWorkoutsCount={totalWorkoutsCount} /> : <Navigate to="/login" />} />
           <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} /> : <Navigate to="/login" />} />
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
@@ -378,7 +428,7 @@ function AppContent() {
 
       {toast.message && (
         <div 
-          className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-xl text-white font-bold text-xs md:text-sm shadow-2xl z-[1000] tracking-wide animate-in fade-in slide-in-from-bottom-4 duration-200
+          className={`fixed bottom-24 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-xl text-white font-bold text-xs md:text-sm shadow-2xl z-[1000] tracking-wide animate-in fade-in slide-in-from-bottom-4 duration-200
             ${toast.type === 'error' ? 'bg-gymRed border border-red-600' : 'bg-emerald-500 border border-emerald-600'}`}
         >
           {toast.message}

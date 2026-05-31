@@ -1,4 +1,6 @@
+// frontend/src/views/History.jsx
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { API_BASE_URL } from '../config/api'
 
 export default function History({ 
@@ -7,24 +9,32 @@ export default function History({
   onLoadMoreWorkouts, 
   hasMoreWorkouts, 
   onUpdateWorkout,
-  user,  // <--- NOWOŚĆ
-  token  // <--- NOWOŚĆ
+  user,  
+  token,
+  showToast,
+  totalWorkoutsCount
 }) {
+  const navigate = useNavigate()
   const [isModalOpen, setIsModalOpen] = useState(false)
+  
+  // NOWY STAN DLA MODALU BLOKADY PREMIUM
+  const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false)
   const [workoutToDelete, setWorkoutToDelete] = useState(null)
   const [isExporting, setIsExporting] = useState(false)
 
-  // STANY DLA OBSŁUGI INLINE EDIT
   const [editingSessionId, setEditingSessionId] = useState(null)
   const [editName, setEditName] = useState('')
   const [editComment, setEditComment] = useState('')
 
   const isPremiumUser = user?.is_premium || user?.role === 'TRAINER';
 
-  // FUNKCJA OBSŁUGI BEZPIECZNEGO POBIERANIA BLOB PLIKU CSV
+  // Dynamiczne wyliczenie pozostałych sesji w oparciu o strukturę API
+  const remaining = Math.max(0, totalWorkoutsCount - workoutsHistory.length);
+
   const handleExportCSV = async () => {
     if (!isPremiumUser) {
-      alert("🔒 Funkcja eksportu do pliku CSV jest dostępna wyłącznie dla posiadaczy konta GymPatico PREMIUM! Przejdź na wyższy pakiet, aby odblokować pełną analitykę arkusza Excel.");
+      // [FIXED] Zastąpiono dawny showToast/alert wywołaniem natywnego modala Premium
+      setIsPremiumModalOpen(true);
       return;
     }
 
@@ -40,22 +50,21 @@ export default function History({
         throw new Error(errData.error || 'Nie udało się pobrać pliku.');
       }
 
-      // Konwertujemy odpowiedź na Blob strumienia danych
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       
-      // Tworzymy ukryty element kotwicy <a>, aby wymusić natywne pobieranie w przeglądarce (również na telefonie)
       const a = document.createElement('a');
       a.href = url;
       a.download = `gympatico_export_${new Date().toISOString().slice(0,10)}.csv`;
       document.body.appendChild(a);
       a.click();
       
-      // Czyszczenie pamięci podręcznej przeglądarki po pobraniu
       window.URL.revokeObjectURL(url);
       a.remove();
     } catch (err) {
-      alert(`❌ Błąd eksportu: ${err.message}`);
+      if (showToast) {
+        showToast(`❌ Błąd eksportu: ${err.message}`, "error")
+      }
     } finally {
       setIsExporting(false);
     }
@@ -99,7 +108,6 @@ export default function History({
   return (
     <section className="bg-gymCard p-4 md:p-6 rounded-xl text-left shadow-lg relative">
       
-      {/* NAGŁÓWEK SEKCJ Z INTEGRACJĄ PRZYCISKU EKSPORTU */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-zinc-800 pb-4 mb-4 gap-4">
         <div>
           <h2 className="text-xl md:text-2xl font-bold tracking-tight">Twoja historia aktywności 📅</h2>
@@ -128,9 +136,7 @@ export default function History({
 
             return (
               <div key={w.id} className="bg-[#2d2d2d] p-4 md:p-5 rounded-lg border-l-4 border-gymRed shadow-md transition-all hover:border-l-6">
-                
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 sm:gap-4">
-                  
                   <div className="flex-1 flex flex-col gap-2">
                     {isEditing ? (
                       <div className="flex flex-col gap-2 max-w-md w-full">
@@ -209,25 +215,47 @@ export default function History({
             )
           })}
 
+          {/* [FIXED] Zmiana napisu i dynamiczne wstrzyknięcie liczby pozostałych sesji */}
           {hasMoreWorkouts && (
             <button onClick={onLoadMoreWorkouts} className="w-full py-3.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white border border-zinc-800 rounded-lg font-bold text-sm transition-all active:scale-[0.99] cursor-pointer mt-2">
-              Załaduj starsze treningi 🔄
+              Załaduj więcej ({remaining} pozostało)
             </button>
           )}
         </div>
       )}
 
-      {/* --- AUTORSKI MODAL POTWIERDZENIA USUWANIA --- */}
+      {/* MODAL USUWANIA TRENINGU */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity"></div>
+          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
           <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
             <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
             <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Usunąć ten trening?</h3>
             <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja jest bezpowrotna. Dane o serii oraz rekordy 1RM znikną z profilu.</p>
             <div className="flex gap-3">
-              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm transition-all active:scale-95 cursor-pointer border border-zinc-800">Anuluj</button>
-              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm transition-all active:scale-95 cursor-pointer shadow-lg shadow-red-950/20">Tak, usuń</button>
+              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
+              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm shadow-lg shadow-red-950/20 cursor-pointer">Tak, usuń</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* [FIXED] BEZBLOKADOWY MODAL BLOKADY EKSPORTU Z PRZYCISKIEM CTA PREMIUM */}
+      {isPremiumModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={() => setIsPremiumModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymPremium text-xl">🔒</div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Funkcja Premium</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Eksport historii treningów do zewnętrznego arkusza kalkulacyjnego CSV jest dostępny wyłącznie dla posiadaczy konta Premium.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setIsPremiumModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
+              <button 
+                onClick={() => { setIsPremiumModalOpen(false); navigate('/social'); }} 
+                className="flex-1 py-2.5 bg-gradient-to-r from-amber-500 to-gymPremium hover:opacity-90 text-gymDark font-black rounded-lg text-sm cursor-pointer shadow-xl shadow-amber-950/20"
+              >
+                Przejdź na Premium
+              </button>
             </div>
           </div>
         </div>

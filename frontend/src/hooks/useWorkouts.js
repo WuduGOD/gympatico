@@ -1,23 +1,22 @@
+// frontend/src/hooks/useWorkouts.js
 import { useState, useCallback } from 'react'
 import { API_BASE_URL } from '../config/api'
 
-export function useWorkouts(token, exercises) {
+export function useWorkouts(token, exercises, showToast) {
   const [workoutsHistory, setWorkoutsHistory] = useState([])
+  const [totalWorkoutsCount, setTotalWorkoutsCount] = useState(0) // <--- NOWY STAN LICZNIKA
   const [hasMoreWorkouts, setHasMoreWorkouts] = useState(true)
 
-  // Stany metadanych treningu — pozostają w hooku żeby App.jsx mógł je czyścić po zapisie
   const [workoutName, setWorkoutName] = useState('')
   const [workoutComment, setWorkoutComment] = useState('')
   const [localSeriesList, setLocalSeriesList] = useState([])
 
-  // Stany formularza wyboru ćwiczenia (używane przez stare widoki, zostawione dla kompatybilności)
   const [currentSelectedExercise, setCurrentSelectedExercise] = useState('')
   const [seriesWeight, setSeriesWeight] = useState('')
   const [seriesReps, setSeriesReps] = useState('')
 
   const [progressionData, setProgressionData] = useState([])
 
-  // 1. Pobieranie historii treningów z paginacją
   const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
     if (!token) return
     const limit = 20
@@ -26,25 +25,25 @@ export function useWorkouts(token, exercises) {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (!res.ok) throw new Error('Błąd historii treningów')
-      const data = await res.json()
+      const data = await res.json() // Oczekujemy { workouts, totalCount }
 
       if (isAppend) {
-        setWorkoutsHistory(prev => [...prev, ...data])
+        setWorkoutsHistory(prev => [...prev, ...data.workouts])
+        setHasMoreWorkouts(currentLength + data.workouts.length < data.totalCount)
       } else {
-        setWorkoutsHistory(data)
+        setWorkoutsHistory(data.workouts)
+        setHasMoreWorkouts(data.workouts.length < data.totalCount)
       }
-      setHasMoreWorkouts(data.length >= limit)
+      setTotalWorkoutsCount(data.totalCount)
     } catch (err) {
       console.error('Błąd pobierania historii:', err.message)
     }
   }, [token])
 
-  // 2. Dodawanie serii — zachowane dla wstecznej kompatybilności
-  // Nowy NewWorkout.jsx zarządza tym lokalnie, ale hook nadal eksportuje tę funkcję
   const addSeriesToLocalList = useCallback((e) => {
     e?.preventDefault()
     if (!seriesWeight || !seriesReps || !currentSelectedExercise) {
-      alert('Wpisz wagę i powtórzenia!')
+      if (showToast) showToast('Wpisz wagę i powtórzenia! ⚠️', 'error')
       return
     }
     const ex = exercises.find(item => item.id === currentSelectedExercise)
@@ -66,14 +65,12 @@ export function useWorkouts(token, exercises) {
     setLocalSeriesList(prev => [...prev, newSeries])
     setSeriesWeight('')
     setSeriesReps('')
-  }, [currentSelectedExercise, seriesWeight, seriesReps, localSeriesList, exercises])
+  }, [currentSelectedExercise, seriesWeight, seriesReps, localSeriesList, exercises, showToast])
 
-  // 3. Usuwanie serii
   const removeSeriesFromLocalList = useCallback((index) => {
     setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
   }, [])
 
-  // 4. Zapisywanie treningu do bazy
   const handleSaveWorkout = useCallback(async () => {
     if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
     if (localSeriesList.length === 0) throw new Error('Nie można zapisać pustego treningu!')
@@ -106,7 +103,6 @@ export function useWorkouts(token, exercises) {
     return data
   }, [token, workoutName, workoutComment, localSeriesList])
 
-  // 5. Usuwanie treningu z historii
   const handleDeleteWorkout = useCallback(async (sessionId) => {
     const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
       method: 'DELETE',
@@ -117,7 +113,6 @@ export function useWorkouts(token, exercises) {
     return data
   }, [token])
 
-  // 6. Progresja 1RM
   const fetchProgression = useCallback(async (exerciseId) => {
     if (!token || !exerciseId) return
     try {
@@ -132,7 +127,6 @@ export function useWorkouts(token, exercises) {
     }
   }, [token])
 
-  // 7. Aktualizacja metadanych treningu (nazwa, komentarz)
   const handleUpdateWorkout = useCallback(async (sessionId, newName, newComment) => {
     if (!token) return
     const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
@@ -153,7 +147,7 @@ export function useWorkouts(token, exercises) {
   }, [token])
 
   return {
-    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, fetchWorkoutsData,
+    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, totalWorkoutsCount, fetchWorkoutsData, // <--- EKSPORT LICZNIKA
     workoutName, setWorkoutName,
     workoutComment, setWorkoutComment,
     currentSelectedExercise, setCurrentSelectedExercise,
