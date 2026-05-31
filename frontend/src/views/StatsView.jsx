@@ -1,109 +1,104 @@
+// frontend/src/views/StatsView.jsx
 import React from 'react'
+import { useNavigate } from 'react-router-dom'
 
 export default function StatsView({ stats, loading }) {
-  
-  // Ekran ładowania odpali się TYLKO przy pierwszym uruchomieniu aplikacji, gdy stan jest jeszcze pusty
-  if (loading && !stats) {
+  const navigate = useNavigate()
+
+  // 1. STAN ŁADOWANIA (Aplikacja pobiera dane z serwera)
+  if (loading) {
     return (
-      <div className="text-center py-20 text-gymRed font-bold animate-pulse text-sm md:text-base">
-        🔄 Kompilowanie raportu treningowego...
+      <div className="max-w-[640px] mx-auto py-12 text-center text-zinc-500 text-sm font-medium animate-pulse flex flex-col items-center gap-2">
+        <span>🔄 Pomiary laboratoryjne w toku...</span>
+        <span className="text-[11px] text-textMuted">Przetwarzamy historię serii i objętość treningową.</span>
       </div>
     )
   }
 
-  // Zabezpieczenie na wypadek, gdyby użytkownik nie miał jeszcze żadnej historii treningowej
-  if (!stats) {
+  // 2. [FIXED] POPRAWIONY STAN "ZERO TRENINGÓW" Z AKTYWNYM CTA DO KREATORA
+  const hasNoData = !stats || !stats.totalWorkouts || stats.totalWorkouts === 0
+
+  if (hasNoData) {
     return (
-      <div className="bg-zinc-900 border border-zinc-800 text-zinc-400 font-medium text-center p-8 rounded-xl text-sm max-w-md mx-auto shadow-xl mt-10">
-        ⚠️ Brak dostępnych danych analitycznych.<br />
-        <span className="text-xs text-zinc-500 font-normal block mt-1">Zapisz swój pierwszy trening w kreatorze, aby wygenerować raport.</span>
+      <div className="max-w-[500px] mx-auto bg-gymCard border border-zinc-800/50 rounded-2xl p-8 text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200 mt-6">
+        <div className="w-16 h-16 bg-zinc-800/50 border border-zinc-700/40 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+          📊
+        </div>
+        <h3 className="text-lg font-black text-white tracking-tight mb-2">
+          Brak dostępnych danych analitycznych ⚠️
+        </h3>
+        <p className="text-textSecondary text-xs leading-relaxed max-w-sm mx-auto">
+          Twoje wykresy objętości, statystyki ulubionych partii oraz tonaż siłowy wygenerują się automatycznie po zalogowaniu sesji roboczej.
+        </p>
+
+        {/* REAKTYWNY PRZYCISK INTERAKCJI */}
+        <button 
+          onClick={() => navigate('/new-workout')}   
+          className="mt-6 px-5 py-2.5 bg-gymRed hover:bg-gymRedHover text-white font-bold rounded-gp-md text-sm cursor-pointer shadow-lg shadow-red-950/40 transition-all active:scale-95 flex items-center justify-center gap-2 mx-auto"
+        >
+          Zaloguj pierwszy trening →
+        </button>
       </div>
     )
   }
 
-  // Przelicznik tonażu na tony dla lepszego UX (używamy pewnych danych, bez znaku zapytania)
-  const tonnageInTons = (stats.totalTonnage / 1000).toFixed(2)
-
+  // 3. PEŁNY WIDOK ANALITYCZNY (Gdy w bazie są już realne treningi)
   return (
-    <div className="space-y-6 text-left">
+    <div className="max-w-[800px] mx-auto flex flex-col gap-6 text-left animate-in fade-in duration-200">
       <div>
-        <h2 className="text-xl md:text-2xl font-black tracking-tight">Analityka i Podsumowanie 📊</h2>
-        <p className="text-zinc-400 text-xs md:text-sm mt-0.5">Twoje globalne osiągnięcia zarejestrowane w GymPatico.</p>
+        <h2 className="text-2xl font-black tracking-tight text-white">Analityka Progresu 📈</h2>
+        <p className="text-xs text-textSecondary mt-0.5">Podsumowanie Twoich osiągów siłowych i statystyk globalnych.</p>
       </div>
 
-      {/* SIATKA KPI CARDS (4 KOLUMNY) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+      {/* SIATKA KPI */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-gymCard border border-zinc-800/40 p-4 rounded-gp-lg shadow-md">
+          <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider block">Wszystkie sesje</span>
+          <span className="text-2xl font-black text-white font-mono mt-1 block">{stats.totalWorkouts}</span>
+        </div>
         
-        {/* KARTA 1: ŁĄCZNIE TRENINGÓW */}
-        <div className="bg-gymCard p-5 rounded-xl border border-zinc-800/40 shadow-lg relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-xl"></div>
-          <span className="text-2xl mb-2 block">🏋️‍♂️</span>
-          <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Ukończone sesje</h3>
-          <div className="text-4xl font-black text-white mt-2 font-mono tracking-tight group-hover:text-blue-400 transition-colors">
-            {stats.totalWorkouts}
-          </div>
-          <p className="text-[11px] text-zinc-500 mt-1">Wszystkie zarejestrowane dni treningowe</p>
+        <div className="bg-gymCard border border-zinc-800/40 p-4 rounded-gp-lg shadow-md">
+          <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider block">Łączny tonaż</span>
+          <span className="text-2xl font-black text-gymRed font-mono mt-1 block">
+            {parseInt(stats.totalVolume || 0).toLocaleString()} <span className="text-xs font-normal text-textSecondary">kg</span>
+          </span>
         </div>
 
-        {/* KARTA 2: ŁĄCZNY TONAŻ */}
-        <div className="bg-gymCard p-5 rounded-xl border border-zinc-800/40 shadow-lg relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl"></div>
-          <span className="text-2xl mb-2 block">🏗️</span>
-          <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Przerzucony ciężar</h3>
-          <div className="text-4xl font-black text-emerald-400 mt-2 font-mono tracking-tight">
-            {tonnageInTons} <span className="text-lg font-normal text-zinc-400">t</span>
-          </div>
-          <p className="text-[11px] text-zinc-500 mt-1">Suma: {stats.totalTonnage.toLocaleString()} kg</p>
+        <div className="bg-gymCard border border-zinc-800/40 p-4 rounded-gp-lg shadow-md">
+          <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider block">Ulubiona partia</span>
+          <span className="text-base font-black text-gymPremium truncate mt-2 block uppercase tracking-tight">
+            {stats.favoriteMuscleGroup || 'Brak danych'}
+          </span>
         </div>
-
-        {/* KARTA 3: ŻYCIOWY STREAK */}
-        <div className="bg-gymCard p-5 rounded-xl border border-zinc-800/40 shadow-lg relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-gymRed/5 rounded-full blur-xl"></div>
-          <span className="text-2xl mb-2 block">🔥</span>
-          <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Życiowy rekord kontynuacji</h3>
-          <div className="text-4xl font-black text-gymRed mt-2 font-mono tracking-tight">
-            {stats.maxStreak} <span className="text-lg font-normal text-zinc-400">dni</span>
-          </div>
-          <p className="text-[11px] text-zinc-500 mt-1">Aktualny streak: {stats.currentStreak} dni</p>
-        </div>
-
-        {/* KARTA 4: ULUBIONE ĆWICZENIE */}
-        <div className="bg-gymCard p-5 rounded-xl border border-zinc-800/40 shadow-lg relative overflow-hidden group sm:col-span-2 lg:col-span-1">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-xl"></div>
-          <span className="text-2xl mb-2 block">👑</span>
-          <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Najwyższa frekwencja</h3>
-          
-          {stats.favorite ? (
-            <>
-              <div className="text-base font-black text-white mt-2 truncate max-w-full" title={stats.favorite.name}>
-                {stats.favorite.name}
-              </div>
-              <div className="mt-1 flex gap-2 items-center">
-                <span className="bg-amber-500/10 text-amber-400 text-[10px] px-2 py-0.5 rounded font-bold uppercase">
-                  {stats.favorite.muscleGroup}
-                </span>
-                <span className="text-zinc-500 text-xs font-mono">
-                  {stats.favorite.count} serii roboczych
-                </span>
-              </div>
-            </>
-          ) : (
-            <div className="text-zinc-500 text-sm italic mt-3">Brak danych sesji</div>
-          )}
-        </div>
-
       </div>
 
-      {/* DODATKOWA SEKCJA: MOTYWATOR INTERFEJSU */}
-      <section className="bg-gradient-to-r from-[#222] to-gymCard p-5 rounded-xl border border-zinc-800/40 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="max-w-xl">
-          <h4 className="text-sm font-bold text-zinc-200">„Konsekwencja pokonuje talent, kiedy talent nie trenuje” 🛠️</h4>
-          <p className="text-zinc-400 text-xs mt-1 leading-relaxed">
-            Każda pojedyncza seria, którą dopisujesz w swoim garażowym labie treningowym, zwiększa globalny tonaż i buduje Twoją sportową sylwetkę. Kontynuuj passę i nie odpuszczaj kolejnych sesji!
-          </p>
-        </div>
-        <div className="text-3xl hidden md:block opacity-60">💪⚡</div>
-      </section>
+      {/* ROZKŁAD TRENINGOWY NA GRUPY MIĘŚNIOWE */}
+      {stats.muscleDistribution && stats.muscleDistribution.length > 0 && (
+        <section className="bg-gymCard border border-zinc-800/40 p-5 rounded-xl shadow-lg">
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Nacisk na grupy mięśniowe (Objętość serii)</h3>
+          <div className="flex flex-col gap-3">
+            {stats.muscleDistribution.map((item, idx) => {
+              const maxCount = Math.max(...stats.muscleDistribution.map(m => m.count || 1))
+              const percentage = Math.round((item.count / maxCount) * 100)
+
+              return (
+                <div key={idx} className="flex flex-col gap-1">
+                  <div className="flex justify-between items-center text-xs font-bold">
+                    <span className="text-textPrimary">{item.muscle_group || 'Inne'}</span>
+                    <span className="text-textSecondary font-mono">{item.count} serii</span>
+                  </div>
+                  <div className="w-full h-2 bg-gymCardSecondary rounded-full overflow-hidden border border-zinc-800/40">
+                    <div 
+                      className="h-full bg-gymRed rounded-full transition-all duration-500" 
+                      style={{ width: `${percentage}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

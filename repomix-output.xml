@@ -1362,246 +1362,6 @@ export function useFriends(token) {
 }
 </file>
 
-<file path="frontend/src/views/History.jsx">
-import React, { useState } from 'react'
-import { API_BASE_URL } from '../config/api'
-
-export default function History({ 
-  workoutsHistory, 
-  onDeleteWorkout, 
-  onLoadMoreWorkouts, 
-  hasMoreWorkouts, 
-  onUpdateWorkout,
-  user,  // <--- NOWOŚĆ
-  token  // <--- NOWOŚĆ
-}) {
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [workoutToDelete, setWorkoutToDelete] = useState(null)
-  const [isExporting, setIsExporting] = useState(false)
-
-  // STANY DLA OBSŁUGI INLINE EDIT
-  const [editingSessionId, setEditingSessionId] = useState(null)
-  const [editName, setEditName] = useState('')
-  const [editComment, setEditComment] = useState('')
-
-  const isPremiumUser = user?.is_premium || user?.role === 'TRAINER';
-
-  // FUNKCJA OBSŁUGI BEZPIECZNEGO POBIERANIA BLOB PLIKU CSV
-  const handleExportCSV = async () => {
-    if (!isPremiumUser) {
-      alert("🔒 Funkcja eksportu do pliku CSV jest dostępna wyłącznie dla posiadaczy konta GymPatico PREMIUM! Przejdź na wyższy pakiet, aby odblokować pełną analitykę arkusza Excel.");
-      return;
-    }
-
-    setIsExporting(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts/export`, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Nie udało się pobrać pliku.');
-      }
-
-      // Konwertujemy odpowiedź na Blob strumienia danych
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      
-      // Tworzymy ukryty element kotwicy <a>, aby wymusić natywne pobieranie w przeglądarce (również na telefonie)
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `gympatico_export_${new Date().toISOString().slice(0,10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      
-      // Czyszczenie pamięci podręcznej przeglądarki po pobraniu
-      window.URL.revokeObjectURL(url);
-      a.remove();
-    } catch (err) {
-      alert(`❌ Błąd eksportu: ${err.message}`);
-    } finally {
-      setIsExporting(false);
-    }
-  }
-
-  const initiateDelete = (id) => {
-    setWorkoutToDelete(id)
-    setIsModalOpen(true)
-  }
-
-  const confirmDelete = () => {
-    if (workoutToDelete) {
-      onDeleteWorkout(workoutToDelete)
-    }
-    closeModal()
-  }
-
-  const closeModal = () => {
-    setIsModalOpen(false)
-    setWorkoutToDelete(null)
-  }
-
-  const startEditing = (w) => {
-    setEditingSessionId(w.id)
-    setEditName(w.name)
-    setEditComment(w.comment || '')
-  }
-
-  const cancelEditing = () => {
-    setEditingSessionId(null)
-    setEditName('')
-    setEditComment('')
-  }
-
-  const saveEditing = (id) => {
-    if (!editName.trim()) return
-    onUpdateWorkout(id, editName.trim(), editComment.trim())
-    setEditingSessionId(null)
-  }
-
-  return (
-    <section className="bg-gymCard p-4 md:p-6 rounded-xl text-left shadow-lg relative">
-      
-      {/* NAGŁÓWEK SEKCJ Z INTEGRACJĄ PRZYCISKU EKSPORTU */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-zinc-800 pb-4 mb-4 gap-4">
-        <div>
-          <h2 className="text-xl md:text-2xl font-bold tracking-tight">Twoja historia aktywności 📅</h2>
-          <p className="text-zinc-400 text-xs mt-0.5">Wszystkie zarejestrowane sesje robocze w laboratoriach GymPatico.</p>
-        </div>
-
-        <button
-          onClick={handleExportCSV}
-          disabled={isExporting || workoutsHistory.length === 0}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all active:scale-95 cursor-pointer shadow-md border ${
-            isPremiumUser
-              ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white'
-              : 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
-          } disabled:opacity-40`}
-        >
-          {isExporting ? '🔄 Generowanie...' : isPremiumUser ? '📊 Eksportuj do CSV' : '🔒 Eksportuj do CSV (PREMIUM)'}
-        </button>
-      </div>
-      
-      {workoutsHistory.length === 0 ? (
-        <p className="text-zinc-500 italic mt-4 text-center py-6">Brak wpisów w historii.</p>
-      ) : (
-        <div className="flex flex-col gap-4 mt-4">
-          {workoutsHistory.map(w => {
-            const isEditing = w.id === editingSessionId
-
-            return (
-              <div key={w.id} className="bg-[#2d2d2d] p-4 md:p-5 rounded-lg border-l-4 border-gymRed shadow-md transition-all hover:border-l-6">
-                
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 sm:gap-4">
-                  
-                  <div className="flex-1 flex flex-col gap-2">
-                    {isEditing ? (
-                      <div className="flex flex-col gap-2 max-w-md w-full">
-                        <input
-                          type="text"
-                          value={editName}
-                          onChange={e => setEditName(e.target.value)}
-                          className="p-2 text-sm font-bold text-white bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
-                          placeholder="Nazwa treningu"
-                          required
-                        />
-                        <input
-                          type="text"
-                          value={editComment}
-                          onChange={e => setEditComment(e.target.value)}
-                          className="p-2 text-xs text-zinc-300 bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
-                          placeholder="Dodaj komentarz (opcjonalnie)..."
-                        />
-                      </div>
-                    ) : (
-                      <>
-                        <h3 className="text-base md:text-lg font-bold text-gymRed leading-tight">{w.name}</h3>
-                        <span className="text-zinc-400 text-xs">{new Date(w.startedAt).toLocaleString()}</span>
-                      </>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    {isEditing ? (
-                      <>
-                        <button onClick={cancelEditing} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white cursor-pointer">Anuluj</button>
-                        <button onClick={() => saveEditing(w.id)} className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-bold transition-all hover:bg-emerald-500 active:scale-95 cursor-pointer shadow-md">Zapisz ✓</button>
-                      </>
-                    ) : (
-                      <>
-                        <button onClick={() => startEditing(w)} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white active:scale-95 cursor-pointer">Edytuj ✏️</button>
-                        <button onClick={() => initiateDelete(w.id)} className="px-3 py-1.5 rounded border border-gymRed text-gymRed text-xs font-bold bg-transparent transition-all hover:bg-gymRed hover:text-white active:scale-95 cursor-pointer">Usuń ✕</button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {!isEditing && w.comment && (
-                  <p className="text-zinc-400 italic mt-3 text-xs md:text-sm bg-zinc-800/40 p-2 rounded border-l border-zinc-700">
-                    "{w.comment}"
-                  </p>
-                )}
-                
-                <div className="overflow-x-auto mt-4 -mx-4 px-4 sm:mx-0 sm:px-0">
-                  <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
-                    <thead>
-                      <tr className="text-left border-b border-zinc-700 text-zinc-400 text-xs font-semibold uppercase tracking-wider">
-                        <th className="pb-2">Ćwiczenie</th>
-                        <th className="pb-2 text-center">Seria</th>
-                        <th className="pb-2 text-center">Obciążenie</th>
-                        <th className="pb-2 text-center">Reps</th>
-                        <th className="pb-2 text-right">Est. 1RM</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-800 text-xs md:text-sm">
-                      {w.series.map(s => (
-                        <tr key={s.id} className="hover:bg-zinc-800/30 transition-colors">
-                          <td className="py-2.5 font-medium pr-2 text-zinc-200">{s.exerciseName}</td>
-                          <td className="py-2.5 text-center text-zinc-400">{s.order}</td>
-                          <td className="py-2.5 text-center text-zinc-200 font-semibold">{s.weight} kg</td>
-                          <td className="py-2.5 text-center text-zinc-400">{s.reps}</td>
-                          <td className="py-2.5 text-right text-gymRed font-bold">
-                            {s.estimatedOneRM ? `${s.estimatedOneRM.toFixed(1)} kg` : '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )
-          })}
-
-          {hasMoreWorkouts && (
-            <button onClick={onLoadMoreWorkouts} className="w-full py-3.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white border border-zinc-800 rounded-lg font-bold text-sm transition-all active:scale-[0.99] cursor-pointer mt-2">
-              Załaduj starsze treningi 🔄
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* --- AUTORSKI MODAL POTWIERDZENIA USUWANIA --- */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity"></div>
-          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
-            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Usunąć ten trening?</h3>
-            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja jest bezpowrotna. Dane o serii oraz rekordy 1RM znikną z profilu.</p>
-            <div className="flex gap-3">
-              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm transition-all active:scale-95 cursor-pointer border border-zinc-800">Anuluj</button>
-              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm transition-all active:scale-95 cursor-pointer shadow-lg shadow-red-950/20">Tak, usuń</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
-  )
-}
-</file>
-
 <file path="frontend/src/views/RestTimer.jsx">
 import { useState, useEffect, useRef, useCallback } from 'react'
 
@@ -2080,177 +1840,6 @@ router.put('/weekly-target', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="frontend/src/hooks/useWorkouts.js">
-import { useState, useCallback } from 'react'
-import { API_BASE_URL } from '../config/api'
-
-export function useWorkouts(token, exercises) {
-  const [workoutsHistory, setWorkoutsHistory] = useState([])
-  const [hasMoreWorkouts, setHasMoreWorkouts] = useState(true)
-
-  // Stany metadanych treningu — pozostają w hooku żeby App.jsx mógł je czyścić po zapisie
-  const [workoutName, setWorkoutName] = useState('')
-  const [workoutComment, setWorkoutComment] = useState('')
-  const [localSeriesList, setLocalSeriesList] = useState([])
-
-  // Stany formularza wyboru ćwiczenia (używane przez stare widoki, zostawione dla kompatybilności)
-  const [currentSelectedExercise, setCurrentSelectedExercise] = useState('')
-  const [seriesWeight, setSeriesWeight] = useState('')
-  const [seriesReps, setSeriesReps] = useState('')
-
-  const [progressionData, setProgressionData] = useState([])
-
-  // 1. Pobieranie historii treningów z paginacją
-  const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
-    if (!token) return
-    const limit = 20
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts?limit=${limit}&offset=${currentLength}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Błąd historii treningów')
-      const data = await res.json()
-
-      if (isAppend) {
-        setWorkoutsHistory(prev => [...prev, ...data])
-      } else {
-        setWorkoutsHistory(data)
-      }
-      setHasMoreWorkouts(data.length >= limit)
-    } catch (err) {
-      console.error('Błąd pobierania historii:', err.message)
-    }
-  }, [token])
-
-  // 2. Dodawanie serii — zachowane dla wstecznej kompatybilności
-  // Nowy NewWorkout.jsx zarządza tym lokalnie, ale hook nadal eksportuje tę funkcję
-  const addSeriesToLocalList = useCallback((e) => {
-    e?.preventDefault()
-    if (!seriesWeight || !seriesReps || !currentSelectedExercise) {
-      alert('Wpisz wagę i powtórzenia!')
-      return
-    }
-    const ex = exercises.find(item => item.id === currentSelectedExercise)
-    if (!ex) return
-
-    const weight = parseFloat(seriesWeight)
-    const reps = parseInt(seriesReps)
-    const estimatedOneRm = reps >= 1 && reps <= 12 ? weight * (1 + reps / 30) : null
-
-    const newSeries = {
-      exerciseId: currentSelectedExercise,
-      exerciseName: ex.name,
-      weight,
-      reps,
-      order: localSeriesList.filter(s => s.exerciseId === currentSelectedExercise).length + 1,
-      estimatedOneRm
-    }
-
-    setLocalSeriesList(prev => [...prev, newSeries])
-    setSeriesWeight('')
-    setSeriesReps('')
-  }, [currentSelectedExercise, seriesWeight, seriesReps, localSeriesList, exercises])
-
-  // 3. Usuwanie serii
-  const removeSeriesFromLocalList = useCallback((index) => {
-    setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
-  }, [])
-
-  // 4. Zapisywanie treningu do bazy
-  const handleSaveWorkout = useCallback(async () => {
-    if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
-    if (localSeriesList.length === 0) throw new Error('Nie można zapisać pustego treningu!')
-
-    const res = await fetch(`${API_BASE_URL}/api/workouts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        name: workoutName,
-        comment: workoutComment,
-        series: localSeriesList.map(s => ({
-          exerciseId: s.exerciseId,
-          weight: s.weight,
-          reps: s.reps,
-          order: s.order,
-          estimatedOneRm: s.estimatedOneRm
-        }))
-      })
-    })
-
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Błąd zapisu treningu')
-
-    setWorkoutName('')
-    setWorkoutComment('')
-    setLocalSeriesList([])
-    return data
-  }, [token, workoutName, workoutComment, localSeriesList])
-
-  // 5. Usuwanie treningu z historii
-  const handleDeleteWorkout = useCallback(async (sessionId) => {
-    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć treningu.')
-    return data
-  }, [token])
-
-  // 6. Progresja 1RM
-  const fetchProgression = useCallback(async (exerciseId) => {
-    if (!token || !exerciseId) return
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts/progression/${exerciseId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Błąd pobierania danych progresji')
-      const data = await res.json()
-      setProgressionData(data)
-    } catch (err) {
-      console.error('Błąd pobierania progresu siłowego:', err.message)
-    }
-  }, [token])
-
-  // 7. Aktualizacja metadanych treningu (nazwa, komentarz)
-  const handleUpdateWorkout = useCallback(async (sessionId, newName, newComment) => {
-    if (!token) return
-    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ name: newName, comment: newComment })
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować treningu.')
-
-    setWorkoutsHistory(prev =>
-      prev.map(w => w.id === sessionId ? { ...w, name: newName, comment: newComment } : w)
-    )
-    return data
-  }, [token])
-
-  return {
-    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, fetchWorkoutsData,
-    workoutName, setWorkoutName,
-    workoutComment, setWorkoutComment,
-    currentSelectedExercise, setCurrentSelectedExercise,
-    seriesWeight, setSeriesWeight,
-    seriesReps, setSeriesReps,
-    localSeriesList, setLocalSeriesList,
-    addSeriesToLocalList, removeSeriesFromLocalList,
-    handleSaveWorkout, handleDeleteWorkout,
-    progressionData, fetchProgression,
-    handleUpdateWorkout
-  }
-}
-</file>
-
 <file path="frontend/src/index.css">
 @import "tailwindcss";
 
@@ -2286,6 +1875,274 @@ export function useWorkouts(token, exercises) {
     -webkit-font-smoothing: antialiased;
     padding-bottom: env(safe-area-inset-bottom, 0); /* Bezpieczna strefa dla iPhone'ów */
   }
+}
+</file>
+
+<file path="frontend/src/views/History.jsx">
+// frontend/src/views/History.jsx
+import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { API_BASE_URL } from '../config/api'
+
+export default function History({ 
+  workoutsHistory, 
+  onDeleteWorkout, 
+  onLoadMoreWorkouts, 
+  hasMoreWorkouts, 
+  onUpdateWorkout,
+  user,  
+  token,
+  showToast,
+  totalWorkoutsCount
+}) {
+  const navigate = useNavigate()
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  
+  // NOWY STAN DLA MODALU BLOKADY PREMIUM
+  const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false)
+  const [workoutToDelete, setWorkoutToDelete] = useState(null)
+  const [isExporting, setIsExporting] = useState(false)
+
+  const [editingSessionId, setEditingSessionId] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [editComment, setEditComment] = useState('')
+
+  const isPremiumUser = user?.is_premium || user?.role === 'TRAINER';
+
+  // Dynamiczne wyliczenie pozostałych sesji w oparciu o strukturę API
+  const remaining = Math.max(0, totalWorkoutsCount - workoutsHistory.length);
+
+  const handleExportCSV = async () => {
+    if (!isPremiumUser) {
+      // [FIXED] Zastąpiono dawny showToast/alert wywołaniem natywnego modala Premium
+      setIsPremiumModalOpen(true);
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts/export`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Nie udało się pobrać pliku.');
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gympatico_export_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (err) {
+      if (showToast) {
+        showToast(`❌ Błąd eksportu: ${err.message}`, "error")
+      }
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  const initiateDelete = (id) => {
+    setWorkoutToDelete(id)
+    setIsModalOpen(true)
+  }
+
+  const confirmDelete = () => {
+    if (workoutToDelete) {
+      onDeleteWorkout(workoutToDelete)
+    }
+    closeModal()
+  }
+
+  const closeModal = () => {
+    setIsModalOpen(false)
+    setWorkoutToDelete(null)
+  }
+
+  const startEditing = (w) => {
+    setEditingSessionId(w.id)
+    setEditName(w.name)
+    setEditComment(w.comment || '')
+  }
+
+  const cancelEditing = () => {
+    setEditingSessionId(null)
+    setEditName('')
+    setEditComment('')
+  }
+
+  const saveEditing = (id) => {
+    if (!editName.trim()) return
+    onUpdateWorkout(id, editName.trim(), editComment.trim())
+    setEditingSessionId(null)
+  }
+
+  return (
+    <section className="bg-gymCard p-4 md:p-6 rounded-xl text-left shadow-lg relative">
+      
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-zinc-800 pb-4 mb-4 gap-4">
+        <div>
+          <h2 className="text-xl md:text-2xl font-bold tracking-tight">Twoja historia aktywności 📅</h2>
+          <p className="text-zinc-400 text-xs mt-0.5">Wszystkie zarejestrowane sesje robocze w laboratoriach GymPatico.</p>
+        </div>
+
+        <button
+          onClick={handleExportCSV}
+          disabled={isExporting || workoutsHistory.length === 0}
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all active:scale-95 cursor-pointer shadow-md border ${
+            isPremiumUser
+              ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white'
+              : 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
+          } disabled:opacity-40`}
+        >
+          {isExporting ? '🔄 Generowanie...' : isPremiumUser ? '📊 Eksportuj do CSV' : '🔒 Eksportuj do CSV (PREMIUM)'}
+        </button>
+      </div>
+      
+      {workoutsHistory.length === 0 ? (
+        <p className="text-zinc-500 italic mt-4 text-center py-6">Brak wpisów w historii.</p>
+      ) : (
+        <div className="flex flex-col gap-4 mt-4">
+          {workoutsHistory.map(w => {
+            const isEditing = w.id === editingSessionId
+
+            return (
+              <div key={w.id} className="bg-[#2d2d2d] p-4 md:p-5 rounded-lg border-l-4 border-gymRed shadow-md transition-all hover:border-l-6">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 sm:gap-4">
+                  <div className="flex-1 flex flex-col gap-2">
+                    {isEditing ? (
+                      <div className="flex flex-col gap-2 max-w-md w-full">
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={e => setEditName(e.target.value)}
+                          className="p-2 text-sm font-bold text-white bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
+                          placeholder="Nazwa treningu"
+                          required
+                        />
+                        <input
+                          type="text"
+                          value={editComment}
+                          onChange={e => setEditComment(e.target.value)}
+                          className="p-2 text-xs text-zinc-300 bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
+                          placeholder="Dodaj komentarz (opcjonalnie)..."
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <h3 className="text-base md:text-lg font-bold text-gymRed leading-tight">{w.name}</h3>
+                        <span className="text-zinc-400 text-xs">{new Date(w.startedAt).toLocaleString()}</span>
+                      </>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    {isEditing ? (
+                      <>
+                        <button onClick={cancelEditing} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white cursor-pointer">Anuluj</button>
+                        <button onClick={() => saveEditing(w.id)} className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-bold transition-all hover:bg-emerald-500 active:scale-95 cursor-pointer shadow-md">Zapisz ✓</button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => startEditing(w)} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white active:scale-95 cursor-pointer">Edytuj ✏️</button>
+                        <button onClick={() => initiateDelete(w.id)} className="px-3 py-1.5 rounded border border-gymRed text-gymRed text-xs font-bold bg-transparent transition-all hover:bg-gymRed hover:text-white active:scale-95 cursor-pointer">Usuń ✕</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {!isEditing && w.comment && (
+                  <p className="text-zinc-400 italic mt-3 text-xs md:text-sm bg-zinc-800/40 p-2 rounded border-l border-zinc-700">
+                    "{w.comment}"
+                  </p>
+                )}
+                
+                <div className="overflow-x-auto mt-4 -mx-4 px-4 sm:mx-0 sm:px-0">
+                  <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
+                    <thead>
+                      <tr className="text-left border-b border-zinc-700 text-zinc-400 text-xs font-semibold uppercase tracking-wider">
+                        <th className="pb-2">Ćwiczenie</th>
+                        <th className="pb-2 text-center">Seria</th>
+                        <th className="pb-2 text-center">Obciążenie</th>
+                        <th className="pb-2 text-center">Reps</th>
+                        <th className="pb-2 text-right">Est. 1RM</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800 text-xs md:text-sm">
+                      {w.series.map(s => (
+                        <tr key={s.id} className="hover:bg-zinc-800/30 transition-colors">
+                          <td className="py-2.5 font-medium pr-2 text-zinc-200">{s.exerciseName}</td>
+                          <td className="py-2.5 text-center text-zinc-400">{s.order}</td>
+                          <td className="py-2.5 text-center text-zinc-200 font-semibold">{s.weight} kg</td>
+                          <td className="py-2.5 text-center text-zinc-400">{s.reps}</td>
+                          <td className="py-2.5 text-right text-gymRed font-bold">
+                            {s.estimatedOneRM ? `${s.estimatedOneRM.toFixed(1)} kg` : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })}
+
+          {/* [FIXED] Zmiana napisu i dynamiczne wstrzyknięcie liczby pozostałych sesji */}
+          {hasMoreWorkouts && (
+            <button onClick={onLoadMoreWorkouts} className="w-full py-3.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white border border-zinc-800 rounded-lg font-bold text-sm transition-all active:scale-[0.99] cursor-pointer mt-2">
+              Załaduj więcej ({remaining} pozostało)
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* MODAL USUWANIA TRENINGU */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Usunąć ten trening?</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja jest bezpowrotna. Dane o serii oraz rekordy 1RM znikną z profilu.</p>
+            <div className="flex gap-3">
+              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
+              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm shadow-lg shadow-red-950/20 cursor-pointer">Tak, usuń</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* [FIXED] BEZBLOKADOWY MODAL BLOKADY EKSPORTU Z PRZYCISKIEM CTA PREMIUM */}
+      {isPremiumModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={() => setIsPremiumModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymPremium text-xl">🔒</div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Funkcja Premium</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Eksport historii treningów do zewnętrznego arkusza kalkulacyjnego CSV jest dostępny wyłącznie dla posiadaczy konta Premium.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setIsPremiumModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
+              <button 
+                onClick={() => { setIsPremiumModalOpen(false); navigate('/social'); }} 
+                className="flex-1 py-2.5 bg-gradient-to-r from-amber-500 to-gymPremium hover:opacity-90 text-gymDark font-black rounded-lg text-sm cursor-pointer shadow-xl shadow-amber-950/20"
+              >
+                Przejdź na Premium
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
 }
 </file>
 
@@ -2437,6 +2294,171 @@ router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => 
 });
 
 module.exports = router;
+</file>
+
+<file path="frontend/src/hooks/useWorkouts.js">
+// frontend/src/hooks/useWorkouts.js
+import { useState, useCallback } from 'react'
+import { API_BASE_URL } from '../config/api'
+
+export function useWorkouts(token, exercises, showToast) {
+  const [workoutsHistory, setWorkoutsHistory] = useState([])
+  const [totalWorkoutsCount, setTotalWorkoutsCount] = useState(0) // <--- NOWY STAN LICZNIKA
+  const [hasMoreWorkouts, setHasMoreWorkouts] = useState(true)
+
+  const [workoutName, setWorkoutName] = useState('')
+  const [workoutComment, setWorkoutComment] = useState('')
+  const [localSeriesList, setLocalSeriesList] = useState([])
+
+  const [currentSelectedExercise, setCurrentSelectedExercise] = useState('')
+  const [seriesWeight, setSeriesWeight] = useState('')
+  const [seriesReps, setSeriesReps] = useState('')
+
+  const [progressionData, setProgressionData] = useState([])
+
+  const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
+    if (!token) return
+    const limit = 20
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts?limit=${limit}&offset=${currentLength}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Błąd historii treningów')
+      const data = await res.json() // Oczekujemy { workouts, totalCount }
+
+      if (isAppend) {
+        setWorkoutsHistory(prev => [...prev, ...data.workouts])
+        setHasMoreWorkouts(currentLength + data.workouts.length < data.totalCount)
+      } else {
+        setWorkoutsHistory(data.workouts)
+        setHasMoreWorkouts(data.workouts.length < data.totalCount)
+      }
+      setTotalWorkoutsCount(data.totalCount)
+    } catch (err) {
+      console.error('Błąd pobierania historii:', err.message)
+    }
+  }, [token])
+
+  const addSeriesToLocalList = useCallback((e) => {
+    e?.preventDefault()
+    if (!seriesWeight || !seriesReps || !currentSelectedExercise) {
+      if (showToast) showToast('Wpisz wagę i powtórzenia! ⚠️', 'error')
+      return
+    }
+    const ex = exercises.find(item => item.id === currentSelectedExercise)
+    if (!ex) return
+
+    const weight = parseFloat(seriesWeight)
+    const reps = parseInt(seriesReps)
+    const estimatedOneRm = reps >= 1 && reps <= 12 ? weight * (1 + reps / 30) : null
+
+    const newSeries = {
+      exerciseId: currentSelectedExercise,
+      exerciseName: ex.name,
+      weight,
+      reps,
+      order: localSeriesList.filter(s => s.exerciseId === currentSelectedExercise).length + 1,
+      estimatedOneRm
+    }
+
+    setLocalSeriesList(prev => [...prev, newSeries])
+    setSeriesWeight('')
+    setSeriesReps('')
+  }, [currentSelectedExercise, seriesWeight, seriesReps, localSeriesList, exercises, showToast])
+
+  const removeSeriesFromLocalList = useCallback((index) => {
+    setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
+  }, [])
+
+  const handleSaveWorkout = useCallback(async () => {
+    if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
+    if (localSeriesList.length === 0) throw new Error('Nie można zapisać pustego treningu!')
+
+    const res = await fetch(`${API_BASE_URL}/api/workouts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        name: workoutName,
+        comment: workoutComment,
+        series: localSeriesList.map(s => ({
+          exerciseId: s.exerciseId,
+          weight: s.weight,
+          reps: s.reps,
+          order: s.order,
+          estimatedOneRm: s.estimatedOneRm
+        }))
+      })
+    })
+
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Błąd zapisu treningu')
+
+    setWorkoutName('')
+    setWorkoutComment('')
+    setLocalSeriesList([])
+    return data
+  }, [token, workoutName, workoutComment, localSeriesList])
+
+  const handleDeleteWorkout = useCallback(async (sessionId) => {
+    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć treningu.')
+    return data
+  }, [token])
+
+  const fetchProgression = useCallback(async (exerciseId) => {
+    if (!token || !exerciseId) return
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts/progression/${exerciseId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Błąd pobierania danych progresji')
+      const data = await res.json()
+      setProgressionData(data)
+    } catch (err) {
+      console.error('Błąd pobierania progresu siłowego:', err.message)
+    }
+  }, [token])
+
+  const handleUpdateWorkout = useCallback(async (sessionId, newName, newComment) => {
+    if (!token) return
+    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ name: newName, comment: newComment })
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować treningu.')
+
+    setWorkoutsHistory(prev =>
+      prev.map(w => w.id === sessionId ? { ...w, name: newName, comment: newComment } : w)
+    )
+    return data
+  }, [token])
+
+  return {
+    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, totalWorkoutsCount, fetchWorkoutsData, // <--- EKSPORT LICZNIKA
+    workoutName, setWorkoutName,
+    workoutComment, setWorkoutComment,
+    currentSelectedExercise, setCurrentSelectedExercise,
+    seriesWeight, setSeriesWeight,
+    seriesReps, setSeriesReps,
+    localSeriesList, setLocalSeriesList,
+    addSeriesToLocalList, removeSeriesFromLocalList,
+    handleSaveWorkout, handleDeleteWorkout,
+    progressionData, fetchProgression,
+    handleUpdateWorkout
+  }
+}
 </file>
 
 <file path="frontend/src/main.jsx">
@@ -3002,24 +3024,26 @@ router.get('/', authenticateToken, async (req, res) => {
   let offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
   try {
-    // Sprawdzamy status uprawnień użytkownika za pomocą ujednoliconego helpera
     const plan = await getUserPlan(userId);
 
     if (!plan) {
       return res.status(404).json({ error: "Użytkownik nie istnieje." });
     }
 
-    // TWARDE UKRYWANIE STARYCH TRENINGÓW DLA PLANU FREE (Absolute Visibility Wall)
+    // Pobieramy całkowitą liczbę treningów użytkownika z bazy
+    const countQuery = 'SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1';
+    const countResult = await pool.query(countQuery, [userId]);
+    let totalCount = parseInt(countResult.rows[0].count, 10);
+
+    // Sztywne cięcie widoczności i licznika dla planu darmowego
     if (!plan.is_premium && plan.role !== 'TRAINER') {
+      totalCount = Math.min(totalCount, 10);
       if (offset >= 10) {
-        // Jeśli offset wychodzi poza 10, dla użytkownika FREE ta historia już "nie istnieje"
-        return res.json([]);
+        return res.json({ workouts: [], totalCount: totalCount });
       }
-      // Dociągamy limit tylko do krawędzi 10 dozwolonych rekordów
       limit = Math.min(limit, 10 - offset);
     }
 
-    // Pobieramy sesje treningowe mieszczące się w bezpiecznym oknie widoczności
     const sessionsQuery = `
       SELECT id, name, comment, started_at as "startedAt"
       FROM workout_sessions
@@ -3031,7 +3055,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const sessions = sessionsResult.rows;
 
     if (sessions.length === 0) {
-      return res.json([]);
+      return res.json({ workouts: [], totalCount: totalCount });
     }
 
     const sessionIds = sessions.map(s => s.id);
@@ -3061,7 +3085,7 @@ router.get('/', authenticateToken, async (req, res) => {
       };
     });
 
-    res.json(historyData);
+    res.json({ workouts: historyData, totalCount: totalCount });
   } catch (error) {
     res.status(500).json({ error: "Błąd serwera podczas pobierania historii", details: error.message });
   }
@@ -3246,24 +3270,22 @@ import WeightChart from '../components/WeightChart'
 
 export default function Dashboard({
   user, weightLogs, weightInput, setWeightInput, handleAddWeight,
-  exercises, onUpdateWeeklyTarget, progressionData, fetchProgression, onDeleteWeight
+  exercises, onUpdateWeeklyTarget, progressionData, fetchProgression, onDeleteWeight,
+  workoutsHistory = [], templates = []
 }) {
   const navigate = useNavigate()
   const [selectedExercise, setSelectedExercise] = useState(exercises[0]?.id || '')
   const [localTarget, setLocalTarget] = useState(user?.weekly_target_workouts || 3)
 
-  // STANY DLA AUTORSKIEGO MODALU USUWANIA WAGI
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [logToDelete, setLogToDelete] = useState(null)
 
-  // [FIXED] Każdorazowa zmiana ćwiczenia w selektorze dzwoni do bazy po świeżą progresję 1RM (Bezpieczne referencje)
   useEffect(() => {
     if (selectedExercise) {
       fetchProgression(selectedExercise)
     }
   }, [selectedExercise, fetchProgression])
 
-  // Automatyczne ustawienie pierwszego ćwiczenia, jeśli baza na starcie była pusta
   useEffect(() => {
     if (exercises.length > 0 && !selectedExercise) {
       setSelectedExercise(exercises[0].id)
@@ -3276,7 +3298,6 @@ export default function Dashboard({
     }
   }, [user?.weekly_target_workouts])
 
-  // HANDLERY MODALU BEZPIECZEŃSTWA
   const initiateDelete = (id) => {
     setLogToDelete(id)
     setIsModalOpen(true)
@@ -3294,34 +3315,28 @@ export default function Dashboard({
     setLogToDelete(null)
   }
 
-  // --- PARAMETRYZACJA GENEROWANIA WYKRESU SVG ---
   const svgWidth = 500
-  const svgHeight = 200
-  const padding = 35
+  const svgHeight = 160
+  const padding = 25
 
   const validData = progressionData.filter(d => !isNaN(d.oneRm))
-
-  // DYNAMICZNE WYKRYWANIE NOWEGO UŻYTKOWNIKA (Brak wagi i brak historii 1RM)
   const isNewUser = weightLogs.length === 0 && validData.length === 0
+  const isPremiumUser = user?.is_premium || user?.role === 'TRAINER';
 
   let pointsPath = ''
   let gradientPath = ''
   let pointsArray = []
 
   if (validData.length > 1) {
-    const minX = 0
     const maxX = validData.length - 1
     const yValues = validData.map(d => d.oneRm)
-    const minY = Math.min(...yValues) * 0.9
-    const maxY = Math.max(...yValues) * 1.1
+    const minY = Math.min(...yValues) * 0.95
+    const maxY = Math.max(...yValues) * 1.05
 
     pointsArray = validData.map((d, index) => {
       const x = padding + (index / maxX) * (svgWidth - padding * 2)
       const denominator = (maxY - minY) === 0 ? 1 : (maxY - minY);
-      const y = (maxY - minY) === 0 
-        ? svgHeight / 2 
-        : svgHeight - padding - ((d.oneRm - minY) / denominator) * (svgHeight - padding * 2);
-
+      const y = svgHeight - padding - ((d.oneRm - minY) / denominator) * (svgHeight - padding * 2);
       return { x, y, oneRm: d.oneRm, date: d.date }
     })
 
@@ -3329,244 +3344,178 @@ export default function Dashboard({
     gradientPath = `${pointsPath} L ${pointsArray[pointsArray.length - 1].x} ${svgHeight - padding} L ${pointsArray[0].x} ${svgHeight - padding} Z`
   }
 
+  // Pomocniczy generator tekstowych pasków postępu dla limitów darmowych
+  const getTextProgressBar = (current, max) => {
+    const totalBars = 10;
+    const filledBars = Math.min(Math.round((current / max) * totalBars), totalBars);
+    const emptyBars = totalBars - filledBars;
+    return `[${'█'.repeat(filledBars)}${'░'.repeat(emptyBars)}]`;
+  }
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left relative">
+    <div className="flex flex-col gap-5 text-left relative">
       
-      {/* ONBOARDING BANNER: Wyświetla się tylko, gdy konto jest całkowicie puste */}
+      {/* SEKCJA 1: HERO STRIP (PEŁNA SZEROKOŚĆ) */}
+      <section className="w-full bg-gymCard border border-zinc-800/40 rounded-gp-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
+          <div>
+            <div className="text-xs text-textSecondary font-medium uppercase tracking-wider">Sportowiec</div>
+            <div className="text-lg font-black text-white tracking-tight">{user?.nick || 'Użytkownik'}</div>
+          </div>
+          <div className="bg-gymCardSecondary border border-zinc-800/80 px-3 py-1.5 rounded-gp-md flex items-center gap-2 shrink-0">
+            <span className="text-sm text-textSecondary font-semibold">Ciągłość:</span>
+            <span className="text-base font-black text-gymRed animate-pulse">🔥 {user?.current_streak || 0} tyg.</span>
+          </div>
+        </div>
+
+        {/* SUWAK CELU BEZ ZBĘDNYCH NAGŁÓWKÓW */}
+        <div className="flex items-center gap-3 w-full sm:w-72 bg-gymCardSecondary/40 border border-zinc-800/30 p-2.5 rounded-gp-md">
+          <span className="text-xs font-bold text-textSecondary shrink-0 uppercase tracking-tight">Cel: {localTarget} dni</span>
+          <input 
+            type="range" min="1" max="7" value={localTarget}
+            onChange={(e) => setLocalTarget(parseInt(e.target.value))}
+            onMouseUp={() => onUpdateWeeklyTarget(localTarget)}
+            onTouchEnd={() => onUpdateWeeklyTarget(localTarget)}
+            className="flex-1 h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-gymRed"
+          />
+        </div>
+      </section>
+
+      {/* PASEK LIMITÓW SYSTEMU FREE (WIDOCZNY TYLKO DLA KONT BEZ PREMIUM) */}
+      {!isPremiumUser && (
+        <div className="w-full bg-gymCardSecondary/70 border border-zinc-800/60 rounded-gp-md px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-textSecondary shadow-inner animate-in fade-in duration-200">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+            <div className="flex items-center gap-2">
+              <span>Treningi: <strong className="text-textPrimary">{workoutsHistory.length}/10</strong></span>
+              <span className="text-gymRed tracking-tighter">{getTextProgressBar(workoutsHistory.length, 10)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span>Szablony: <strong className="text-textPrimary">{templates.length}/3</strong></span>
+              <span className="text-gymPremium tracking-tighter">{getTextProgressBar(templates.length, 3)}</span>
+            </div>
+          </div>
+          <button onClick={() => navigate('/social')} className="text-gymPremium hover:text-amber-400 font-bold transition-colors cursor-pointer text-xs flex items-center gap-0.5">
+            Upgrade ↗
+          </button>
+        </div>
+      )}
+
+      {/* ONBOARDING BANNER (POZOSTAJE BEZ ZMIAN DLA NOWYCH PROFILI) */}
       {isNewUser && (
-        <section className="col-span-1 md:col-span-2 lg:col-span-3 bg-gradient-to-br from-gymCard to-[#1a1a1a] p-5 md:p-6 rounded-2xl border border-gymRed/20 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-gymRed/5 rounded-full blur-3xl pointer-events-none"></div>
+        <section className="w-full bg-gradient-to-br from-gymCard to-[#15181f] p-5 rounded-2xl border border-gymRed/10 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200">
           <div className="max-w-3xl">
-            <span className="inline-block bg-gymRed/10 text-gymRed text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider mb-3">
-              🚀 Witamy w Gangu GymPatico!
-            </span>
-            <h2 className="text-xl md:text-2xl font-black tracking-tight text-white mb-1.5">
-              Twój panel treningowy został zainicjalizowany 🛠️
-            </h2>
-            <p className="text-zinc-400 text-xs md:text-sm leading-relaxed mb-6">
-              Profil jest gotowy do pracy. Aby zdjąć blokadę pustych wykresów analitycznych i rozpocząć budowanie formy, wykonaj te proste kroki wstępne:
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {/* KROK 1 */}
-              <div className="bg-[#2d2d2d]/40 p-4 rounded-xl border border-zinc-800/60 flex flex-col justify-between">
-                <div>
-                  <span className="text-base mb-1 block">⚖️ Krok 1</span>
-                  <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wide">Zapisz wagę startową</h4>
-                  <p className="text-zinc-500 text-[11px] mt-1 leading-normal">Wpisz swoją obecną wagę w formularzu na samym dole tego panelu.</p>
-                </div>
+            <span className="inline-block bg-gymRed/10 text-gymRed text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider mb-2.5">🚀 Witamy w Gangu GymPatico!</span>
+            <h2 className="text-xl font-black tracking-tight text-white mb-1">Twój panel treningowy został zainicjalizowany 🛠️</h2>
+            <p className="text-textSecondary text-xs leading-relaxed mb-4">Profil jest gotowy do pracy. Aby zdjąć blokadę pustych wykresów analitycznych i rozpocząć budowanie formy, wykonaj te proste kroki wstępne:</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-[#2d2d2d]/30 p-3.5 rounded-xl border border-zinc-800/50">
+                <span className="text-xs text-textSecondary font-bold block mb-1">⚖️ KROK 1</span>
+                <h4 className="text-xs font-bold text-zinc-200 uppercase">Wprowadź wagę startową</h4>
               </div>
-
-              {/* KROK 2 */}
-              <div className="bg-[#2d2d2d]/40 p-4 rounded-xl border border-zinc-800/60 flex flex-col justify-between">
-                <div>
-                  <span className="text-base mb-1 block">🎯 Krok 2</span>
-                  <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wide">Ustaw cel tygodniowy</h4>
-                  <p className="text-zinc-500 text-[11px] mt-1 leading-normal">Zadeklaruj suwakiem po lewej stronie, ile razy w tygodniu zamierzasz ćwiczyć.</p>
-                </div>
+              <div className="bg-[#2d2d2d]/30 p-3.5 rounded-xl border border-zinc-800/50">
+                <span className="text-xs text-textSecondary font-bold block mb-1">🎯 KROK 2</span>
+                <h4 className="text-xs font-bold text-zinc-200 uppercase">Ustaw suwakiem cel wyżej</h4>
               </div>
-
-              {/* KROK 3 - INTERAKTYWNY LINK DO KREATORA */}
-              <div 
-                onClick={() => navigate('/new-workout')}
-                className="bg-[#2d2d2d]/60 p-4 rounded-xl border border-gymRed/30 flex flex-col justify-between cursor-pointer hover:border-gymRed hover:bg-[#2d2d2d]/90 transition-all group shadow-md"
-              >
-                <div>
-                  <span className="text-base mb-1 block">🏋️‍♂️ Krok 3</span>
-                  <h4 className="text-xs font-bold text-gymRed uppercase tracking-wide group-hover:text-red-400 transition-colors">
-                    Zaloguj pierwszy trening
-                  </h4>
-                  <p className="text-zinc-300 text-[11px] mt-1 leading-normal font-medium">
-                    Kliknij tutaj, aby otworzyć kreator i zapisać pierwsze serie robocze!
-                  </p>
-                </div>
+              <div onClick={() => navigate('/new-workout')} className="bg-[#2d2d2d]/60 p-3.5 rounded-xl border border-gymRed/30 cursor-pointer hover:border-gymRed transition-all group">
+                <span className="text-xs text-gymRed font-bold block mb-1">🏋️‍♂️ KROK 3</span>
+                <h4 className="text-xs font-bold text-white uppercase group-hover:text-red-400">Uruchom pierwszy plan</h4>
               </div>
             </div>
           </div>
         </section>
       )}
 
-      {/* LEWA KOLUMNA: STATYSTYKI I CEL TYGODNIOWY */}
-      <div className="flex flex-col gap-6 lg:col-span-1">
+      {/* SEKCJA 2: DWIE KOLUMNY (WYKRESY SIDE-BY-SIDE) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full">
         
-        {/* WIDGET 1: PROFIL I AKTUALNY STREAK */}
-        <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gymRed/5 rounded-full blur-2xl transition-all group-hover:bg-gymRed/10"></div>
-          <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400 mb-1">Twój Profil</h2>
-          <div className="text-2xl font-black text-white tracking-tight">{user?.nick || 'Sportowiec'}</div>
-          
-          <div className="mt-4 flex items-center justify-between bg-[#2d2d2d] p-4 rounded-lg border border-zinc-800/60">
-            <span className="text-sm text-zinc-400 font-medium">Aktualny streak tygodniowy:</span>
-            <span className="text-2xl font-black text-gymRed drop-shadow-[0_2px_10px_rgba(255,71,87,0.2)] flex items-center gap-1 animate-pulse">
-              🔥 {user?.current_streak || 0}
-            </span>
-          </div>
-        </section>
-
-        {/* WIDGET 2: CEL TRENINGOWY */}
-        <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-400">Cel tygodniowy 🎯</h2>
-            <span className="text-sm font-black text-gymRed bg-gymRed/10 px-2.5 py-0.5 rounded-full">
-              {localTarget} dni
-            </span>
-          </div>
-          <p className="text-zinc-500 text-xs mb-4">Zadeklaruj ile razy w tygodniu chcesz trenować.</p>
-          
-          <input 
-            type="range" 
-            min="1" 
-            max="7" 
-            value={localTarget}
-            onChange={(e) => setLocalTarget(parseInt(e.target.value))}
-            onMouseUp={() => onUpdateWeeklyTarget(localTarget)}
-            onTouchEnd={() => onUpdateWeeklyTarget(localTarget)}
-            className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-gymRed transition-all"
-          />
-          <div className="flex justify-between text-[10px] font-bold text-zinc-600 mt-1 px-1">
-            <span>1 DZIEŃ</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7 DNI</span>
-          </div>
-        </section>
-      </div>
-
-      {/* ŚRODKOWA KOLUMNA: WYKRES PROGRESJI SIŁOWEJ */}
-      <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 md:col-span-2 flex flex-col justify-between">
-        <div>
-          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-zinc-800 pb-4 mb-4">
-            <div>
-              <h2 className="text-lg font-bold tracking-tight">Krzywa progresu siłowego (Est. 1RM) 📈</h2>
-              <p className="text-zinc-400 text-xs mt-0.5">Wykres generowany automatycznie na podstawie serii roboczych.</p>
-            </div>
-
-            <select
-              value={selectedExercise}
-              onChange={(e) => setSelectedExercise(e.target.value)}
-              className="p-2 rounded-md border border-zinc-800 bg-[#2d2d2d] text-white text-xs md:text-sm outline-none focus:border-gymRed cursor-pointer max-w-[250px]"
-            >
-              <option value="" disabled>Wybierz ćwiczenie...</option>
-              {exercises.map(ex => (
-                <option key={ex.id} value={ex.id} className="bg-[#2d2d2d]">{ex.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="w-full overflow-hidden bg-zinc-900/50 p-2 rounded-xl border border-zinc-800/40 flex justify-center items-center">
-            {validData.length < 2 ? (
-              <div className="text-center py-16 text-zinc-500 italic text-sm flex flex-col items-center gap-1">
-                <span>📊</span> Zaloguj minimum 2 różne dni treningowe dla tego ćwiczenia, aby wygenerować linię progresu.
-              </div>
-            ) : (
-              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto max-h-[220px]">
-                <defs>
-                  <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ff4757" stopOpacity="0.25"/>
-                    <stop offset="100%" stopColor="#ff4757" stopOpacity="0.00"/>
-                  </linearGradient>
-                </defs>
-                
-                <line x1={padding} y1={padding} x2={svgWidth - padding} y2={padding} stroke="#2d2d2d" strokeWidth="1" strokeDasharray="4"/>
-                <line x1={padding} y1={svgHeight - padding} x2={svgWidth - padding} y2={svgHeight - padding} stroke="#333" strokeWidth="1"/>
-
-                <path d={gradientPath} fill="url(#chartGradient)" />
-                <path d={pointsPath} fill="none" stroke="#ff4757" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-
-                {pointsArray.map((p, i) => (
-                  <g key={i} className="group/node cursor-pointer">
-                    <circle cx={p.x} cy={p.y} r="5" fill="#121212" stroke="#ff4757" strokeWidth="2.5" className="transition-all hover:r-7 hover:fill-[#ff4757]"/>
-                    <g className="opacity-0 group-hover/node:opacity-100 transition-opacity duration-150 pointer-events-none">
-                      <rect x={p.x - 40} y={p.y - 32} width="80" height="22" rx="4" fill="#1e1e1e" stroke="#ff4757" strokeWidth="1"/>
-                      <text x={p.x} y={p.y - 17} fill="white" fontSize="10" fontWeight="bold" textAnchor="middle">
-                        {p.oneRm.toFixed(1)} kg
-                      </text>
-                    </g>
-                  </g>
+        {/* LEWA KOLUMNA: WAGA + LOGI */}
+        <section className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-4 flex flex-col justify-between shadow-lg">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-wider text-textSecondary mb-2">Monitor masy ciała (Trendy) ⚖️</div>
+            <WeightChart logs={isPremiumUser ? weightLogs : weightLogs.slice(0, 7)} />
+            
+            {weightLogs.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-1 mt-4 -mx-1 px-1">
+                {weightLogs.slice(0, 5).map(log => (
+                  <div key={log.id} className="bg-gymCardSecondary/60 border border-zinc-800/60 p-2 rounded-gp-md flex flex-col items-center min-w-[80px] relative group">
+                    <button onClick={() => initiateDelete(log.id)} className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-zinc-800 border border-zinc-700 rounded-full flex items-center justify-center text-[8px] text-textSecondary hover:text-gymDanger cursor-pointer transition-colors shadow-md">✕</button>
+                    <span className="text-xs font-bold font-mono text-zinc-100">{parseFloat(log.weight).toFixed(1)}<span className="text-[9px] font-normal text-textSecondary ml-0.5">kg</span></span>
+                    <span className="text-[9px] text-textMuted mt-0.5 font-medium uppercase">{new Date(log.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
+                  </div>
                 ))}
-              </svg>
+              </div>
             )}
           </div>
-        </div>
-      </section>
 
-      {/* DOLNA SEKCJA: WAGA CAŁKOWITA + CHART */}
-      <section className="bg-gymCard p-5 rounded-xl shadow-lg border border-zinc-800/40 md:col-span-2 lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        <div className="md:col-span-1 flex flex-col justify-between border-b md:border-b-0 md:border-r border-zinc-800 pb-4 md:pb-0 md:pr-6">
-          <div>
-            <h2 className="text-base font-bold tracking-tight mb-1">Zarejestruj wagę ciała ⚖️</h2>
-            <p className="text-zinc-500 text-xs mb-4">Wpisuj wagę poranną na czczo, aby monitorować trendy masowe.</p>
-          </div>
-          
-          <div className="flex gap-2 mt-auto">
-            <input 
-              type="number" 
-              step="0.1" 
-              placeholder="np. 84.5" 
-              value={weightInput}
-              onChange={(e) => setWeightInput(e.target.value)}
-              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none focus:border-gymRed font-mono"
-            />
-            <button 
-              onClick={handleAddWeight}
-              className="bg-gymRed hover:bg-red-600 text-white font-bold px-5 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
-            >
-              Dodaj
-            </button>
-          </div>
-        </div>
-
-        <div className="md:col-span-2 flex flex-col justify-between">
-          <div>
-            <h2 className="text-base font-bold tracking-tight mb-1">Ostatnie pomiary wagi</h2>
-            <p className="text-zinc-500 text-xs mb-4">Twoja oś czasu masy ciała wraz z wykresem trendu.</p>
-          </div>
-
-          <div className="mb-4">
-            <WeightChart 
-              logs={user?.is_premium || user?.role === 'TRAINER' ? weightLogs : weightLogs.slice(0, 7)} 
-            />
-          </div>
-
-          {weightLogs.length === 0 ? (
-            <p className="text-zinc-600 italic text-sm py-2">Brak zapisanych pomiarów wagi.</p>
-          ) : (
-            <div className="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2">
-              {weightLogs.slice(0, 7).map(log => (
-                <div 
-                  key={log.id} 
-                  className="bg-[#2d2d2d] border border-zinc-800/70 p-3 rounded-lg flex flex-col items-center min-w-[90px] shadow-sm transition-colors hover:border-zinc-700 relative group"
-                >
-                  <button
-                    onClick={() => initiateDelete(log.id)}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-800 border border-zinc-700 rounded-full flex items-center justify-center text-[9px] font-black text-zinc-400 hover:text-gymRed hover:border-gymRed active:scale-90 transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer shadow-md"
-                    title="Usuń pomiar"
-                  >
-                    ✕
-                  </button>
-
-                  <span className="text-base font-black text-zinc-100 font-mono">
-                    {parseFloat(log.weight).toFixed(1)} <span className="text-[10px] text-zinc-400 font-normal">kg</span>
-                  </span>
-                  <span className="text-[10px] text-zinc-400 font-medium mt-1 uppercase tracking-tighter">
-                    {new Date(log.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-                  </span>
-                </div>
-              ))}
+          <div className="flex gap-2 mt-4 pt-3 border-t border-zinc-800/40 items-center justify-between">
+            <span className="text-[11px] text-textMuted font-medium">Zapisz wagę poranną:</span>
+            <div className="flex gap-2 w-48">
+              <input type="number" step="0.1" placeholder="84.5" value={weightInput} onChange={(e) => setWeightInput(e.target.value)} className="w-full p-2 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-xs text-center font-mono outline-none focus:border-gymRed" />
+              <button onClick={handleAddWeight} className="bg-gymRed hover:bg-gymRedHover text-white text-xs font-bold px-4 py-2 rounded-gp-md cursor-pointer transition-colors shrink-0">Dodaj</button>
             </div>
-          )}
-        </div>
-      </section>
+          </div>
+        </section>
 
-      {/* --- AUTORSKI MODAL POTWIERDZENIA USUWANIA POMIARU WAGI --- */}
+        {/* PRAWA KOLUMNA: 1RM Z SELEKTOREM ĆWICZENIA */}
+        <section className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-4 flex flex-col justify-between shadow-lg">
+          <div>
+            <div className="flex items-center justify-between gap-4 mb-2">
+              <div className="text-xs font-bold uppercase tracking-wider text-textSecondary">Krzywa progresu siły (Est. 1RM) 📈</div>
+              <select
+                value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)}
+                className="p-1.5 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-xs outline-none focus:border-gymRed cursor-pointer max-w-[200px] truncate font-medium"
+              >
+                <option value="" disabled>Wybierz ćwiczenie...</option>
+                {exercises.map(ex => (
+                  <option key={ex.id} value={ex.id} className="bg-gymCardSecondary">{ex.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="w-full overflow-hidden bg-gymCardSecondary/20 rounded-gp-md p-1 border border-zinc-800/30 flex justify-center items-center min-h-[160px]">
+              {validData.length < 2 ? (
+                <div className="text-center text-textMuted text-xs italic py-12">Zaloguj minimum 2 różne dni treningowe dla tego ćwiczenia, aby wygenerować linię progresu.</div>
+              ) : (
+                <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto">
+                  <defs>
+                    <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#ff4757" stopOpacity="0.18"/>
+                      <stop offset="100%" stopColor="#ff4757" stopOpacity="0.00"/>
+                    </linearGradient>
+                  </defs>
+                  <line x1={padding} y1={padding} x2={svgWidth - padding} y2={padding} stroke="#22252c" strokeWidth="1" strokeDasharray="4"/>
+                  <line x1={padding} y1={svgHeight - padding} x2={svgWidth - padding} y2={svgHeight - padding} stroke="#2a2e38" strokeWidth="1"/>
+                  <path d={gradientPath} fill="url(#chartGradient)" />
+                  <path d={pointsPath} fill="none" stroke="#ff4757" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  {pointsArray.map((p, i) => (
+                    <g key={i} className="group/node cursor-pointer">
+                      <circle cx={p.x} cy={p.y} r="4" fill="#0c0e12" stroke="#ff4757" strokeWidth="2" className="transition-all group-hover/node:r-5 group-hover/node:fill-[#ff4757]"/>
+                      <g className="opacity-0 group-hover/node:opacity-100 transition-opacity duration-150 pointer-events-none">
+                        <rect x={p.x - 35} y={p.y - 26} width="70" height="18" rx="3" fill="#1a1f27" stroke="#ff4757" strokeWidth="0.5"/>
+                        <text x={p.x} y={p.y - 14} fill="white" fontSize="9" fontWeight="bold" textAnchor="middle">{p.oneRm.toFixed(1)} kg</text>
+                      </g>
+                    </g>
+                  ))}
+                </svg>
+              )}
+            </div>
+          </div>
+          <div className="text-[10px] text-textMuted font-medium mt-3 text-right">Dane synchronizowane w czasie rzeczywistym (Europe/Warsaw).</div>
+        </section>
+
+      </div>
+
+      {/* MODAL USUWANIA POMIARU WAGI */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity"></div>
+          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
           <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
             <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚖️</div>
             <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Usunąć pomiar wagi?</h3>
             <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja bezpowrotnie wymaże ten dzień z Twojego wykresu progresu masy ciała.</p>
             <div className="flex gap-3">
-              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm transition-all active:scale-95 cursor-pointer border border-zinc-800">Anuluj</button>
-              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm transition-all active:scale-95 cursor-pointer shadow-lg shadow-red-950/20">Tak, usuń</button>
+              <button onClick={closeModal} className="flex-1 py-2.5 bg-gymCardSecondary text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
+              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-gymRedHover text-white font-bold rounded-gp-md text-sm cursor-pointer shadow-lg shadow-red-950/20">Tak, usuń</button>
             </div>
           </div>
         </div>
@@ -3594,6 +3543,7 @@ export default function NewWorkout({
   localSeriesList,
   setLocalSeriesList,
   handleSaveWorkout,
+  showToast
 }) {
   // GŁÓWNY STEROWNIK TRYBU: 'selection' | 'active_workout' | 'template_creator'
   const [activeMode, setActiveMode] = useState(() => {
@@ -3609,7 +3559,7 @@ export default function NewWorkout({
   const [weight, setWeight] = useState('60')
   const [reps, setReps] = useState('8')
 
-  // [FIX] Stany dla aktywnego treningu (zapis jako szablon w locie na siłowni)
+  // Stany dla aktywnego treningu (zapis jako szablon w locie na siłowni)
   const [templateNameInput, setTemplateNameInput] = useState('')
   const [saveAsTemplateCheckbox, setSaveAsTemplateCheckbox] = useState(false)
 
@@ -3617,10 +3567,13 @@ export default function NewWorkout({
   const [customTemplateName, setCustomTemplateName] = useState('')
   const [templateSeriesList, setTemplateSeriesList] = useState([])
 
-  // Widok wewnętrzny atlasu: 'logger' (podgląd) | 'builder' (wyszukiwarka ćwiczeń)
+  // Widok wewnętrzny atlasu: 'logger' (podgląd) | 'builder' (wyszukiwarka w dolnym Bottom Sheet)
   const [view, setView] = useState('logger')
   const [searchQuery, setSearchQuery] = useState('')
   const timerRef = useRef(null)
+
+  // State dla autorskiego modala anulowania treningu
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
 
   // Synchronizacja trybu, jeśli dane zostały wyczyszczone z góry
   useEffect(() => {
@@ -3708,7 +3661,6 @@ export default function NewWorkout({
     if (sessionExercises.includes(exId)) return
     setSessionExercises(prev => [...prev, exId])
     setActiveExId(exId)
-    setView('logger')
     setSearchQuery('')
 
     const list = activeMode === 'template_creator' ? templateSeriesList : localSeriesList
@@ -3730,21 +3682,19 @@ export default function NewWorkout({
     }
   }
 
-  // Aktywacja trybu tworzenia szablonu na sucho
   const handleStartTemplateCreator = () => {
     setCustomTemplateName('')
     setTemplateSeriesList([])
     setSessionExercises([])
     setActiveExId(null)
-    setView('builder')
+    setView('builder') // Od razu otwieramy wyszukiwarkę w drawerze
     setActiveMode('template_creator')
   }
 
-  // Zapis szablonu ułożonego w domu
   const handleSaveCustomTemplate = async () => {
     const name = customTemplateName.trim() || 'Nowy Szablon'
     if (templateSeriesList.length === 0) {
-      alert('Dodaj przynajmniej jedną serię do szablonu!')
+      if (showToast) showToast('Dodaj przynajmniej jedną serię do szablonu! 📋', 'error')
       return
     }
     const ok = await onSaveTemplate(name, templateSeriesList)
@@ -3753,7 +3703,6 @@ export default function NewWorkout({
     }
   }
 
-  // Zapis aktywnego treningu (+ opcjonalny szablon w locie)
   const onSubmitWorkout = async (e) => {
     e?.preventDefault()
     if (saveAsTemplateCheckbox) {
@@ -3770,7 +3719,6 @@ export default function NewWorkout({
     handleSaveWorkout()
   }
 
-  // Wczytanie gotowego szablonu na siłowni
   const handleLoadTemplate = (templateId) => {
     const tpl = templates?.find(t => t.id === templateId)
     if (!tpl) return
@@ -3804,14 +3752,17 @@ export default function NewWorkout({
   }
 
   const handleExitToSelection = () => {
-    if (window.confirm("Czy chcesz opuścić kreator? Niezapisane zmiany zostaną utracone.")) {
-      setWorkoutName('')
-      setWorkoutComment('')
-      setLocalSeriesList([])
-      setSessionExercises([])
-      setActiveExId(null)
-      setActiveMode('selection')
-    }
+    setIsCancelModalOpen(true)
+  }
+
+  const confirmExit = () => {
+    setWorkoutName('')
+    setWorkoutComment('')
+    setLocalSeriesList([])
+    setSessionExercises([])
+    setActiveExId(null)
+    setActiveMode('selection')
+    setIsCancelModalOpen(false)
   }
 
   const activeEx = exercises.find(e => e.id === activeExId)
@@ -3829,7 +3780,7 @@ export default function NewWorkout({
   }, {})
 
   // =========================================================================
-  // STAN 1: EKRAN WYBORU (Home / Couch Mode)
+  // STAN 1: EKRAN WYBORU (Niezmieniony — Couch Mode)
   // =========================================================================
   if (activeMode === 'selection') {
     return (
@@ -3887,7 +3838,7 @@ export default function NewWorkout({
   }
 
   // =========================================================================
-  // STAN 2 & 3: INTERFEJS AKTYWNEGO KREATORA (Trening LUB Tworzenie Planu)
+  // STAN 2 & 3: INTERFEJS AKTYWNEGO KREATORA (Zmiana przycisku na Sticky + Bottom Drawer)
   // =========================================================================
   const isCreatorMode = activeMode === 'template_creator'
 
@@ -3956,6 +3907,7 @@ export default function NewWorkout({
             })}
           </div>
 
+          {/* LOGGER INPUTÓW */}
           {activeEx && (
             <div className="p-4 border-t border-zinc-800 bg-gymCardSecondary/40">
               <div className={`text-xs font-bold uppercase tracking-wider mb-3 ${isCreatorMode ? 'text-gymPremium' : 'text-gymRed'}`}>
@@ -4004,42 +3956,12 @@ export default function NewWorkout({
         </div>
       )}
 
-      <button onClick={() => setView(v => v === 'builder' ? 'logger' : 'builder')} className="w-full py-2.5 border border-dashed border-zinc-800 hover:border-zinc-600 bg-transparent text-textSecondary hover:text-white text-xs font-bold rounded-gp-md cursor-pointer flex items-center justify-center gap-1.5 transition-colors">
-        <i className={`ti ti-${view === 'builder' ? 'x' : 'plus'} text-base`} />
-        {view === 'builder' ? 'Ukryj atlas ćwiczeń' : 'Dodaj ćwiczenie z atlasu kapitałowego'}
-      </button>
-
-      {view === 'builder' && (
-        <div className="bg-gymCard border border-zinc-800/40 rounded-gp-lg overflow-hidden shadow-xl animate-in fade-in duration-150">
-          <div className="p-3 border-b border-zinc-800">
-            <input type="search" placeholder="Wpisz nazwę szukanego ćwiczenia..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} autoFocus className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-sm outline-none focus:border-gymRed" />
-          </div>
-          <div className="max-h-[320px] overflow-y-auto divide-y divide-zinc-800/40">
-            {Object.entries(grouped).map(([group, exList]) => (
-              <div key={group} className="text-left">
-                <div className="px-3 py-1 text-[10px] font-bold text-textSecondary uppercase tracking-wider bg-gymCardSecondary/60 border-b border-zinc-800/30">{group}</div>
-                {exList.map(ex => (
-                  <div key={ex.id} onClick={() => addExerciseToSession(ex.id)} className="px-3 py-2.5 text-sm text-textPrimary hover:bg-zinc-800/30 cursor-pointer flex items-center justify-between transition-colors">
-                    <span>{ex.name}</span>
-                    <i className="ti ti-plus text-textMuted" />
-                  </div>
-                ))}
-              </div>
-            ))}
-            {filteredExercises.length === 0 && (
-              <div className="p-6 text-center text-textSecondary text-xs italic">Brak wyników dla frazy "{searchQuery}"</div>
-            )}
-          </div>
-        </div>
-      )}
-
       {!isCreatorMode && (
         <textarea placeholder="Komentarz lub notatki do dzisiejszego treningu (opcjonalnie)..." value={workoutComment} onChange={e => setWorkoutComment(e.target.value)} className="w-full p-3 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed min-h-[64px] resize-none" />
       )}
 
-      {/* [FIXED] POPRAWNE MAPOWANIE Z DEKLARACJĄ USESTATE */}
       {!isCreatorMode && localSeriesList.length > 0 && (
-        <div className="bg-gymCardSecondary border border-zinc-800/40 rounded-gp-lg p-3 shadow-md">
+        <div className="bg-gymCardSecondary border border-zinc-800/40 rounded-gp-lg p-3 shadow-md mb-4">
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input type="checkbox" checked={saveAsTemplateCheckbox} onChange={e => setSaveAsTemplateCheckbox(e.target.checked)} className="w-4 h-4 rounded border-zinc-800 bg-gymCard accent-gymRed cursor-pointer" />
             <span className="text-xs font-bold text-textPrimary">Zapisz ten bieżący trening jako nowy szablon</span>
@@ -4047,6 +3969,83 @@ export default function NewWorkout({
           {saveAsTemplateCheckbox && (
             <input type="text" placeholder={workoutName.trim() || 'Nazwa nowego szablonu'} value={templateNameInput} onChange={e => setTemplateNameInput(e.target.value)} maxLength={100} className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm font-medium outline-none focus:border-gymRed mt-2 animate-in slide-in-from-top-2 duration-150" />
           )}
+        </div>
+      )}
+
+      {/* 🛠️ [NOWOŚĆ] STICKY ACTION BUTTON — Przyklejony idealnie nad dolną belką PWA */}
+      <div className="sticky bottom-16 left-0 right-0 z-40 bg-gradient-to-t from-gymDark via-gymDark to-transparent pt-6 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+        <button 
+          onClick={() => setView('builder')} 
+          className="w-full py-3.5 bg-gymCardSecondary border border-dashed border-zinc-800 hover:border-zinc-600 text-textSecondary hover:text-white text-xs font-bold rounded-gp-md cursor-pointer flex items-center justify-center gap-1.5 transition-colors shadow-xl"
+        >
+          <span className="text-gymRed font-black text-sm">＋</span> Dodaj ćwiczenie z atlasu
+        </button>
+      </div>
+
+      {/* 🛠️ [NOWOŚĆ] ATLAS JAKO INTEGRALNY BOTTOM SHEET DRAWER (ZAMIAST ROZWIJANIA INLINE) */}
+      {view === 'builder' && (
+        <div className="fixed inset-0 z-[1000] md:z-[998] animate-in fade-in duration-150">
+          {/* Ciemny backdrop blokujący kliknięcia w tle */}
+          <div onClick={() => setView('logger')} className="absolute inset-0 bg-black/75 backdrop-blur-xs" />
+          
+          {/* Wysuwany Drawer */}
+          <div className="absolute bottom-16 left-0 right-0 max-w-[640px] mx-auto bg-[#14161d] border-t border-zinc-800 rounded-t-2xl flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[72vh]">
+            <div className="w-12 h-1 bg-zinc-800 rounded-full mx-auto my-2.5 shrink-0" />
+            
+            <div className="px-4 pb-3 pt-1 border-b border-zinc-800/80 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex-1 relative">
+                <input 
+                  type="search" 
+                  placeholder="Wyszukaj ruch po nazwie..." 
+                  value={searchQuery} 
+                  onChange={e => setSearchQuery(e.target.value)} 
+                  autoFocus 
+                  className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed font-medium" 
+                />
+              </div>
+              <button onClick={() => setView('logger')} className="text-textSecondary hover:text-white font-bold text-xs px-3 py-2 bg-gymCardSecondary border border-zinc-800 rounded-gp-md cursor-pointer shrink-0 transition-colors">
+                Zamknij
+              </button>
+            </div>
+            
+            {/* Lista przewijana wewnątrz sheetu */}
+            <div className="overflow-y-auto divide-y divide-zinc-800/40 flex-1 pb-6">
+              {Object.entries(grouped).map(([group, exList]) => (
+                <div key={group} className="text-left">
+                  <div className="px-4 py-1.5 text-[10px] font-bold text-textSecondary uppercase tracking-wider bg-gymCardSecondary/40 border-b border-zinc-800/20">{group}</div>
+                  {exList.map(ex => (
+                    <div 
+                      key={ex.id} 
+                      onClick={() => addExerciseToSession(ex.id)} 
+                      className="px-4 py-3 text-sm text-textPrimary hover:bg-gymRed/5 cursor-pointer flex items-center justify-between transition-colors border-b border-zinc-900/40"
+                    >
+                      <span className="font-medium">{ex.name}</span>
+                      <span className="text-gymRed font-bold text-base bg-gymRed/5 w-6 h-6 rounded-full flex items-center justify-center border border-red-500/10">＋</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {filteredExercises.length === 0 && (
+                <div className="p-12 text-center text-textSecondary text-xs italic">Nie znaleziono pozycji o nazwie &quot;{searchQuery}&quot;</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REAKTYWNY MODAL POTWIERDZENIA WYJŚCIA */}
+      {isCancelModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={() => setIsCancelModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Anulować konfigurację?</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Wszystkie wprowadzone serie robocze zostaną bezpowrotnie usunięte z tej sesji.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setIsCancelModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Kontynuuj</button>
+              <button onClick={confirmExit} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm cursor-pointer shadow-lg shadow-red-950/20">Tak, anuluj</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -4061,6 +4060,7 @@ function RestTimerWrapper({ timerRef }) {
 </file>
 
 <file path="frontend/src/App.jsx">
+// frontend/src/App.jsx
 import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 
@@ -4088,6 +4088,9 @@ function AppContent() {
   const [stats, setStats] = useState(null)
   const [loadingData, setLoadingData] = useState(false)
 
+  // Stan obsługi dolnego menu "Więcej..." (Bottom Sheet Drawer)
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
+
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -4098,7 +4101,6 @@ function AppContent() {
     setTimeout(() => setToast({ message: '', type: 'success' }), 3500)
   }
 
-  // Integracja customowych hooków domenowych
   const { weightLogs, weightInput, setWeightInput, handleAddWeight, fetchWeightLogs, handleDeleteWeight } = useWeightLogs(token, showToast)
   const { 
     friends, pendingRequests, friendNickInput, setFriendNickInput, 
@@ -4112,11 +4114,11 @@ function AppContent() {
     currentSelectedExercise, setCurrentSelectedExercise, seriesWeight, setSeriesWeight, 
     seriesReps, setSeriesReps, localSeriesList, setLocalSeriesList, addSeriesToLocalList, 
     handleSaveWorkout, fetchWorkoutsData, removeSeriesFromLocalList, progressionData, 
-    fetchProgression, handleDeleteWorkout, hasMoreWorkouts, handleUpdateWorkout
-  } = useWorkouts(token, exercises)
+    fetchProgression, handleDeleteWorkout, hasMoreWorkouts, handleUpdateWorkout,
+    totalWorkoutsCount // <--- [FIXED] DODANO DO DESTRUKCJI Z HOOKA
+  } = useWorkouts(token, exercises, showToast)
 
   const handleLoginSuccess = (userToken, userData) => {
-    // Normalizacja obiektu usera podczas logowania, by zawierał is_premium zgodne z resztą aplikacji
     const normalizedLoginUser = {
       ...userData,
       is_premium: userData.isPremium || userData.is_premium || false
@@ -4135,6 +4137,7 @@ function AppContent() {
     setToken(null);
     setUser(null);
     setLocalSeriesList([]); 
+    setIsMoreMenuOpen(false)
     navigate('/login');
   }, [navigate, setLocalSeriesList]);
 
@@ -4148,7 +4151,6 @@ function AppContent() {
     setStats(data);
   }, [token]);
 
-  // Globalny, zabezpieczony mechanizm synchronizacji stanów z bazą
   const fetchAllData = useCallback(async () => {
     if (!token) return;
     setLoadingData(true);
@@ -4176,10 +4178,9 @@ function AppContent() {
       })
         .then(res => { if (!res.ok) throw new Error('Błąd profilu'); return res.json(); })
         .then(data => {
-          // FIX SECURE CACHE: Normalizujemy klucze i bezwzględnie aktualizujemy localStorage świeżymi danymi z Supabase
           const normalizedUser = {
             ...data,
-            isPremium: data.is_premium, // zachowanie kompatybilności wstecznej dla starszych odwołań camelCase
+            isPremium: data.is_premium, 
           };
           setUser(normalizedUser);
           localStorage.setItem('gp_user', JSON.stringify(normalizedUser));
@@ -4200,13 +4201,12 @@ function AppContent() {
     } finally {
       setLoadingData(false);
     }
-  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates]);
+  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates, fetchProgression]);
 
   useEffect(() => {
     fetchAllData()
   }, [token, fetchAllData])
 
-  // Automatyczne wylogowanie po wygaśnięciu tokenu
   useEffect(() => {
     const handleSessionExpired = () => {
       handleLogout(); 
@@ -4219,7 +4219,6 @@ function AppContent() {
     };
   }, [handleLogout]);
 
-  // Handlery operacji comfort-flow
   const onUpdateWeeklyTarget = async (newTarget) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/auth/weekly-target`, {
@@ -4230,7 +4229,6 @@ function AppContent() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować celu.');
       
-      // FIX SECURE CACHE: Aktualizujemy localStorage również przy ręcznej zmianie parametrów celu
       setUser(prev => {
         const updatedUser = { ...prev, weekly_target_workouts: data.weekly_target_workouts };
         localStorage.setItem('gp_user', JSON.stringify(updatedUser));
@@ -4309,7 +4307,7 @@ function AppContent() {
 
   const onAddCustomExercise = async (name, muscleGroup) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/exercises`, {
+      const res = await fetch(`${API_BASE_URL}/危险/exercises`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -4352,12 +4350,14 @@ function AppContent() {
     }
   };
 
+  const isMoreRouteActive = location.pathname === '/exercises' || location.pathname === '/social'
+
   return (
     <div className="p-4 md:p-6 font-sans bg-gymDark text-white min-h-screen relative">
 
       {token && (
         <>
-          {/* GÓRNY HEADER GLOBALNY */}
+          {/* HEADER DESKTOP */}
           <header className="flex justify-between items-center border-b border-zinc-800/80 pb-4 mb-6 md:mb-8 gap-4">
             <div className="text-left">
               <h1 className="text-xl md:text-2xl font-black text-gymRed tracking-tight">🏋️‍♂️ GymPatico</h1>
@@ -4379,27 +4379,50 @@ function AppContent() {
             </button>
           </header>
 
-          {/* DOLNA BELKA NAWIGACYJNA MOBILNA */}
-          <nav className="grid grid-cols-6 md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#1e1e1e] border-t border-zinc-800/80 shadow-2xl z-[999] py-1 px-0.5">
-            <button onClick={() => navigate('/')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/' ? 'text-gymRed' : 'text-zinc-500'}`}>
+          {/* DOLNA BELKA MOBILNA (5 POZYCJI) */}
+          <nav className="grid grid-cols-5 md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#181a20] border-t border-zinc-800/60 shadow-2xl z-[999] py-1 px-1 items-center">
+            <button onClick={() => { navigate('/'); setIsMoreMenuOpen(false); }} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${location.pathname === '/' ? 'text-gymRed' : 'text-zinc-500'}`}>
               <span className="text-lg">📊</span><span>Panel</span>
             </button>
-            <button onClick={() => navigate('/stats')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/stats' ? 'text-gymRed' : 'text-zinc-500'}`}>
+            <button onClick={() => { navigate('/stats'); setIsMoreMenuOpen(false); }} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${location.pathname === '/stats' ? 'text-gymRed' : 'text-zinc-500'}`}>
               <span className="text-lg">📈</span><span>Stats</span>
             </button>
-            <button onClick={() => navigate('/exercises')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/exercises' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-lg">📚</span><span>Atlas</span>
+            <div className="flex justify-center relative -top-3">
+              <button onClick={() => { navigate('/new-workout'); setIsMoreMenuOpen(false); }} className={`w-13 h-13 rounded-full flex items-center justify-center cursor-pointer shadow-xl shadow-red-950/50 border border-red-500/20 active:scale-90 transition-transform ${location.pathname === '/new-workout' ? 'bg-red-600 text-white' : 'bg-gymRed text-white'}`}>
+                <span className="text-xl font-bold">＋</span>
+              </button>
+            </div>
+            <button onClick={() => { navigate('/history'); setIsMoreMenuOpen(false); }} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${location.pathname === '/history' ? 'text-gymRed' : 'text-zinc-500'}`}>
+              <span className="text-lg">📅</span><span>Historia</span>
             </button>
-            <button onClick={() => navigate('/new-workout')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/new-workout' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-lg">➕</span><span>Trening</span>
-            </button>
-            <button onClick={() => navigate('/history')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/history' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-xl">📅</span><span>Historia</span>
-            </button>
-            <button onClick={() => navigate('/social')} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[9px] font-bold gap-0.5 transition-colors ${location.pathname === '/social' ? 'text-gymRed' : 'text-zinc-500'}`}>
-              <span className="text-xl">👥</span><span>Gang</span>
+            <button onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${isMoreMenuOpen || isMoreRouteActive ? 'text-gymRed' : 'text-zinc-500'}`}>
+              <span className="text-lg">☰</span><span>Więcej</span>
             </button>
           </nav>
+
+          {/* BOTTOM SHEET DRAWER */}
+          {isMoreMenuOpen && (
+            <div className="fixed inset-0 z-[998] md:hidden animate-in fade-in duration-150">
+              <div onClick={() => setIsMoreMenuOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+              <div className="absolute bottom-16 left-0 right-0 bg-[#161920] border-t border-zinc-800 rounded-t-2xl p-4 flex flex-col gap-2.5 shadow-2xl animate-in slide-in-from-bottom-6 duration-200">
+                <div className="w-12 h-1 bg-zinc-800 rounded-full mx-auto mb-2" />
+                <button onClick={() => { navigate('/exercises'); setIsMoreMenuOpen(false); }} className={`flex items-center gap-3.5 p-3.5 rounded-xl border text-left font-bold text-sm transition-all cursor-pointer ${location.pathname === '/exercises' ? 'border-gymRed/40 bg-gymRed/5 text-gymRed' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}>
+                  <span className="text-xl">📚</span>
+                  <div>
+                    <div>Atlas Ćwiczeń</div>
+                    <div className="text-[11px] text-zinc-500 font-normal mt-0.5">Dodawaj własne i przeglądaj bazę ruchu</div>
+                  </div>
+                </button>
+                <button onClick={() => { navigate('/social'); setIsMoreMenuOpen(false); }} className={`flex items-center gap-3.5 p-3.5 rounded-xl border text-left font-bold text-sm transition-all cursor-pointer ${location.pathname === '/social' ? 'border-gymRed/40 bg-gymRed/5 text-gymRed' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}>
+                  <span className="text-xl">👥</span>
+                  <div>
+                    <div>Gang GymPatico</div>
+                    <div className="text-[11px] text-zinc-500 font-normal mt-0.5">Ranking streaków, zaproszenia i społeczność</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -4409,13 +4432,12 @@ function AppContent() {
         </div>
       )}
 
-      <main className="pb-20 md:pb-0">
+      <main className="pb-24 md:pb-0">
         <Routes>
           <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
-          <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={handleAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} /> : <Navigate to="/login" />} />
+          <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={handleAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} workoutsHistory={workoutsHistory} templates={templates} /> : <Navigate to="/login" />} />
           <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} onDeleteExercise={onDeleteCustomExercise} /> : <Navigate to="/login" />} />
           
-          {/* ZAKTUALIZOWANA ŚCIEŻKA KREATORA TRENINGU — ODCHUDZONA Z PROPSÓW STRUKTURALNYCH */}
           <Route path="/new-workout" element={token ? (
             <NewWorkout
               exercises={exercises}
@@ -4429,10 +4451,24 @@ function AppContent() {
               localSeriesList={localSeriesList}
               setLocalSeriesList={setLocalSeriesList}
               handleSaveWorkout={onSaveWorkout}
+              showToast={showToast}
             />
           ) : <Navigate to="/login" />} />
           
-          <Route path="/history" element={token ? <History workoutsHistory={workoutsHistory} onDeleteWorkout={onDeleteWorkout} onLoadMoreWorkouts={onLoadMoreWorkouts} hasMoreWorkouts={hasMoreWorkouts} onUpdateWorkout={onUpdateWorkoutMetadata} user={user} token={token} /> : <Navigate to="/login" />} />
+          <Route path="/history" element={token ? (
+            <History 
+              workoutsHistory={workoutsHistory} 
+              onDeleteWorkout={onDeleteWorkout} 
+              onLoadMoreWorkouts={onLoadMoreWorkouts} 
+              hasMoreWorkouts={hasMoreWorkouts} 
+              onUpdateWorkout={onUpdateWorkoutMetadata} 
+              user={user} 
+              token={token} 
+              showToast={showToast} 
+              totalWorkoutsCount={totalWorkoutsCount} 
+            />
+          ) : <Navigate to="/login" />} />
+          
           <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} /> : <Navigate to="/login" />} />
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
@@ -4441,7 +4477,7 @@ function AppContent() {
 
       {toast.message && (
         <div 
-          className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-xl text-white font-bold text-xs md:text-sm shadow-2xl z-[1000] tracking-wide animate-in fade-in slide-in-from-bottom-4 duration-200
+          className={`fixed bottom-24 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-xl text-white font-bold text-xs md:text-sm shadow-2xl z-[1000] tracking-wide animate-in fade-in slide-in-from-bottom-4 duration-200
             ${toast.type === 'error' ? 'bg-gymRed border border-red-600' : 'bg-emerald-500 border border-emerald-600'}`}
         >
           {toast.message}

@@ -245,7 +245,7 @@ function AppContent() {
 
   const onAddCustomExercise = async (name, muscleGroup) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/危险/exercises`, {
+      const res = await fetch(`${API_BASE_URL}/api/exercises`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

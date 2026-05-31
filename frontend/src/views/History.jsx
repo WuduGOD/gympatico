@@ -16,8 +16,6 @@ export default function History({
 }) {
   const navigate = useNavigate()
   const [isModalOpen, setIsModalOpen] = useState(false)
-  
-  // NOWY STAN DLA MODALU BLOKADY PREMIUM
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false)
   const [workoutToDelete, setWorkoutToDelete] = useState(null)
   const [isExporting, setIsExporting] = useState(false)
@@ -27,13 +25,10 @@ export default function History({
   const [editComment, setEditComment] = useState('')
 
   const isPremiumUser = user?.is_premium || user?.role === 'TRAINER';
-
-  // Dynamiczne wyliczenie pozostałych sesji w oparciu o strukturę API
   const remaining = Math.max(0, totalWorkoutsCount - workoutsHistory.length);
 
   const handleExportCSV = async () => {
     if (!isPremiumUser) {
-      // [FIXED] Zastąpiono dawny showToast/alert wywołaniem natywnego modala Premium
       setIsPremiumModalOpen(true);
       return;
     }
@@ -106,7 +101,7 @@ export default function History({
   }
 
   return (
-    <section className="bg-gymCard p-4 md:p-6 rounded-xl text-left shadow-lg relative">
+    <section className="bg-gymCard border border-zinc-800/40 p-4 md:p-6 rounded-xl text-left shadow-lg relative">
       
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-zinc-800 pb-4 mb-4 gap-4">
         <div>
@@ -181,11 +176,12 @@ export default function History({
 
                 {!isEditing && w.comment && (
                   <p className="text-zinc-400 italic mt-3 text-xs md:text-sm bg-zinc-800/40 p-2 rounded border-l border-zinc-700">
-                    "{w.comment}"
+                    &quot;{w.comment}&quot;
                   </p>
                 )}
                 
-                <div className="overflow-x-auto mt-4 -mx-4 px-4 sm:mx-0 sm:px-0">
+                {/* 🛠️ [NOWOŚĆ] DODANO MASK-IMAGE GRADIENT DLA COMFORT SCROLLA NA MOBILE */}
+                <div className="overflow-x-auto mt-4 -mx-4 px-4 sm:mx-0 sm:px-0 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)] sm:[mask-image:none]">
                   <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
                     <thead>
                       <tr className="text-left border-b border-zinc-700 text-zinc-400 text-xs font-semibold uppercase tracking-wider">
@@ -215,7 +211,6 @@ export default function History({
             )
           })}
 
-          {/* [FIXED] Zmiana napisu i dynamiczne wstrzyknięcie liczby pozostałych sesji */}
           {hasMoreWorkouts && (
             <button onClick={onLoadMoreWorkouts} className="w-full py-3.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white border border-zinc-800 rounded-lg font-bold text-sm transition-all active:scale-[0.99] cursor-pointer mt-2">
               Załaduj więcej ({remaining} pozostało)
@@ -234,13 +229,13 @@ export default function History({
             <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja jest bezpowrotna. Dane o serii oraz rekordy 1RM znikną z profilu.</p>
             <div className="flex gap-3">
               <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
-              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm shadow-lg shadow-red-950/20 cursor-pointer">Tak, usuń</button>
+              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm shadow-lg shadow-red-950/20 cursor-pointer">Tak, usunąć</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* [FIXED] BEZBLOKADOWY MODAL BLOKADY EKSPORTU Z PRZYCISKIEM CTA PREMIUM */}
+      {/* MODAL BLOKADY EKSPORTU PREMIUM */}
       {isPremiumModalOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div onClick={() => setIsPremiumModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>

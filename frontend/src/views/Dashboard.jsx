@@ -50,6 +50,23 @@ export default function Dashboard({
     setLogToDelete(null)
   }
 
+  // --- POPRAWKA 2: DYNAMICZNE OBLICZANIE TRENDU WAGI (DELTA-BADGE) ---
+  const getWeightTrend = () => {
+    if (!weightLogs || weightLogs.length < 2) return null
+    const latest = parseFloat(weightLogs[0].weight)
+    const previous = parseFloat(weightLogs[1].weight)
+    const diff = latest - previous
+    return {
+      diff: Math.abs(diff).toFixed(1),
+      isUp: diff > 0,
+      isDown: diff < 0
+    }
+  }
+  const trend = getWeightTrend()
+
+  // --- POPRAWKA 3: DEFENSYWNA WALIDACJA INPUTU WAGI ---
+  const isWeightInputInvalid = !weightInput || !weightInput.trim() || isNaN(parseFloat(weightInput)) || parseFloat(weightInput) <= 0
+
   const svgWidth = 500
   const svgHeight = 160
   const padding = 25
@@ -79,7 +96,6 @@ export default function Dashboard({
     gradientPath = `${pointsPath} L ${pointsArray[pointsArray.length - 1].x} ${svgHeight - padding} L ${pointsArray[0].x} ${svgHeight - padding} Z`
   }
 
-  // Pomocniczy generator tekstowych pasków postępu dla limitów darmowych
   const getTextProgressBar = (current, max) => {
     const totalBars = 10;
     const filledBars = Math.min(Math.round((current / max) * totalBars), totalBars);
@@ -90,7 +106,7 @@ export default function Dashboard({
   return (
     <div className="flex flex-col gap-5 text-left relative">
       
-      {/* SEKCJA 1: HERO STRIP (PEŁNA SZEROKOŚĆ) */}
+      {/* SEKCJA 1: HERO STRIP */}
       <section className="w-full bg-gymCard border border-zinc-800/40 rounded-gp-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
         <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
           <div>
@@ -103,20 +119,26 @@ export default function Dashboard({
           </div>
         </div>
 
-        {/* SUWAK CELU BEZ ZBĘDNYCH NAGŁÓWKÓW */}
+        {/* --- POPRAWKA 1: SUWAK Z ETYKIETAMI WARTOŚCI SKRAJNYCH --- */}
         <div className="flex items-center gap-3 w-full sm:w-72 bg-gymCardSecondary/40 border border-zinc-800/30 p-2.5 rounded-gp-md">
           <span className="text-xs font-bold text-textSecondary shrink-0 uppercase tracking-tight">Cel: {localTarget} dni</span>
-          <input 
-            type="range" min="1" max="7" value={localTarget}
-            onChange={(e) => setLocalTarget(parseInt(e.target.value))}
-            onMouseUp={() => onUpdateWeeklyTarget(localTarget)}
-            onTouchEnd={() => onUpdateWeeklyTarget(localTarget)}
-            className="flex-1 h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-gymRed"
-          />
+          <div className="flex-1 flex flex-col justify-center">
+            <input 
+              type="range" min="1" max="7" value={localTarget}
+              onChange={(e) => setLocalTarget(parseInt(e.target.value))}
+              onMouseUp={() => onUpdateWeeklyTarget(localTarget)}
+              onTouchEnd={() => onUpdateWeeklyTarget(localTarget)}
+              className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-gymRed"
+            />
+            <div className="flex justify-between text-[9px] text-textMuted px-0.5 mt-1 select-none">
+              <span>1 dzień</span>
+              <span>7 dni</span>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* PASEK LIMITÓW SYSTEMU FREE (WIDOCZNY TYLKO DLA KONT BEZ PREMIUM) */}
+      {/* PASEK LIMITÓW SYSTEMU FREE */}
       {!isPremiumUser && (
         <div className="w-full bg-gymCardSecondary/70 border border-zinc-800/60 rounded-gp-md px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-textSecondary shadow-inner animate-in fade-in duration-200">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
@@ -129,13 +151,13 @@ export default function Dashboard({
               <span className="text-gymPremium tracking-tighter">{getTextProgressBar(templates.length, 3)}</span>
             </div>
           </div>
-          <button onClick={() => navigate('/social')} className="text-gymPremium hover:text-amber-400 font-bold transition-colors cursor-pointer text-xs flex items-center gap-0.5">
+          <button onClick={() => navigate('/history')} className="text-gymPremium hover:text-amber-400 font-bold transition-colors cursor-pointer text-xs flex items-center gap-0.5">
             Upgrade ↗
           </button>
         </div>
       )}
 
-      {/* ONBOARDING BANNER (POZOSTAJE BEZ ZMIAN DLA NOWYCH PROFILI) */}
+      {/* ONBOARDING BANNER */}
       {isNewUser && (
         <section className="w-full bg-gradient-to-br from-gymCard to-[#15181f] p-5 rounded-2xl border border-gymRed/10 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200">
           <div className="max-w-3xl">
@@ -163,10 +185,20 @@ export default function Dashboard({
       {/* SEKCJA 2: DWIE KOLUMNY (WYKRESY SIDE-BY-SIDE) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full">
         
-        {/* LEWA KOLUMNA: WAGA + LOGI */}
+        {/* LEWA KOLUMNA: WAGA + TRENDY */}
         <section className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-4 flex flex-col justify-between shadow-lg">
           <div>
-            <div className="text-xs font-bold uppercase tracking-wider text-textSecondary mb-2">Monitor masy ciała (Trendy) ⚖️</div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-bold uppercase tracking-wider text-textSecondary">Monitor masy ciała (Trendy) ⚖️</div>
+              
+              {/* --- INTEGRACJA POPRAWKI 2: DELTA TREND BADGE --- */}
+              {trend && (
+                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${trend.isUp ? 'bg-gymWarning/10 text-gymWarning' : trend.isDown ? 'bg-gymSuccess/10 text-gymSuccess' : 'bg-zinc-800 text-textSecondary'}`}>
+                  {trend.isUp ? `▲ +${trend.diff}` : trend.isDown ? `▼ -${trend.diff}` : '• Bez zmian'} kg
+                </span>
+              )}
+            </div>
+            
             <WeightChart logs={isPremiumUser ? weightLogs : weightLogs.slice(0, 7)} />
             
             {weightLogs.length > 0 && (
@@ -186,16 +218,24 @@ export default function Dashboard({
             <span className="text-[11px] text-textMuted font-medium">Zapisz wagę poranną:</span>
             <div className="flex gap-2 w-48">
               <input type="number" step="0.1" placeholder="84.5" value={weightInput} onChange={(e) => setWeightInput(e.target.value)} className="w-full p-2 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-xs text-center font-mono outline-none focus:border-gymRed" />
-              <button onClick={handleAddWeight} className="bg-gymRed hover:bg-gymRedHover text-white text-xs font-bold px-4 py-2 rounded-gp-md cursor-pointer transition-colors shrink-0">Dodaj</button>
+              
+              {/* --- INTEGRACJA POPRAWKI 3: DISABLED GUARD DLA INPUTU --- */}
+              <button 
+                onClick={handleAddWeight} 
+                disabled={isWeightInputInvalid}
+                className="bg-gymRed hover:bg-gymRedHover disabled:opacity-20 disabled:hover:bg-gymRed text-white text-xs font-bold px-4 py-2 rounded-gp-md cursor-pointer disabled:cursor-not-allowed transition-colors shrink-0"
+              >
+                Dodaj
+              </button>
             </div>
           </div>
         </section>
 
-        {/* PRAWA KOLUMNA: 1RM Z SELEKTOREM ĆWICZENIA */}
+        {/* PRAWA KOLUMNA: 1RM PROGRESJA */}
         <section className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-4 flex flex-col justify-between shadow-lg">
           <div>
             <div className="flex items-center justify-between gap-4 mb-2">
-              <div className="text-xs font-bold uppercase tracking-wider text-textSecondary">Krzywa progresu siły (Est. 1RM) 📈</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-textSecondary">Krzywa progresu sły (Est. 1RM) 📈</div>
               <select
                 value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)}
                 className="p-1.5 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-xs outline-none focus:border-gymRed cursor-pointer max-w-[200px] truncate font-medium"
@@ -235,8 +275,8 @@ export default function Dashboard({
               )}
             </div>
           </div>
-          <div className="text-[10px] text-textMuted font-medium mt-3 text-right">Dane synchronizowane w czasie rzeczywistym (Europe/Warsaw).</div>
-        </section>
+        <div className="text-[10px] text-textMuted font-medium mt-3 text-right">Dane synchronizowane w czasie rzeczywistym (Europe/Warsaw).</div>
+      </section>
 
       </div>
 
