@@ -1,0 +1,82 @@
+name: GymPatico Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  DATABASE_URL: postgres://gympatico_test_user:SecretPassword2026@localhost:5432/gympatico_test_db
+  JWT_SECRET: super_secret_test_key_2026
+  NODE_ENV: test
+  API_PORT: '3000'
+  VITE_API_URL: http://localhost:3000
+
+jobs:
+  test:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: gympatico_test_user
+          POSTGRES_PASSWORD: SecretPassword2026
+          POSTGRES_DB: gympatico_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install PostgreSQL client and load schema
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          PGPASSWORD=SecretPassword2026 psql -h localhost -U gympatico_test_user -d gympatico_test_db -f init.sql
+
+      - name: Install backend dependencies
+        run: npm install
+        working-directory: backend
+
+      - name: Backend API tests
+        run: npm test
+        working-directory: backend
+
+      - name: Install frontend dependencies
+        run: npm install
+        working-directory: frontend
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Build frontend (smoke)
+        run: npm run build
+        working-directory: frontend
+        env:
+          VITE_API_URL: http://localhost:3000
+
+      - name: Playwright E2E tests
+        run: npm run test:e2e
+        working-directory: frontend
+        env:
+          CI: true
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7

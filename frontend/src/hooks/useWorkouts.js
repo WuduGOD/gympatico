@@ -71,9 +71,11 @@ export function useWorkouts(token, exercises, showToast) {
     setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
   }, [])
 
-  const handleSaveWorkout = useCallback(async () => {
+  const handleSaveWorkout = useCallback(async (seriesOverride) => {
+    const seriesToSave = seriesOverride ?? localSeriesList
+
     if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
-    if (localSeriesList.length === 0) throw new Error('Nie można zapisać pustego treningu!')
+    if (seriesToSave.length === 0) throw new Error('Nie można zapisać pustego treningu!')
 
     const res = await fetch(`${API_BASE_URL}/api/workouts`, {
       method: 'POST',
@@ -84,7 +86,7 @@ export function useWorkouts(token, exercises, showToast) {
       body: JSON.stringify({
         name: workoutName,
         comment: workoutComment,
-        series: localSeriesList.map(s => ({
+        series: seriesToSave.map(s => ({
           exerciseId: s.exerciseId,
           weight: s.weight,
           reps: s.reps,

@@ -1,5 +1,7 @@
 -- init.sql - Zunifikowana struktura bazy danych GymPatico z obsługą stref czasowych (TIMESTAMPTZ)
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- 1. Tabela Użytkowników
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

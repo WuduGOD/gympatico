@@ -1,0 +1,2 @@
+-- Użyj pliku init.sql w katalogu głównym repozytorium (CI i lokalna baza testowa).
+-- Ten plik pozostaje tylko jako wskaźnik dla starszych skryptów.

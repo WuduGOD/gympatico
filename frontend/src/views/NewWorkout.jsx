@@ -240,11 +240,11 @@ export default function NewWorkout({
       order: idx + 1
     }))
 
-    setLocalSeriesList(normalized)
-    
-    setTimeout(() => {
-      handleSaveWorkout()
-    }, 40)
+    try {
+      await handleSaveWorkout(normalized)
+    } catch (err) {
+      if (showToast) showToast(err.message || 'Błąd zapisu treningu', 'error')
+    }
   }
 
   // Filtrowanie hybrydowe (Wyszukiwarka + Grupa mięśniowa)

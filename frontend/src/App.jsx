@@ -187,9 +187,9 @@ function AppContent() {
     }
   };
 
-  const onSaveWorkout = async () => {
+  const onSaveWorkout = async (seriesOverride) => {
     try {
-      await handleSaveWorkout();
+      await handleSaveWorkout(seriesOverride);
       showToast('Trening zapisany pomyślnie! 🔥', 'success');
       await fetchAllData();
       navigate('/history');

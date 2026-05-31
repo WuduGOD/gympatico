@@ -5,3 +5,11 @@ repomix-output.txt
 dist/
 build/
 .env
+# Playwright
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+
+# Repomix
+repomix-output.xml
+repomix-output.txt

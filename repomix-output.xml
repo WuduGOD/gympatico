@@ -40,6 +40,7 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
+.github/workflows/playwright.yml
 .gitignore
 backend/config/db.js
 backend/index.js
@@ -53,6 +54,9 @@ backend/routes/stats.js
 backend/routes/templates.js
 backend/routes/weight.js
 backend/routes/workouts.js
+backend/schema.sql
+backend/tests/api.test.js
+backend/tests/helpers.js
 backend/utils/userHelpers.js
 docker-compose.yml
 frontend/.env.example
@@ -60,6 +64,7 @@ frontend/.gitignore
 frontend/eslint.config.js
 frontend/index.html
 frontend/package.json
+frontend/playwright.config.js
 frontend/public/favicon.svg
 frontend/public/icons.svg
 frontend/public/pwa-192x192.png
@@ -86,6 +91,7 @@ frontend/src/views/NewWorkout.jsx
 frontend/src/views/RestTimer.jsx
 frontend/src/views/Social.jsx
 frontend/src/views/StatsView.jsx
+frontend/tests/gympatico.spec.js
 frontend/vercel.json
 frontend/vite.config.js
 init.sql
@@ -93,6 +99,163 @@ init.sql
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="backend/schema.sql">
+-- Użyj pliku init.sql w katalogu głównym repozytorium (CI i lokalna baza testowa).
+-- Ten plik pozostaje tylko jako wskaźnik dla starszych skryptów.
+</file>
+
+<file path="backend/tests/helpers.js">
+const pool = require('../config/db');
+
+const EXERCISE_SEED = [
+  ['Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'],
+  ['Przysiad ze sztangą na plecach (Back squat)', 'Nogi'],
+];
+
+async function ensureTestSchema() {
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'USER';
+    UPDATE users SET role = 'USER' WHERE role IS NULL;
+  `);
+}
+
+async function resetDatabase() {
+  await ensureTestSchema();
+  await pool.query('TRUNCATE users CASCADE');
+  await pool.query('TRUNCATE exercises CASCADE');
+}
+
+async function seedExercises() {
+  for (const [name, muscleGroup] of EXERCISE_SEED) {
+    await pool.query(
+      `INSERT INTO exercises (name, muscle_group) VALUES ($1, $2)`,
+      [name, muscleGroup]
+    );
+  }
+}
+
+async function getExerciseIdByName(namePattern) {
+  const result = await pool.query(
+    `SELECT id FROM exercises WHERE name ILIKE $1 LIMIT 1`,
+    [namePattern]
+  );
+  return result.rows[0]?.id;
+}
+
+async function closePool() {
+  await pool.end();
+}
+
+module.exports = {
+  resetDatabase,
+  seedExercises,
+  getExerciseIdByName,
+  closePool,
+};
+</file>
+
+<file path="frontend/tests/gympatico.spec.js">
+// frontend/tests/gympatico.spec.js
+import { test, expect } from '@playwright/test';
+
+test.describe('GymPatico Full E2E Mobile Workflow', () => {
+
+  test('Rejestracja -> Logowanie -> Trening -> Filtry Kapsułkowe', async ({ page }) => {
+    const uniqueId = Date.now();
+    const botEmail = `bot_${uniqueId}@gympatico.pl`;
+    const botNick = `RobotTester_${uniqueId}`;
+
+    // 1. OTWARCIE STRONY I KLIKNIĘCIE LINKU REJESTRACJI
+    await page.goto('/login');
+    await page.waitForLoadState('networkidle');
+
+    // Klikamy w przełącznik na dole karty, aby wejść w tryb rejestracji
+    await page.click('text=Nie masz konta? Zarejestruj się');
+
+    // Wypełniamy pole Nick, które pojawia się tylko przy rejestracji
+    await page.locator('input[placeholder="np. Koksik99"]').fill(botNick);
+    
+    // Wypełniamy e-mail oraz hasło
+    await page.locator('input[type="email"]').fill(botEmail);
+    await page.locator('input[type="password"]').fill('BotPassword2026!');
+
+    // Przygotowanie nasłuchiwania odpowiedzi sieciowej na rejestrację
+    const registerPromise = page.waitForResponse(resp => 
+      resp.url().includes('/api/auth/register') && resp.status() === 201
+    );
+
+    // Wysyłamy formularz przyciskiem rejestracji
+    await page.click('button:has-text("Zarejestruj się 🚀")');
+    await registerPromise; // Czekamy na potwierdzenie zapisu w bazie danych
+
+    // 2. PROCES LOGOWANIA
+    // Po udanej rejestracji komponent automatycznie resetuje formularz do trybu logowania
+    await page.waitForLoadState('networkidle');
+    
+    // Email zostaje zachowany w stanie komponentu, wpisujemy tylko hasło ponownie
+    await page.locator('input[type="password"]').fill('BotPassword2026!');
+
+    // Przygotowanie nasłuchiwania na udany token JWT
+    const loginPromise = page.waitForResponse(resp => 
+      resp.url().includes('/api/auth/login') && resp.status() === 200
+    );
+
+    // Klikamy przycisk logowania
+    await page.click('button:has-text("Zaloguj się 🦾")');
+    await loginPromise;
+
+    // Czekamy na poprawne przekierowanie na Dashboard i weryfikujemy stan autoryzacji
+    await page.waitForURL('**/');
+    await expect(page.getByText(botNick)).toBeVisible();
+
+    // 3. ROZPOCZĘCIE TRENINGU W LOGGERZE
+    await page.goto('/new-workout');
+    await page.click('text=Pusty trening ➕');
+    
+    // Sprawdzamy czy załadował się nasz autorski Sticky Button
+    const stickyAddButton = page.locator('text=Dodaj ćwiczenie do planu sesji');
+    await expect(stickyAddButton).toBeVisible();
+    await stickyAddButton.click();
+
+    // 4. TEST WYSZUKIWARKI I FILTRÓW KAPSUŁKOWYCH W DRAWERZE
+    await expect(page.locator('input[type="search"]')).toBeVisible();
+
+    // Klikamy w kapsułkę filtrowania po klatce piersiowej
+    await page.click('button:has-text("Klatka piersiowa")');
+    
+    // Sprawdzamy czy na liście zostało wyciskanie, a zniknęły przysiady ze sztangą
+    await expect(page.locator('text=Wyciskanie sztangi na ławce poziomej')).toBeVisible();
+    await expect(page.getByText('Przysiad ze sztangą na plecach')).not.toBeVisible();
+
+    // Dodajemy ćwiczenie, klikając bezpośrednio w wiersz ćwiczenia w Atlasie
+    await page.click('text=Wyciskanie sztangi na ławce poziomej');
+    
+    // 5. INLINE LOGOWANIE W TABELI SERII
+    // Pierwszy input liczbowy to waga serii pierwszej
+    await page.locator('input[type="number"]').first().fill('60');
+    // Drugi input to powtórzenia serii pierwszej
+    await page.locator('input[type="number"]').nth(1).fill('10');
+
+    // Klikamy zatwierdzenie serii fajką ✓ (uruchamia timer przerwy)
+    await page.locator('button:has-text("✓")').first().click();
+
+    const skipTimer = page.getByRole('button', { name: 'Pomiń ✕' });
+    if (await skipTimer.isVisible()) {
+      await skipTimer.click();
+    }
+
+    const saveWorkout = page.waitForResponse(
+      (resp) => resp.url().includes('/api/workouts') && resp.request().method() === 'POST' && resp.status() === 201
+    );
+
+    await page.getByRole('button', { name: 'Zakończ trening' }).click();
+    await saveWorkout;
+    await page.waitForURL('**/history');
+    await expect(page.locator('text=Twoja historia aktywności')).toBeVisible();
+  });
+});
+</file>
 
 <file path=".gitignore">
 node_modules/
@@ -270,6 +433,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
 </file>
 
 <file path="frontend/eslint.config.js">
@@ -551,182 +721,6 @@ export function useWeightLogs(token, showToast) {
 }
 </file>
 
-<file path="frontend/src/views/ExercisesList.jsx">
-import React, { useState } from 'react'
-
-export default function ExercisesList({ exercises, onAddExercise, onDeleteExercise }) {
-  // Stany wyszukiwania i filtrowania
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedMuscleGroup, setSelectedMuscleGroup] = useState('all')
-
-  // Stany formularza nowego ćwiczenia
-  const [newName, setNewName] = useState('')
-  const [newMuscleGroup, setNewMuscleGroup] = useState('Klatka piersiowa')
-
-  // Predefiniowana, czysta lista grup mięśniowych dla ujednolicenia bazy
-  const muscleGroupsList = [
-    'Klatka piersiowa', 'Plecy', 'Barki', 'Biceps', 'Triceps', 'Nogi', 'Brzuch', 'Inne'
-  ]
-
-  // Dynamiczne wyciąganie grup mięśniowych istniejących w bazie do filtrów
-  const uniqueFilters = ['all', ...new Set(exercises.map(ex => ex.muscle_group))]
-
-  // Filtrowanie rekordów w locie
-  const filteredExercises = exercises.filter(ex => {
-    const matchesSearch = ex.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesMuscle = selectedMuscleGroup === 'all' || ex.muscle_group === selectedMuscleGroup
-    return matchesSearch && matchesMuscle
-  })
-
-  // Obsługa wysłania formularza z zachowaniem natywnego mobilnego Entera
-  const handleCreateExercise = (e) => {
-    e.preventDefault()
-    if (!newName.trim() || !newMuscleGroup) return
-    
-    onAddExercise(newName.trim(), newMuscleGroup)
-    setNewName('') // Czyszczenie inputa po wysyłce
-  }
-
-  return (
-    // Układ siatki: 1 kolumna na mobile, 3 kolumny na desktopie (lg)
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
-      
-      {/* LEWA KOLUMNA: FORMULARZ + FILTRY */}
-      <div className="lg:col-span-1 flex flex-col gap-6">
-        
-        {/* PANEL A: DODAJ WŁASNE ĆWICZENIE */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg font-bold tracking-tight mb-1 flex items-center gap-2">
-            <span>➕</span> Nowe ćwiczenie
-          </h2>
-          <p className="text-zinc-400 text-xs mb-4">Dodaj spersonalizowany ruch, którego brakuje w bazie.</p>
-          
-          <form onSubmit={handleCreateExercise} className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Nazwa ćwiczenia:</label>
-              <input 
-                type="text" 
-                placeholder="np. Wyciskanie z ziemi (Floor Press)" 
-                value={newName} 
-                onChange={e => setNewName(e.target.value)} 
-                required
-                className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Grupa mięśniowa:</label>
-              <select
-                value={newMuscleGroup}
-                onChange={e => setNewMuscleGroup(e.target.value)}
-                className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed cursor-pointer"
-              >
-                {muscleGroupsList.map(group => (
-                  <option key={group} value={group} className="bg-[#2d2d2d]">{group}</option>
-                ))}
-              </select>
-            </div>
-
-            <button 
-              type="submit" 
-              className="w-full py-3 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm transition-all active:scale-[0.98] cursor-pointer shadow-md shadow-red-950/20 mt-1"
-            >
-              Zapisz w atlasie 📚
-            </button>
-          </form>
-        </section>
-
-        {/* PANEL B: WYSZUKIWARKA I FILTROWANIE LISTY */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg font-bold tracking-tight mb-4 flex items-center gap-2">
-            <span>🔍</span> Filtruj listę
-          </h2>
-          
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Szukaj po nazwie:</label>
-              <input
-                type="text"
-                placeholder="Wpisz fragment nazwy..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Grupa docelowa:</label>
-              <select
-                value={selectedMuscleGroup}
-                onChange={e => setSelectedMuscleGroup(e.target.value)}
-                className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed cursor-pointer"
-              >
-                {uniqueFilters.map(group => (
-                  <option key={group} value={group} className="bg-[#2d2d2d]">
-                    {group === 'all' ? 'Wszystkie grupy' : group}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {/* PRAWA KOLUMNA: DYNAMICZNA SIATKA ATALASU (Zajmuje 2 kolumny na desktopie) */}
-      <section className="lg:col-span-2 bg-gymCard p-4 md:p-6 rounded-xl text-left shadow-lg border border-zinc-800/40">
-        <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
-          <h2 className="text-xl font-bold tracking-tight">Spis ćwiczeń GymPatico</h2>
-          <span className="bg-[#2d2d2d] px-3 py-1 rounded-full text-xs font-semibold text-zinc-400 border border-zinc-800">
-            Pozycji: {filteredExercises.length}
-          </span>
-        </div>
-
-        {filteredExercises.length === 0 ? (
-          <p className="text-zinc-500 italic text-center py-12">
-            Nie znaleziono ćwiczeń spełniających wybrane kryteria.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {filteredExercises.map(ex => (
-              <div 
-                key={ex.id} 
-                className="flex flex-col justify-between items-start bg-[#2d2d2d] p-4 rounded-lg border-l-4 border-gymRed shadow-md transition-all hover:translate-x-1 duration-200 min-h-[90px]"
-              >
-                <strong className="text-white text-sm md:text-base font-semibold tracking-wide mb-2">
-                  {ex.name}
-                </strong>
-                
-                <div className="flex items-center gap-2">
-                  {/* Globalny znacznik grupy mięśniowej */}
-                  <span className="inline-block bg-gymRed/10 text-gymRed px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider">
-                    {ex.muscle_group}
-                  </span>
-
-                  {/* DYNAMICZNY BADGE DLA PRYWATNYCH ĆWICZEŃ + PRZYCISK USUWANIA */}
-                  {ex.user_id && (
-                    <div className="flex items-center gap-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider transition-colors hover:border-amber-500/40">
-                      <span>⭐ Własne</span>
-                      <button
-                        onClick={() => onDeleteExercise(ex.id)}
-                        className="text-amber-500/60 hover:text-gymRed transition-colors font-black ml-1 cursor-pointer text-xs"
-                        title="Usuń to ćwiczenie z atlasu"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-    </div>
-  )
-}
-</file>
-
 <file path="frontend/src/views/LoginView.jsx">
 import React, { useState } from 'react'
 import { API_BASE_URL } from '../config/api'
@@ -912,13 +906,16 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 // Budujemy konfigurację puli w zależności od obecności DATABASE_URL
+const useSsl =
+  process.env.DATABASE_URL &&
+  !/localhost|127\.0\.0\.1/i.test(process.env.DATABASE_URL);
+
 const poolConfig = process.env.DATABASE_URL
   ? {
-      // PRODUKCJA: Pełny Connection String z Supabase + wymuszony SSL
       connectionString: process.env.DATABASE_URL,
-      ssl: {
-        rejectUnauthorized: false // Pozwala na autoryzację certyfikatów Supabase w chmurze
-      }
+      ...(useSsl
+        ? { ssl: { rejectUnauthorized: false } }
+        : {}),
     }
   : {
       // DEWELOPMENT: Fallback na lokalny kontener Docker
@@ -941,8 +938,9 @@ module.exports = pool;
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js"
   },
   "keywords": [],
   "author": "",
@@ -959,7 +957,8 @@ module.exports = pool;
     "pg": "^8.21.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "supertest": "^7.2.2"
   }
 }
 </file>
@@ -1256,7 +1255,11 @@ module.exports = router;
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.0",
@@ -1266,6 +1269,8 @@ module.exports = router;
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.9.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
@@ -1359,6 +1364,232 @@ export function useFriends(token) {
     friendNickInput, setFriendNickInput, socialMessage, setSocialMessage,
     handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend
   };
+}
+</file>
+
+<file path="frontend/src/views/ExercisesList.jsx">
+// frontend/src/views/ExercisesList.jsx
+import React, { useState, useMemo } from 'react'
+
+export default function ExercisesList({ exercises, onAddExercise, onDeleteExercise }) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedMuscleFilter, setSelectedMuscleFilter] = useState('Wszystkie')
+  const [infoExercise, setInfoExercise] = useState(null)
+
+  // Stany do dodawania własnego ćwiczenia użytkownika
+  const [newName, setNewName] = useState('')
+  const [newMuscleGroup, setNewMuscleGroup] = useState('Klatka piersiowa')
+  const [isAddFormOpen, setIsAddFormOpen] = useState(false)
+
+  // Dynamiczne wyciąganie grup mięśniowych do paska filtrów
+  const uniqueMuscleGroups = useMemo(() => {
+    const groups = exercises.map(e => e.muscle_group).filter(Boolean)
+    return ['Wszystkie', ...new Set(groups)]
+  }, [exercises])
+
+  // Hybrydowe filtrowanie (Wyszukiwarka bez auto-focusu + wybrane kapsułki)
+  const filteredExercises = exercises.filter(e => {
+    const matchesSearch = e.name.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesMuscle = selectedMuscleFilter === 'Wszystkie' || e.muscle_group === selectedMuscleFilter
+    return matchesSearch && matchesMuscle
+  })
+
+  // Grupowanie odfiltrowanych wyników
+  const groupedExercises = filteredExercises.reduce((acc, ex) => {
+    const g = ex.muscle_group || 'Inne'
+    if (!acc[g]) acc[g] = []
+    acc[g].push(ex)
+    return acc
+  }, {})
+
+  const handleSubmitCustom = (e) => {
+    e.preventDefault()
+    if (!newName.trim()) return
+    onAddExercise(newName.trim(), newMuscleGroup)
+    setNewName('')
+    setIsAddFormOpen(false)
+  }
+
+  return (
+    <div className="max-w-[640px] mx-auto flex flex-col gap-5 text-left animate-in fade-in duration-200">
+      
+      {/* NAGŁÓWEK SEKCI */}
+      <div className="flex justify-between items-center border-b border-zinc-800 pb-3 gap-4">
+        <div>
+          <h2 className="text-xl font-black tracking-tight text-white">Atlas Ćwiczeń 📚</h2>
+          <p className="text-xs text-textSecondary mt-0.5">Przeglądaj bazę wiedzy ruchowej lub dodaj własne niestandardowe pozycje.</p>
+        </div>
+        <button
+          onClick={() => setIsAddFormOpen(!isAddFormOpen)}
+          className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs rounded-gp-md cursor-pointer transition-colors shrink-0"
+        >
+          {isAddFormOpen ? 'Anuluj' : '＋ Własne'}
+        </button>
+      </div>
+
+      {/* FORMULARZ KREOWANIA WŁASNEGO RUCHU */}
+      {isAddFormOpen && (
+        <form onSubmit={handleSubmitCustom} className="bg-gymCard border border-zinc-800 p-4 rounded-gp-lg flex flex-col gap-3 shadow-xl animate-in slide-in-from-top-3 duration-150">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-gymRed">Nowe ćwiczenie użytkownika</h4>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              placeholder="np. Wyciskanie gilotynowe..."
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              className="flex-1 p-2.5 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-base md:text-sm outline-none focus:border-gymRed font-medium"
+              required
+            />
+            <select
+              value={newMuscleGroup}
+              onChange={e => setNewMuscleGroup(e.target.value)}
+              className="p-2.5 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-xs font-bold cursor-pointer outline-none focus:border-gymRed sm:w-44"
+            >
+              <option value="Klatka piersiowa">Klatka piersiowa</option>
+              <option value="Plecy">Plecy</option>
+              <option value="Barki">Barki</option>
+              <option value="Nogi">Nogi</option>
+              <option value="Pośladki">Pośladki</option>
+              <option value="Biceps">Biceps</option>
+              <option value="Triceps">Triceps</option>
+              <option value="Brzuch">Brzuch</option>
+              <option value="Inne">Inne</option>
+            </select>
+          </div>
+          <button type="submit" className="w-full py-2 bg-gymRed hover:bg-gymRedHover text-white font-bold text-xs rounded-gp-md cursor-pointer transition-colors shadow-md">
+            Zatwierdź i wprowadź do repozytorium
+          </button>
+        </form>
+      )}
+
+      {/* PASEK WYSZUKIWANIA I FILTRY KAPSUŁKOWE (BEZ AUTO-FOCUSU I AUTO-ZOOMU) */}
+      <div className="bg-gymCard border border-zinc-800/40 p-3 rounded-gp-lg shadow-md flex flex-col gap-3">
+        <input
+          type="search"
+          placeholder="Wyszukaj pozycję w bibliotece..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-base md:text-sm outline-none focus:border-gymRed font-medium"
+        />
+
+        {/* POZIOME BADGE GRUP MIĘŚNIOWYCH */}
+        <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden select-none">
+          {uniqueMuscleGroups.map(group => {
+            const isActive = selectedMuscleFilter === group
+            return (
+              <button
+                key={group}
+                type="button"
+                onClick={() => setSelectedMuscleFilter(group)}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold tracking-tight whitespace-nowrap transition-all border cursor-pointer active:scale-95 ${
+                  isActive
+                    ? 'bg-gymRed border-gymRed text-white shadow-md shadow-red-950/20'
+                    : 'bg-gymCardSecondary border-zinc-800 text-textSecondary hover:border-zinc-700 hover:text-white'
+                }`}
+              >
+                {group}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* GŁÓWNA LISTA ATLASU */}
+      <div className="bg-gymCard border border-zinc-800/40 rounded-gp-lg shadow-xl overflow-hidden divide-y divide-zinc-800/50">
+        {Object.entries(groupedExercises).map(([group, exList]) => (
+          <div key={group} className="flex flex-col">
+            <div className="px-4 py-1.5 text-[10px] font-bold text-textSecondary uppercase tracking-wider bg-gymCardSecondary/30 border-b border-zinc-800/20">
+              {group} ({exList.length})
+            </div>
+            
+            {exList.map(ex => (
+              <div
+                key={ex.id}
+                className="px-4 py-3 text-sm text-textPrimary hover:bg-zinc-800/10 flex items-center justify-between gap-4 transition-colors border-b border-zinc-900/20"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-semibold text-zinc-200 truncate">{ex.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setInfoExercise(ex)}
+                    className="p-1 text-textMuted hover:text-white transition-colors cursor-pointer text-xs bg-zinc-800/60 hover:bg-zinc-800 rounded-md font-bold shrink-0 font-mono"
+                  >
+                    ⓘ
+                  </button>
+                </div>
+
+                {/* Możliwość usuwania tylko własnych (jeśli backend przekazuje flagę lub usuwa po ID) */}
+                {ex.is_custom && (
+                  <button
+                    onClick={() => onDeleteExercise(ex.id)}
+                    className="text-textMuted hover:text-gymDanger p-1 text-xs transition-colors cursor-pointer"
+                    title="Usuń z bazy"
+                  >
+                    🗑️
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+
+        {filteredExercises.length === 0 && (
+          <div className="p-12 text-center text-textSecondary text-xs italic bg-gymCard/10">
+            Brak wyników spełniających kryteria wyszukiwania.
+          </div>
+        )}
+      </div>
+
+      {/* INTERAKTYWNA SZUFLADA MODALU INFORMACYJNEGO (ZGODNA Z NEWWORKOUT) */}
+      {infoExercise && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div onClick={() => setInfoExercise(null)} className="absolute inset-0 bg-black/80 backdrop-blur-xs" />
+          
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl relative z-10 text-left animate-in zoom-in-95 duration-150">
+            
+            {infoExercise.video_url ? (
+              <video 
+                src={infoExercise.video_url} 
+                autoPlay muted loop playsInline 
+                className="w-full h-44 object-cover bg-black border-b border-zinc-800"
+              />
+            ) : (
+              <div className="w-full h-44 bg-zinc-900/60 border-b border-zinc-800 flex flex-col items-center justify-center text-center p-4 text-textMuted select-none">
+                <span className="text-2xl mb-1">🏋️‍♂️</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Pętla ruchu 3D / Video</span>
+                <span className="text-[9px] text-zinc-600 mt-1 max-w-[220px]">Wideo załaduje się automatycznie po wprowadzeniu linku MP4 w bazie danych.</span>
+              </div>
+            )}
+
+            <div className="p-5">
+              <span className="text-[10px] font-black text-gymRed uppercase tracking-wider block mb-0.5">
+                {infoExercise.muscle_group || 'Inne'}
+              </span>
+              <h3 className="text-base font-black text-white tracking-tight mb-3">
+                {infoExercise.name}
+              </h3>
+              
+              <div className="text-xs text-zinc-400 leading-relaxed bg-zinc-900/40 border border-zinc-800/60 p-3 rounded-xl max-h-36 overflow-y-auto font-medium">
+                {infoExercise.description ? infoExercise.description : (
+                  <span className="italic text-zinc-600 text-[11px]">Brak opisu technicznego dla tego ćwiczenia. Instrukcja zostanie zaciągnięta automatycznie z bazy danych.</span>
+                )}
+              </div>
+
+              <button 
+                type="button"
+                onClick={() => setInfoExercise(null)} 
+                className="w-full mt-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center"
+              >
+                Zamknij podgląd
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+    </div>
+  )
 }
 </file>
 
@@ -1496,118 +1727,6 @@ export default function RestTimer({ onFinish }) {
 }
 </file>
 
-<file path="frontend/src/views/StatsView.jsx">
-import React from 'react'
-
-export default function StatsView({ stats, loading }) {
-  
-  // Ekran ładowania odpali się TYLKO przy pierwszym uruchomieniu aplikacji, gdy stan jest jeszcze pusty
-  if (loading && !stats) {
-    return (
-      <div className="text-center py-20 text-gymRed font-bold animate-pulse text-sm md:text-base">
-        🔄 Kompilowanie raportu treningowego...
-      </div>
-    )
-  }
-
-  // Zabezpieczenie na wypadek, gdyby użytkownik nie miał jeszcze żadnej historii treningowej
-  if (!stats) {
-    return (
-      <div className="bg-zinc-900 border border-zinc-800 text-zinc-400 font-medium text-center p-8 rounded-xl text-sm max-w-md mx-auto shadow-xl mt-10">
-        ⚠️ Brak dostępnych danych analitycznych.<br />
-        <span className="text-xs text-zinc-500 font-normal block mt-1">Zapisz swój pierwszy trening w kreatorze, aby wygenerować raport.</span>
-      </div>
-    )
-  }
-
-  // Przelicznik tonażu na tony dla lepszego UX (używamy pewnych danych, bez znaku zapytania)
-  const tonnageInTons = (stats.totalTonnage / 1000).toFixed(2)
-
-  return (
-    <div className="space-y-6 text-left">
-      <div>
-        <h2 className="text-xl md:text-2xl font-black tracking-tight">Analityka i Podsumowanie 📊</h2>
-        <p className="text-zinc-400 text-xs md:text-sm mt-0.5">Twoje globalne osiągnięcia zarejestrowane w GymPatico.</p>
-      </div>
-
-      {/* SIATKA KPI CARDS (4 KOLUMNY) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        
-        {/* KARTA 1: ŁĄCZNIE TRENINGÓW */}
-        <div className="bg-gymCard p-5 rounded-xl border border-zinc-800/40 shadow-lg relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-xl"></div>
-          <span className="text-2xl mb-2 block">🏋️‍♂️</span>
-          <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Ukończone sesje</h3>
-          <div className="text-4xl font-black text-white mt-2 font-mono tracking-tight group-hover:text-blue-400 transition-colors">
-            {stats.totalWorkouts}
-          </div>
-          <p className="text-[11px] text-zinc-500 mt-1">Wszystkie zarejestrowane dni treningowe</p>
-        </div>
-
-        {/* KARTA 2: ŁĄCZNY TONAŻ */}
-        <div className="bg-gymCard p-5 rounded-xl border border-zinc-800/40 shadow-lg relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl"></div>
-          <span className="text-2xl mb-2 block">🏗️</span>
-          <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Przerzucony ciężar</h3>
-          <div className="text-4xl font-black text-emerald-400 mt-2 font-mono tracking-tight">
-            {tonnageInTons} <span className="text-lg font-normal text-zinc-400">t</span>
-          </div>
-          <p className="text-[11px] text-zinc-500 mt-1">Suma: {stats.totalTonnage.toLocaleString()} kg</p>
-        </div>
-
-        {/* KARTA 3: ŻYCIOWY STREAK */}
-        <div className="bg-gymCard p-5 rounded-xl border border-zinc-800/40 shadow-lg relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-gymRed/5 rounded-full blur-xl"></div>
-          <span className="text-2xl mb-2 block">🔥</span>
-          <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Życiowy rekord kontynuacji</h3>
-          <div className="text-4xl font-black text-gymRed mt-2 font-mono tracking-tight">
-            {stats.maxStreak} <span className="text-lg font-normal text-zinc-400">dni</span>
-          </div>
-          <p className="text-[11px] text-zinc-500 mt-1">Aktualny streak: {stats.currentStreak} dni</p>
-        </div>
-
-        {/* KARTA 4: ULUBIONE ĆWICZENIE */}
-        <div className="bg-gymCard p-5 rounded-xl border border-zinc-800/40 shadow-lg relative overflow-hidden group sm:col-span-2 lg:col-span-1">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-xl"></div>
-          <span className="text-2xl mb-2 block">👑</span>
-          <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Najwyższa frekwencja</h3>
-          
-          {stats.favorite ? (
-            <>
-              <div className="text-base font-black text-white mt-2 truncate max-w-full" title={stats.favorite.name}>
-                {stats.favorite.name}
-              </div>
-              <div className="mt-1 flex gap-2 items-center">
-                <span className="bg-amber-500/10 text-amber-400 text-[10px] px-2 py-0.5 rounded font-bold uppercase">
-                  {stats.favorite.muscleGroup}
-                </span>
-                <span className="text-zinc-500 text-xs font-mono">
-                  {stats.favorite.count} serii roboczych
-                </span>
-              </div>
-            </>
-          ) : (
-            <div className="text-zinc-500 text-sm italic mt-3">Brak danych sesji</div>
-          )}
-        </div>
-
-      </div>
-
-      {/* DODATKOWA SEKCJA: MOTYWATOR INTERFEJSU */}
-      <section className="bg-gradient-to-r from-[#222] to-gymCard p-5 rounded-xl border border-zinc-800/40 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="max-w-xl">
-          <h4 className="text-sm font-bold text-zinc-200">„Konsekwencja pokonuje talent, kiedy talent nie trenuje” 🛠️</h4>
-          <p className="text-zinc-400 text-xs mt-1 leading-relaxed">
-            Każda pojedyncza seria, którą dopisujesz w swoim garażowym labie treningowym, zwiększa globalny tonaż i buduje Twoją sportową sylwetkę. Kontynuuj passę i nie odpuszczaj kolejnych sesji!
-          </p>
-        </div>
-        <div className="text-3xl hidden md:block opacity-60">💪⚡</div>
-      </section>
-    </div>
-  )
-}
-</file>
-
 <file path="backend/middleware/checkLimits.js">
 // backend/middleware/checkLimits.js
 const pool = require('../config/db');
@@ -1686,19 +1805,18 @@ const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
 const rateLimit = require('express-rate-limit');
 
-// KONFIGURACJA RATE LIMITERA DLA STRONY AUTH
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // Okno czasowe: 15 minut
-  max: 10, // Maksymalnie 10 prób z jednego adresu IP w danym oknie
-  
-  // Format odpowiedzi dopasowany do frontendu (obsługa catch(err) i showToast)
-  message: { 
-    error: "Zbyt wiele nieudanych prób! Twój adres IP został tymczasowo zablokowany. Spróbuj ponownie za 15 minut." 
-  },
-  
-  standardHeaders: true, // Zwraca informacje o limicie w nagłówkach RateLimit-*
-  legacyHeaders: false,  // Wyłącza przestarzałe nagłówki X-RateLimit-*
-});
+// KONFIGURACJA RATE LIMITERA DLA STRONY AUTH (wyłączony w testach API/E2E)
+const authLimiter = process.env.NODE_ENV === 'test'
+  ? (_req, _res, next) => next()
+  : rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 10,
+      message: {
+        error: "Zbyt wiele nieudanych prób! Twój adres IP został tymczasowo zablokowany. Spróbuj ponownie za 15 minut."
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
 
 // Rejestracja nowego użytkownika
 router.post('/register', authLimiter, async (req, res) => {
@@ -1878,270 +1996,109 @@ module.exports = router;
 }
 </file>
 
-<file path="frontend/src/views/History.jsx">
-// frontend/src/views/History.jsx
-import React, { useState } from 'react'
+<file path="frontend/src/views/StatsView.jsx">
+// frontend/src/views/StatsView.jsx
+import React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { API_BASE_URL } from '../config/api'
 
-export default function History({ 
-  workoutsHistory, 
-  onDeleteWorkout, 
-  onLoadMoreWorkouts, 
-  hasMoreWorkouts, 
-  onUpdateWorkout,
-  user,  
-  token,
-  showToast,
-  totalWorkoutsCount
-}) {
+export default function StatsView({ stats, loading }) {
   const navigate = useNavigate()
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  
-  // NOWY STAN DLA MODALU BLOKADY PREMIUM
-  const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false)
-  const [workoutToDelete, setWorkoutToDelete] = useState(null)
-  const [isExporting, setIsExporting] = useState(false)
 
-  const [editingSessionId, setEditingSessionId] = useState(null)
-  const [editName, setEditName] = useState('')
-  const [editComment, setEditComment] = useState('')
-
-  const isPremiumUser = user?.is_premium || user?.role === 'TRAINER';
-
-  // Dynamiczne wyliczenie pozostałych sesji w oparciu o strukturę API
-  const remaining = Math.max(0, totalWorkoutsCount - workoutsHistory.length);
-
-  const handleExportCSV = async () => {
-    if (!isPremiumUser) {
-      // [FIXED] Zastąpiono dawny showToast/alert wywołaniem natywnego modala Premium
-      setIsPremiumModalOpen(true);
-      return;
-    }
-
-    setIsExporting(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts/export`, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Nie udało się pobrać pliku.');
-      }
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `gympatico_export_${new Date().toISOString().slice(0,10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      
-      window.URL.revokeObjectURL(url);
-      a.remove();
-    } catch (err) {
-      if (showToast) {
-        showToast(`❌ Błąd eksportu: ${err.message}`, "error")
-      }
-    } finally {
-      setIsExporting(false);
-    }
+  // 1. STAN ŁADOWANIA (Aplikacja pobiera dane z serwera)
+  if (loading) {
+    return (
+      <div className="max-w-[640px] mx-auto py-12 text-center text-zinc-500 text-sm font-medium animate-pulse flex flex-col items-center gap-2">
+        <span>🔄 Pomiary laboratoryjne w toku...</span>
+        <span className="text-[11px] text-textMuted">Przetwarzamy historię serii i objętość treningową.</span>
+      </div>
+    )
   }
 
-  const initiateDelete = (id) => {
-    setWorkoutToDelete(id)
-    setIsModalOpen(true)
-  }
+  // 2. [FIXED] POPRAWIONY STAN "ZERO TRENINGÓW" Z AKTYWNYM CTA DO KREATORA
+  const hasNoData = !stats || !stats.totalWorkouts || stats.totalWorkouts === 0
 
-  const confirmDelete = () => {
-    if (workoutToDelete) {
-      onDeleteWorkout(workoutToDelete)
-    }
-    closeModal()
-  }
-
-  const closeModal = () => {
-    setIsModalOpen(false)
-    setWorkoutToDelete(null)
-  }
-
-  const startEditing = (w) => {
-    setEditingSessionId(w.id)
-    setEditName(w.name)
-    setEditComment(w.comment || '')
-  }
-
-  const cancelEditing = () => {
-    setEditingSessionId(null)
-    setEditName('')
-    setEditComment('')
-  }
-
-  const saveEditing = (id) => {
-    if (!editName.trim()) return
-    onUpdateWorkout(id, editName.trim(), editComment.trim())
-    setEditingSessionId(null)
-  }
-
-  return (
-    <section className="bg-gymCard p-4 md:p-6 rounded-xl text-left shadow-lg relative">
-      
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-zinc-800 pb-4 mb-4 gap-4">
-        <div>
-          <h2 className="text-xl md:text-2xl font-bold tracking-tight">Twoja historia aktywności 📅</h2>
-          <p className="text-zinc-400 text-xs mt-0.5">Wszystkie zarejestrowane sesje robocze w laboratoriach GymPatico.</p>
+  if (hasNoData) {
+    return (
+      <div className="max-w-[500px] mx-auto bg-gymCard border border-zinc-800/50 rounded-2xl p-8 text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200 mt-6">
+        <div className="w-16 h-16 bg-zinc-800/50 border border-zinc-700/40 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+          📊
         </div>
+        <h3 className="text-lg font-black text-white tracking-tight mb-2">
+          Brak dostępnych danych analitycznych ⚠️
+        </h3>
+        <p className="text-textSecondary text-xs leading-relaxed max-w-sm mx-auto">
+          Twoje wykresy objętości, statystyki ulubionych partii oraz tonaż siłowy wygenerują się automatycznie po zalogowaniu sesji roboczej.
+        </p>
 
-        <button
-          onClick={handleExportCSV}
-          disabled={isExporting || workoutsHistory.length === 0}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all active:scale-95 cursor-pointer shadow-md border ${
-            isPremiumUser
-              ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white'
-              : 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
-          } disabled:opacity-40`}
+        {/* REAKTYWNY PRZYCISK INTERAKCJI */}
+        <button 
+          onClick={() => navigate('/new-workout')}   
+          className="mt-6 px-5 py-2.5 bg-gymRed hover:bg-gymRedHover text-white font-bold rounded-gp-md text-sm cursor-pointer shadow-lg shadow-red-950/40 transition-all active:scale-95 flex items-center justify-center gap-2 mx-auto"
         >
-          {isExporting ? '🔄 Generowanie...' : isPremiumUser ? '📊 Eksportuj do CSV' : '🔒 Eksportuj do CSV (PREMIUM)'}
+          Zaloguj pierwszy trening →
         </button>
       </div>
-      
-      {workoutsHistory.length === 0 ? (
-        <p className="text-zinc-500 italic mt-4 text-center py-6">Brak wpisów w historii.</p>
-      ) : (
-        <div className="flex flex-col gap-4 mt-4">
-          {workoutsHistory.map(w => {
-            const isEditing = w.id === editingSessionId
+    )
+  }
 
-            return (
-              <div key={w.id} className="bg-[#2d2d2d] p-4 md:p-5 rounded-lg border-l-4 border-gymRed shadow-md transition-all hover:border-l-6">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 sm:gap-4">
-                  <div className="flex-1 flex flex-col gap-2">
-                    {isEditing ? (
-                      <div className="flex flex-col gap-2 max-w-md w-full">
-                        <input
-                          type="text"
-                          value={editName}
-                          onChange={e => setEditName(e.target.value)}
-                          className="p-2 text-sm font-bold text-white bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
-                          placeholder="Nazwa treningu"
-                          required
-                        />
-                        <input
-                          type="text"
-                          value={editComment}
-                          onChange={e => setEditComment(e.target.value)}
-                          className="p-2 text-xs text-zinc-300 bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
-                          placeholder="Dodaj komentarz (opcjonalnie)..."
-                        />
-                      </div>
-                    ) : (
-                      <>
-                        <h3 className="text-base md:text-lg font-bold text-gymRed leading-tight">{w.name}</h3>
-                        <span className="text-zinc-400 text-xs">{new Date(w.startedAt).toLocaleString()}</span>
-                      </>
-                    )}
+  // 3. PEŁNY WIDOK ANALITYCZNY (Gdy w bazie są już realne treningi)
+  return (
+    <div className="max-w-[800px] mx-auto flex flex-col gap-6 text-left animate-in fade-in duration-200">
+      <div>
+        <h2 className="text-2xl font-black tracking-tight text-white">Analityka Progresu 📈</h2>
+        <p className="text-xs text-textSecondary mt-0.5">Podsumowanie Twoich osiągów siłowych i statystyk globalnych.</p>
+      </div>
+
+      {/* SIATKA KPI */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-gymCard border border-zinc-800/40 p-4 rounded-gp-lg shadow-md">
+          <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider block">Wszystkie sesje</span>
+          <span className="text-2xl font-black text-white font-mono mt-1 block">{stats.totalWorkouts}</span>
+        </div>
+        
+        <div className="bg-gymCard border border-zinc-800/40 p-4 rounded-gp-lg shadow-md">
+          <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider block">Łączny tonaż</span>
+          <span className="text-2xl font-black text-gymRed font-mono mt-1 block">
+            {parseInt(stats.totalVolume || 0).toLocaleString()} <span className="text-xs font-normal text-textSecondary">kg</span>
+          </span>
+        </div>
+
+        <div className="bg-gymCard border border-zinc-800/40 p-4 rounded-gp-lg shadow-md">
+          <span className="text-[10px] font-bold text-textSecondary uppercase tracking-wider block">Ulubiona partia</span>
+          <span className="text-base font-black text-gymPremium truncate mt-2 block uppercase tracking-tight">
+            {stats.favoriteMuscleGroup || 'Brak danych'}
+          </span>
+        </div>
+      </div>
+
+      {/* ROZKŁAD TRENINGOWY NA GRUPY MIĘŚNIOWE */}
+      {stats.muscleDistribution && stats.muscleDistribution.length > 0 && (
+        <section className="bg-gymCard border border-zinc-800/40 p-5 rounded-xl shadow-lg">
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Nacisk na grupy mięśniowe (Objętość serii)</h3>
+          <div className="flex flex-col gap-3">
+            {stats.muscleDistribution.map((item, idx) => {
+              const maxCount = Math.max(...stats.muscleDistribution.map(m => m.count || 1))
+              const percentage = Math.round((item.count / maxCount) * 100)
+
+              return (
+                <div key={idx} className="flex flex-col gap-1">
+                  <div className="flex justify-between items-center text-xs font-bold">
+                    <span className="text-textPrimary">{item.muscle_group || 'Inne'}</span>
+                    <span className="text-textSecondary font-mono">{item.count} serii</span>
                   </div>
-                  
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    {isEditing ? (
-                      <>
-                        <button onClick={cancelEditing} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white cursor-pointer">Anuluj</button>
-                        <button onClick={() => saveEditing(w.id)} className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-bold transition-all hover:bg-emerald-500 active:scale-95 cursor-pointer shadow-md">Zapisz ✓</button>
-                      </>
-                    ) : (
-                      <>
-                        <button onClick={() => startEditing(w)} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white active:scale-95 cursor-pointer">Edytuj ✏️</button>
-                        <button onClick={() => initiateDelete(w.id)} className="px-3 py-1.5 rounded border border-gymRed text-gymRed text-xs font-bold bg-transparent transition-all hover:bg-gymRed hover:text-white active:scale-95 cursor-pointer">Usuń ✕</button>
-                      </>
-                    )}
+                  <div className="w-full h-2 bg-gymCardSecondary rounded-full overflow-hidden border border-zinc-800/40">
+                    <div 
+                      className="h-full bg-gymRed rounded-full transition-all duration-500" 
+                      style={{ width: `${percentage}%` }}
+                    />
                   </div>
                 </div>
-
-                {!isEditing && w.comment && (
-                  <p className="text-zinc-400 italic mt-3 text-xs md:text-sm bg-zinc-800/40 p-2 rounded border-l border-zinc-700">
-                    "{w.comment}"
-                  </p>
-                )}
-                
-                <div className="overflow-x-auto mt-4 -mx-4 px-4 sm:mx-0 sm:px-0">
-                  <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
-                    <thead>
-                      <tr className="text-left border-b border-zinc-700 text-zinc-400 text-xs font-semibold uppercase tracking-wider">
-                        <th className="pb-2">Ćwiczenie</th>
-                        <th className="pb-2 text-center">Seria</th>
-                        <th className="pb-2 text-center">Obciążenie</th>
-                        <th className="pb-2 text-center">Reps</th>
-                        <th className="pb-2 text-right">Est. 1RM</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-800 text-xs md:text-sm">
-                      {w.series.map(s => (
-                        <tr key={s.id} className="hover:bg-zinc-800/30 transition-colors">
-                          <td className="py-2.5 font-medium pr-2 text-zinc-200">{s.exerciseName}</td>
-                          <td className="py-2.5 text-center text-zinc-400">{s.order}</td>
-                          <td className="py-2.5 text-center text-zinc-200 font-semibold">{s.weight} kg</td>
-                          <td className="py-2.5 text-center text-zinc-400">{s.reps}</td>
-                          <td className="py-2.5 text-right text-gymRed font-bold">
-                            {s.estimatedOneRM ? `${s.estimatedOneRM.toFixed(1)} kg` : '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )
-          })}
-
-          {/* [FIXED] Zmiana napisu i dynamiczne wstrzyknięcie liczby pozostałych sesji */}
-          {hasMoreWorkouts && (
-            <button onClick={onLoadMoreWorkouts} className="w-full py-3.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white border border-zinc-800 rounded-lg font-bold text-sm transition-all active:scale-[0.99] cursor-pointer mt-2">
-              Załaduj więcej ({remaining} pozostało)
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* MODAL USUWANIA TRENINGU */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
-          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
-            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Usunąć ten trening?</h3>
-            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja jest bezpowrotna. Dane o serii oraz rekordy 1RM znikną z profilu.</p>
-            <div className="flex gap-3">
-              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
-              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm shadow-lg shadow-red-950/20 cursor-pointer">Tak, usuń</button>
-            </div>
+              )
+            })}
           </div>
-        </div>
+        </section>
       )}
-
-      {/* [FIXED] BEZBLOKADOWY MODAL BLOKADY EKSPORTU Z PRZYCISKIEM CTA PREMIUM */}
-      {isPremiumModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div onClick={() => setIsPremiumModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
-          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymPremium text-xl">🔒</div>
-            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Funkcja Premium</h3>
-            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Eksport historii treningów do zewnętrznego arkusza kalkulacyjnego CSV jest dostępny wyłącznie dla posiadaczy konta Premium.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setIsPremiumModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
-              <button 
-                onClick={() => { setIsPremiumModalOpen(false); navigate('/social'); }} 
-                className="flex-1 py-2.5 bg-gradient-to-r from-amber-500 to-gymPremium hover:opacity-90 text-gymDark font-black rounded-lg text-sm cursor-pointer shadow-xl shadow-amber-950/20"
-              >
-                Przejdź na Premium
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
+    </div>
   )
 }
 </file>
@@ -2370,9 +2327,11 @@ export function useWorkouts(token, exercises, showToast) {
     setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
   }, [])
 
-  const handleSaveWorkout = useCallback(async () => {
+  const handleSaveWorkout = useCallback(async (seriesOverride) => {
+    const seriesToSave = seriesOverride ?? localSeriesList
+
     if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
-    if (localSeriesList.length === 0) throw new Error('Nie można zapisać pustego treningu!')
+    if (seriesToSave.length === 0) throw new Error('Nie można zapisać pustego treningu!')
 
     const res = await fetch(`${API_BASE_URL}/api/workouts`, {
       method: 'POST',
@@ -2383,7 +2342,7 @@ export function useWorkouts(token, exercises, showToast) {
       body: JSON.stringify({
         name: workoutName,
         comment: workoutComment,
-        series: localSeriesList.map(s => ({
+        series: seriesToSave.map(s => ({
           exerciseId: s.exerciseId,
           weight: s.weight,
           reps: s.reps,
@@ -2493,6 +2452,269 @@ createRoot(document.getElementById('root')).render(
 )
 </file>
 
+<file path="frontend/src/views/History.jsx">
+// frontend/src/views/History.jsx
+import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { API_BASE_URL } from '../config/api'
+
+export default function History({ 
+  workoutsHistory, 
+  onDeleteWorkout, 
+  onLoadMoreWorkouts, 
+  hasMoreWorkouts, 
+  onUpdateWorkout,
+  user,  
+  token,
+  showToast,
+  totalWorkoutsCount
+}) {
+  const navigate = useNavigate()
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false)
+  const [workoutToDelete, setWorkoutToDelete] = useState(null)
+  const [isExporting, setIsExporting] = useState(false)
+
+  const [editingSessionId, setEditingSessionId] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [editComment, setEditComment] = useState('')
+
+  const isPremiumUser = user?.is_premium || user?.role === 'TRAINER';
+  const remaining = Math.max(0, totalWorkoutsCount - workoutsHistory.length);
+
+  const handleExportCSV = async () => {
+    if (!isPremiumUser) {
+      setIsPremiumModalOpen(true);
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts/export`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Nie udało się pobrać pliku.');
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gympatico_export_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (err) {
+      if (showToast) {
+        showToast(`❌ Błąd eksportu: ${err.message}`, "error")
+      }
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  const initiateDelete = (id) => {
+    setWorkoutToDelete(id)
+    setIsModalOpen(true)
+  }
+
+  const confirmDelete = () => {
+    if (workoutToDelete) {
+      onDeleteWorkout(workoutToDelete)
+    }
+    closeModal()
+  }
+
+  const closeModal = () => {
+    setIsModalOpen(false)
+    setWorkoutToDelete(null)
+  }
+
+  const startEditing = (w) => {
+    setEditingSessionId(w.id)
+    setEditName(w.name)
+    setEditComment(w.comment || '')
+  }
+
+  const cancelEditing = () => {
+    setEditingSessionId(null)
+    setEditName('')
+    setEditComment('')
+  }
+
+  const saveEditing = (id) => {
+    if (!editName.trim()) return
+    onUpdateWorkout(id, editName.trim(), editComment.trim())
+    setEditingSessionId(null)
+  }
+
+  return (
+    <section className="bg-gymCard border border-zinc-800/40 p-4 md:p-6 rounded-xl text-left shadow-lg relative">
+      
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-zinc-800 pb-4 mb-4 gap-4">
+        <div>
+          <h2 className="text-xl md:text-2xl font-bold tracking-tight">Twoja historia aktywności 📅</h2>
+          <p className="text-zinc-400 text-xs mt-0.5">Wszystkie zarejestrowane sesje robocze w laboratoriach GymPatico.</p>
+        </div>
+
+        <button
+          onClick={handleExportCSV}
+          disabled={isExporting || workoutsHistory.length === 0}
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all active:scale-95 cursor-pointer shadow-md border ${
+            isPremiumUser
+              ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white'
+              : 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
+          } disabled:opacity-40`}
+        >
+          {isExporting ? '🔄 Generowanie...' : isPremiumUser ? '📊 Eksportuj do CSV' : '🔒 Eksportuj do CSV (PREMIUM)'}
+        </button>
+      </div>
+      
+      {workoutsHistory.length === 0 ? (
+        <p className="text-zinc-500 italic mt-4 text-center py-6">Brak wpisów w historii.</p>
+      ) : (
+        <div className="flex flex-col gap-4 mt-4">
+          {workoutsHistory.map(w => {
+            const isEditing = w.id === editingSessionId
+
+            return (
+              <div key={w.id} className="bg-[#2d2d2d] p-4 md:p-5 rounded-lg border-l-4 border-gymRed shadow-md transition-all hover:border-l-6">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 sm:gap-4">
+                  <div className="flex-1 flex flex-col gap-2">
+                    {isEditing ? (
+                      <div className="flex flex-col gap-2 max-w-md w-full">
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={e => setEditName(e.target.value)}
+                          className="p-2 text-sm font-bold text-white bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
+                          placeholder="Nazwa treningu"
+                          required
+                        />
+                        <input
+                          type="text"
+                          value={editComment}
+                          onChange={e => setEditComment(e.target.value)}
+                          className="p-2 text-xs text-zinc-300 bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
+                          placeholder="Dodaj komentarz (opcjonalnie)..."
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <h3 className="text-base md:text-lg font-bold text-gymRed leading-tight">{w.name}</h3>
+                        <span className="text-zinc-400 text-xs">{new Date(w.startedAt).toLocaleString()}</span>
+                      </>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    {isEditing ? (
+                      <>
+                        <button onClick={cancelEditing} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white cursor-pointer">Anuluj</button>
+                        <button onClick={() => saveEditing(w.id)} className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-bold transition-all hover:bg-emerald-500 active:scale-95 cursor-pointer shadow-md">Zapisz ✓</button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => startEditing(w)} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white active:scale-95 cursor-pointer">Edytuj ✏️</button>
+                        <button onClick={() => initiateDelete(w.id)} className="px-3 py-1.5 rounded border border-gymRed text-gymRed text-xs font-bold bg-transparent transition-all hover:bg-gymRed hover:text-white active:scale-95 cursor-pointer">Usuń ✕</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {!isEditing && w.comment && (
+                  <p className="text-zinc-400 italic mt-3 text-xs md:text-sm bg-zinc-800/40 p-2 rounded border-l border-zinc-700">
+                    &quot;{w.comment}&quot;
+                  </p>
+                )}
+                
+                {/* 🛠️ [NOWOŚĆ] DODANO MASK-IMAGE GRADIENT DLA COMFORT SCROLLA NA MOBILE */}
+                <div className="overflow-x-auto mt-4 -mx-4 px-4 sm:mx-0 sm:px-0 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)] sm:[mask-image:none]">
+                  <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
+                    <thead>
+                      <tr className="text-left border-b border-zinc-700 text-zinc-400 text-xs font-semibold uppercase tracking-wider">
+                        <th className="pb-2">Ćwiczenie</th>
+                        <th className="pb-2 text-center">Seria</th>
+                        <th className="pb-2 text-center">Obciążenie</th>
+                        <th className="pb-2 text-center">Reps</th>
+                        <th className="pb-2 text-right">Est. 1RM</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800 text-xs md:text-sm">
+                      {w.series.map(s => (
+                        <tr key={s.id} className="hover:bg-zinc-800/30 transition-colors">
+                          <td className="py-2.5 font-medium pr-2 text-zinc-200">{s.exerciseName}</td>
+                          <td className="py-2.5 text-center text-zinc-400">{s.order}</td>
+                          <td className="py-2.5 text-center text-zinc-200 font-semibold">{s.weight} kg</td>
+                          <td className="py-2.5 text-center text-zinc-400">{s.reps}</td>
+                          <td className="py-2.5 text-right text-gymRed font-bold">
+                            {s.estimatedOneRM ? `${s.estimatedOneRM.toFixed(1)} kg` : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })}
+
+          {hasMoreWorkouts && (
+            <button onClick={onLoadMoreWorkouts} className="w-full py-3.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white border border-zinc-800 rounded-lg font-bold text-sm transition-all active:scale-[0.99] cursor-pointer mt-2">
+              Załaduj więcej ({remaining} pozostało)
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* MODAL USUWANIA TRENINGU */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Usunąć ten trening?</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja jest bezpowrotna. Dane o serii oraz rekordy 1RM znikną z profilu.</p>
+            <div className="flex gap-3">
+              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
+              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm shadow-lg shadow-red-950/20 cursor-pointer">Tak, usunąć</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL BLOKADY EKSPORTU PREMIUM */}
+      {isPremiumModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={() => setIsPremiumModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymPremium text-xl">🔒</div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Funkcja Premium</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Eksport historii treningów do zewnętrznego arkusza kalkulacyjnego CSV jest dostępny wyłącznie dla posiadaczy konta Premium.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setIsPremiumModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
+              <button 
+                onClick={() => { setIsPremiumModalOpen(false); navigate('/social'); }} 
+                className="flex-1 py-2.5 bg-gradient-to-r from-amber-500 to-gymPremium hover:opacity-90 text-gymDark font-black rounded-lg text-sm cursor-pointer shadow-xl shadow-amber-950/20"
+              >
+                Przejdź na Premium
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+</file>
+
 <file path="frontend/vite.config.js">
 // frontend/vite.config.js
 import { defineConfig } from 'vite'
@@ -2542,6 +2764,8 @@ export default defineConfig({
 
 <file path="init.sql">
 -- init.sql - Zunifikowana struktura bazy danych GymPatico z obsługą stref czasowych (TIMESTAMPTZ)
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- 1. Tabela Użytkowników
 CREATE TABLE users (
@@ -2886,10 +3110,15 @@ app.use('/api/exercises', require('./routes/exercises'));
 app.use('/api/stats', require('./routes/stats'));
 app.use('/api/templates', templatesRouter);
 
-// Uruchomienie serwera
-app.listen(PORT, () => {
-  console.log(`🚀 Serwer GymPatico działa stabilnie i bezpiecznie na porcie ${PORT}`);
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true });
 });
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Serwer GymPatico działa stabilnie i bezpiecznie na porcie ${PORT}`);
+  });
+}
 
 module.exports = app;
 </file>
@@ -3315,6 +3544,23 @@ export default function Dashboard({
     setLogToDelete(null)
   }
 
+  // --- POPRAWKA 2: DYNAMICZNE OBLICZANIE TRENDU WAGI (DELTA-BADGE) ---
+  const getWeightTrend = () => {
+    if (!weightLogs || weightLogs.length < 2) return null
+    const latest = parseFloat(weightLogs[0].weight)
+    const previous = parseFloat(weightLogs[1].weight)
+    const diff = latest - previous
+    return {
+      diff: Math.abs(diff).toFixed(1),
+      isUp: diff > 0,
+      isDown: diff < 0
+    }
+  }
+  const trend = getWeightTrend()
+
+  // --- POPRAWKA 3: DEFENSYWNA WALIDACJA INPUTU WAGI ---
+  const isWeightInputInvalid = !weightInput || !weightInput.trim() || isNaN(parseFloat(weightInput)) || parseFloat(weightInput) <= 0
+
   const svgWidth = 500
   const svgHeight = 160
   const padding = 25
@@ -3344,7 +3590,6 @@ export default function Dashboard({
     gradientPath = `${pointsPath} L ${pointsArray[pointsArray.length - 1].x} ${svgHeight - padding} L ${pointsArray[0].x} ${svgHeight - padding} Z`
   }
 
-  // Pomocniczy generator tekstowych pasków postępu dla limitów darmowych
   const getTextProgressBar = (current, max) => {
     const totalBars = 10;
     const filledBars = Math.min(Math.round((current / max) * totalBars), totalBars);
@@ -3355,7 +3600,7 @@ export default function Dashboard({
   return (
     <div className="flex flex-col gap-5 text-left relative">
       
-      {/* SEKCJA 1: HERO STRIP (PEŁNA SZEROKOŚĆ) */}
+      {/* SEKCJA 1: HERO STRIP */}
       <section className="w-full bg-gymCard border border-zinc-800/40 rounded-gp-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
         <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
           <div>
@@ -3368,20 +3613,26 @@ export default function Dashboard({
           </div>
         </div>
 
-        {/* SUWAK CELU BEZ ZBĘDNYCH NAGŁÓWKÓW */}
+        {/* --- POPRAWKA 1: SUWAK Z ETYKIETAMI WARTOŚCI SKRAJNYCH --- */}
         <div className="flex items-center gap-3 w-full sm:w-72 bg-gymCardSecondary/40 border border-zinc-800/30 p-2.5 rounded-gp-md">
           <span className="text-xs font-bold text-textSecondary shrink-0 uppercase tracking-tight">Cel: {localTarget} dni</span>
-          <input 
-            type="range" min="1" max="7" value={localTarget}
-            onChange={(e) => setLocalTarget(parseInt(e.target.value))}
-            onMouseUp={() => onUpdateWeeklyTarget(localTarget)}
-            onTouchEnd={() => onUpdateWeeklyTarget(localTarget)}
-            className="flex-1 h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-gymRed"
-          />
+          <div className="flex-1 flex flex-col justify-center">
+            <input 
+              type="range" min="1" max="7" value={localTarget}
+              onChange={(e) => setLocalTarget(parseInt(e.target.value))}
+              onMouseUp={() => onUpdateWeeklyTarget(localTarget)}
+              onTouchEnd={() => onUpdateWeeklyTarget(localTarget)}
+              className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-gymRed"
+            />
+            <div className="flex justify-between text-[9px] text-textMuted px-0.5 mt-1 select-none">
+              <span>1 dzień</span>
+              <span>7 dni</span>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* PASEK LIMITÓW SYSTEMU FREE (WIDOCZNY TYLKO DLA KONT BEZ PREMIUM) */}
+      {/* PASEK LIMITÓW SYSTEMU FREE */}
       {!isPremiumUser && (
         <div className="w-full bg-gymCardSecondary/70 border border-zinc-800/60 rounded-gp-md px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-textSecondary shadow-inner animate-in fade-in duration-200">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
@@ -3394,13 +3645,13 @@ export default function Dashboard({
               <span className="text-gymPremium tracking-tighter">{getTextProgressBar(templates.length, 3)}</span>
             </div>
           </div>
-          <button onClick={() => navigate('/social')} className="text-gymPremium hover:text-amber-400 font-bold transition-colors cursor-pointer text-xs flex items-center gap-0.5">
+          <button onClick={() => navigate('/history')} className="text-gymPremium hover:text-amber-400 font-bold transition-colors cursor-pointer text-xs flex items-center gap-0.5">
             Upgrade ↗
           </button>
         </div>
       )}
 
-      {/* ONBOARDING BANNER (POZOSTAJE BEZ ZMIAN DLA NOWYCH PROFILI) */}
+      {/* ONBOARDING BANNER */}
       {isNewUser && (
         <section className="w-full bg-gradient-to-br from-gymCard to-[#15181f] p-5 rounded-2xl border border-gymRed/10 shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-200">
           <div className="max-w-3xl">
@@ -3428,10 +3679,20 @@ export default function Dashboard({
       {/* SEKCJA 2: DWIE KOLUMNY (WYKRESY SIDE-BY-SIDE) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full">
         
-        {/* LEWA KOLUMNA: WAGA + LOGI */}
+        {/* LEWA KOLUMNA: WAGA + TRENDY */}
         <section className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-4 flex flex-col justify-between shadow-lg">
           <div>
-            <div className="text-xs font-bold uppercase tracking-wider text-textSecondary mb-2">Monitor masy ciała (Trendy) ⚖️</div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-bold uppercase tracking-wider text-textSecondary">Monitor masy ciała (Trendy) ⚖️</div>
+              
+              {/* --- INTEGRACJA POPRAWKI 2: DELTA TREND BADGE --- */}
+              {trend && (
+                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${trend.isUp ? 'bg-gymWarning/10 text-gymWarning' : trend.isDown ? 'bg-gymSuccess/10 text-gymSuccess' : 'bg-zinc-800 text-textSecondary'}`}>
+                  {trend.isUp ? `▲ +${trend.diff}` : trend.isDown ? `▼ -${trend.diff}` : '• Bez zmian'} kg
+                </span>
+              )}
+            </div>
+            
             <WeightChart logs={isPremiumUser ? weightLogs : weightLogs.slice(0, 7)} />
             
             {weightLogs.length > 0 && (
@@ -3451,16 +3712,24 @@ export default function Dashboard({
             <span className="text-[11px] text-textMuted font-medium">Zapisz wagę poranną:</span>
             <div className="flex gap-2 w-48">
               <input type="number" step="0.1" placeholder="84.5" value={weightInput} onChange={(e) => setWeightInput(e.target.value)} className="w-full p-2 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-xs text-center font-mono outline-none focus:border-gymRed" />
-              <button onClick={handleAddWeight} className="bg-gymRed hover:bg-gymRedHover text-white text-xs font-bold px-4 py-2 rounded-gp-md cursor-pointer transition-colors shrink-0">Dodaj</button>
+              
+              {/* --- INTEGRACJA POPRAWKI 3: DISABLED GUARD DLA INPUTU --- */}
+              <button 
+                onClick={handleAddWeight} 
+                disabled={isWeightInputInvalid}
+                className="bg-gymRed hover:bg-gymRedHover disabled:opacity-20 disabled:hover:bg-gymRed text-white text-xs font-bold px-4 py-2 rounded-gp-md cursor-pointer disabled:cursor-not-allowed transition-colors shrink-0"
+              >
+                Dodaj
+              </button>
             </div>
           </div>
         </section>
 
-        {/* PRAWA KOLUMNA: 1RM Z SELEKTOREM ĆWICZENIA */}
+        {/* PRAWA KOLUMNA: 1RM PROGRESJA */}
         <section className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-4 flex flex-col justify-between shadow-lg">
           <div>
             <div className="flex items-center justify-between gap-4 mb-2">
-              <div className="text-xs font-bold uppercase tracking-wider text-textSecondary">Krzywa progresu siły (Est. 1RM) 📈</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-textSecondary">Krzywa progresu sły (Est. 1RM) 📈</div>
               <select
                 value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)}
                 className="p-1.5 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-xs outline-none focus:border-gymRed cursor-pointer max-w-[200px] truncate font-medium"
@@ -3500,8 +3769,8 @@ export default function Dashboard({
               )}
             </div>
           </div>
-          <div className="text-[10px] text-textMuted font-medium mt-3 text-right">Dane synchronizowane w czasie rzeczywistym (Europe/Warsaw).</div>
-        </section>
+        <div className="text-[10px] text-textMuted font-medium mt-3 text-right">Dane synchronizowane w czasie rzeczywistym (Europe/Warsaw).</div>
+      </section>
 
       </div>
 
@@ -3523,539 +3792,6 @@ export default function Dashboard({
 
     </div>
   )
-}
-</file>
-
-<file path="frontend/src/views/NewWorkout.jsx">
-// frontend/src/views/NewWorkout.jsx
-import React, { useState, useRef, useCallback, useEffect } from 'react'
-import RestTimer from './RestTimer'
-
-export default function NewWorkout({
-  exercises,
-  templates,
-  onSaveTemplate,
-  onDeleteTemplate,
-  workoutName,
-  setWorkoutName,
-  workoutComment,
-  setWorkoutComment,
-  localSeriesList,
-  setLocalSeriesList,
-  handleSaveWorkout,
-  showToast
-}) {
-  // GŁÓWNY STEROWNIK TRYBU: 'selection' | 'active_workout' | 'template_creator'
-  const [activeMode, setActiveMode] = useState(() => {
-    if (localSeriesList.length > 0) return 'active_workout'
-    return 'selection'
-  })
-
-  // Lista ćwiczeń załadowanych do bieżącej konfiguracji (treningu lub szablonu)
-  const [sessionExercises, setSessionExercises] = useState([])
-  const [activeExId, setActiveExId] = useState(null)
-
-  // Szybkie inputy wartości
-  const [weight, setWeight] = useState('60')
-  const [reps, setReps] = useState('8')
-
-  // Stany dla aktywnego treningu (zapis jako szablon w locie na siłowni)
-  const [templateNameInput, setTemplateNameInput] = useState('')
-  const [saveAsTemplateCheckbox, setSaveAsTemplateCheckbox] = useState(false)
-
-  // Stany dedykowane dla kreatora szablonów "na sucho" (Couch Mode w domu)
-  const [customTemplateName, setCustomTemplateName] = useState('')
-  const [templateSeriesList, setTemplateSeriesList] = useState([])
-
-  // Widok wewnętrzny atlasu: 'logger' (podgląd) | 'builder' (wyszukiwarka w dolnym Bottom Sheet)
-  const [view, setView] = useState('logger')
-  const [searchQuery, setSearchQuery] = useState('')
-  const timerRef = useRef(null)
-
-  // State dla autorskiego modala anulowania treningu
-  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
-
-  // Synchronizacja trybu, jeśli dane zostały wyczyszczone z góry
-  useEffect(() => {
-    if (localSeriesList.length === 0 && sessionExercises.length === 0 && !workoutName && activeMode === 'active_workout') {
-      setActiveMode('selection')
-    }
-  }, [localSeriesList, sessionExercises, workoutName, activeMode])
-
-  const getSeriesForExercise = useCallback((exId) => {
-    if (activeMode === 'template_creator') {
-      return templateSeriesList.filter(s => s.exerciseId === exId)
-    }
-    return localSeriesList.filter(s => s.exerciseId === exId)
-  }, [localSeriesList, templateSeriesList, activeMode])
-
-  // Podpowiedź obciążenia z poprzedniej serii
-  useEffect(() => {
-    if (!activeExId) return
-    const list = activeMode === 'template_creator' ? templateSeriesList : localSeriesList
-    const lastSeries = list.filter(s => s.exerciseId === activeExId).at(-1)
-    if (lastSeries) {
-      setWeight(String(lastSeries.weight))
-      setReps(String(lastSeries.reps))
-    }
-  }, [activeExId, activeMode, templateSeriesList, localSeriesList])
-
-  const adjustWeight = (delta) => {
-    setWeight(prev => {
-      const val = Math.max(0, parseFloat(prev || 0) + delta)
-      return Number.isInteger(val) ? String(val) : val.toFixed(1)
-    })
-  }
-
-  const adjustReps = (delta) => {
-    setReps(prev => String(Math.max(1, parseInt(prev || 1) + delta)))
-  }
-
-  // Zapis serii do odpowiedniej tablicy (w zależności od trybu)
-  const confirmSeries = useCallback(() => {
-    if (!activeExId) return
-    const ex = exercises.find(e => e.id === activeExId)
-    if (!ex) return
-
-    const w = parseFloat(weight)
-    const r = parseInt(reps)
-    if (isNaN(w) || isNaN(r) || r < 1) return
-
-    const estimatedOneRm = r >= 1 && r <= 12 ? w * (1 + r / 30) : null
-    
-    if (activeMode === 'template_creator') {
-      const currentExSeries = templateSeriesList.filter(s => s.exerciseId === activeExId)
-      const newSeries = {
-        exerciseId: activeExId,
-        weight: w,
-        reps: r,
-        order: currentExSeries.length + 1
-      }
-      setTemplateSeriesList(prev => [...prev, newSeries])
-    } else {
-      const currentExSeries = localSeriesList.filter(s => s.exerciseId === activeExId)
-      const newSeries = {
-        exerciseId: activeExId,
-        exerciseName: ex.name,
-        weight: w,
-        reps: r,
-        order: currentExSeries.length + 1,
-        estimatedOneRm
-      }
-      setLocalSeriesList(prev => [...prev, newSeries])
-      if (timerRef.current?.start) timerRef.current.start()
-    }
-  }, [activeExId, weight, reps, exercises, activeMode, templateSeriesList, localSeriesList, setLocalSeriesList])
-
-  const removeLastSeries = (exId) => {
-    const setter = activeMode === 'template_creator' ? setTemplateSeriesList : setLocalSeriesList
-    setter(prev => {
-      const idx = [...prev].reverse().findIndex(s => s.exerciseId === exId)
-      if (idx === -1) return prev
-      const realIdx = prev.length - 1 - idx
-      return prev.filter((_, i) => i !== realIdx)
-    })
-  }
-
-  const addExerciseToSession = (exId) => {
-    if (sessionExercises.includes(exId)) return
-    setSessionExercises(prev => [...prev, exId])
-    setActiveExId(exId)
-    setSearchQuery('')
-
-    const list = activeMode === 'template_creator' ? templateSeriesList : localSeriesList
-    const lastSeries = list.filter(s => s.exerciseId === exId).at(-1)
-    setWeight(lastSeries ? String(lastSeries.weight) : '60')
-    setReps(lastSeries ? String(lastSeries.reps) : '8')
-  }
-
-  const removeExerciseFromSession = (exId) => {
-    setSessionExercises(prev => prev.filter(id => id !== exId))
-    if (activeMode === 'template_creator') {
-      setTemplateSeriesList(prev => prev.filter(s => s.exerciseId !== exId))
-    } else {
-      setLocalSeriesList(prev => prev.filter(s => s.exerciseId !== exId))
-    }
-    if (activeExId === exId) {
-      const remaining = sessionExercises.filter(id => id !== exId)
-      setActiveExId(remaining.at(-1) ?? null)
-    }
-  }
-
-  const handleStartTemplateCreator = () => {
-    setCustomTemplateName('')
-    setTemplateSeriesList([])
-    setSessionExercises([])
-    setActiveExId(null)
-    setView('builder') // Od razu otwieramy wyszukiwarkę w drawerze
-    setActiveMode('template_creator')
-  }
-
-  const handleSaveCustomTemplate = async () => {
-    const name = customTemplateName.trim() || 'Nowy Szablon'
-    if (templateSeriesList.length === 0) {
-      if (showToast) showToast('Dodaj przynajmniej jedną serię do szablonu! 📋', 'error')
-      return
-    }
-    const ok = await onSaveTemplate(name, templateSeriesList)
-    if (ok) {
-      setActiveMode('selection')
-    }
-  }
-
-  const onSubmitWorkout = async (e) => {
-    e?.preventDefault()
-    if (saveAsTemplateCheckbox) {
-      const name = templateNameInput.trim() || workoutName.trim() || 'Mój szablon'
-      const templateSeries = localSeriesList.map((s, idx) => ({
-        exerciseId: s.exerciseId, 
-        weight: s.weight, 
-        reps: s.reps, 
-        order: idx + 1
-      }))
-      const ok = await onSaveTemplate(name, templateSeries)
-      if (!ok) return
-    }
-    handleSaveWorkout()
-  }
-
-  const handleLoadTemplate = (templateId) => {
-    const tpl = templates?.find(t => t.id === templateId)
-    if (!tpl) return
-
-    setWorkoutName(tpl.name)
-    const exIds = [...new Set(tpl.series.map(s => s.exerciseId))]
-    setSessionExercises(exIds)
-    setActiveExId(exIds[0] ?? null)
-
-    const loadedSeries = tpl.series.map(s => {
-      const ex = exercises.find(e => e.id === s.exerciseId)
-      return {
-        exerciseId: s.exerciseId,
-        exerciseName: ex?.name ?? 'Nieznane ćwiczenie',
-        weight: parseFloat(s.weight),
-        reps: parseInt(s.reps),
-        order: s.order,
-        estimatedOneRm: s.reps >= 1 && s.reps <= 12 ? parseFloat(s.weight) * (1 + parseInt(s.reps) / 30) : null
-      }
-    })
-    setLocalSeriesList(loadedSeries)
-    setActiveMode('active_workout')
-  }
-
-  const handleStartEmptyWorkout = () => {
-    setWorkoutName(`Trening rutynowy - ${new Date().toLocaleDateString()}`)
-    setSessionExercises([])
-    setActiveExId(null)
-    setLocalSeriesList([])
-    setActiveMode('active_workout')
-  }
-
-  const handleExitToSelection = () => {
-    setIsCancelModalOpen(true)
-  }
-
-  const confirmExit = () => {
-    setWorkoutName('')
-    setWorkoutComment('')
-    setLocalSeriesList([])
-    setSessionExercises([])
-    setActiveExId(null)
-    setActiveMode('selection')
-    setIsCancelModalOpen(false)
-  }
-
-  const activeEx = exercises.find(e => e.id === activeExId)
-  const activeSeriesList = activeExId ? getSeriesForExercise(activeExId) : []
-  const filteredExercises = exercises.filter(e =>
-    !sessionExercises.includes(e.id) &&
-    e.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  const grouped = filteredExercises.reduce((acc, ex) => {
-    const g = ex.muscle_group || 'Inne'
-    if (!acc[g]) acc[g] = []
-    acc[g].push(ex)
-    return acc
-  }, {})
-
-  // =========================================================================
-  // STAN 1: EKRAN WYBORU (Niezmieniony — Couch Mode)
-  // =========================================================================
-  if (activeMode === 'selection') {
-    return (
-      <div className="max-w-[640px] mx-auto flex flex-col gap-6 text-left animate-in fade-in duration-200">
-        <div>
-          <h2 className="text-2xl font-black tracking-tight text-white">Trening i Plany 🚀</h2>
-          <p className="text-xs text-textSecondary mt-0.5">Wybierz szablon na dziś lub skonfiguruj nowy plan w domu.</p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button onClick={handleStartEmptyWorkout} className="p-4 bg-gymCard hover:bg-zinc-800/40 border border-zinc-800 rounded-gp-lg text-left transition-all active:scale-[0.99] cursor-pointer flex items-center justify-between group">
-            <div>
-              <h3 className="text-sm font-bold text-white group-hover:text-gymRed transition-colors">Pusty trening ➕</h3>
-              <p className="text-[11px] text-textSecondary mt-0.5">Zaloguj spontaniczną sesję.</p>
-            </div>
-          </button>
-          
-          <button onClick={handleStartTemplateCreator} className="p-4 bg-gymCardSecondary hover:bg-zinc-800/40 border border-zinc-800/60 rounded-gp-lg text-left transition-all active:scale-[0.99] cursor-pointer flex items-center justify-between group">
-            <div>
-              <h3 className="text-sm font-bold text-gymPremium group-hover:text-amber-400 transition-colors">Stwórz nowy szablon 📋</h3>
-              <p className="text-[11px] text-textSecondary mt-0.5">Rozpisz plan na sucho poza treningiem.</p>
-            </div>
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <h3 className="text-xs font-bold text-textSecondary uppercase tracking-wider">Twoje Szablony ({templates?.length || 0})</h3>
-          {(!templates || templates.length === 0) ? (
-            <p className="text-xs text-textMuted italic bg-gymCard/20 p-6 rounded-gp-lg text-center border border-dashed border-zinc-800">Brak szablonów. Kliknij przycisk powyżej, aby dodać swój pierwszy plan!</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {templates.map(tpl => {
-                const uniqueExNames = [...new Set(tpl.series.map(s => exercises.find(e => e.id === s.exerciseId)?.name || 'Ćwiczenie'))].slice(0, 3)
-                return (
-                  <div key={tpl.id} className="bg-gymCard border border-zinc-800/60 rounded-gp-lg p-4 flex flex-col justify-between shadow-md group min-h-[135px]">
-                    <div className="cursor-pointer flex-1" onClick={() => handleLoadTemplate(tpl.id)}>
-                      <div className="flex justify-between items-start gap-2">
-                        <h4 className="text-sm font-bold text-white group-hover:text-gymRed transition-colors truncate max-w-[80%]">{tpl.name}</h4>
-                        <span className="text-[9px] font-black text-gymRed bg-gymRed/10 px-2 py-0.5 rounded-full uppercase shrink-0">{tpl.series.length} serii</span>
-                      </div>
-                      <p className="text-xs text-textSecondary mt-1.5 line-clamp-2 leading-relaxed">{uniqueExNames.join(', ')}{tpl.series.length > 3 ? '...' : ''}</p>
-                    </div>
-                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-zinc-800/40">
-                      <button onClick={() => handleLoadTemplate(tpl.id)} className="text-xs font-bold text-gymRed hover:text-red-400 cursor-pointer bg-transparent border-none">Trenuj ➔</button>
-                      <button onClick={() => onDeleteTemplate(tpl.id)} className="text-textMuted hover:text-gymDanger transition-colors cursor-pointer bg-transparent border-none p-1"><i className="ti ti-trash text-xs" /></button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  // =========================================================================
-  // STAN 2 & 3: INTERFEJS AKTYWNEGO KREATORA (Zmiana przycisku na Sticky + Bottom Drawer)
-  // =========================================================================
-  const isCreatorMode = activeMode === 'template_creator'
-
-  return (
-    <div className="max-w-[640px] mx-auto flex flex-col gap-4 text-left animate-in fade-in duration-200">
-      
-      <div className="flex items-start justify-between gap-3 border-b border-zinc-800 pb-3">
-        <div>
-          <h2 className={`text-xl font-black tracking-tight ${isCreatorMode ? 'text-gymPremium' : 'text-white'}`}>
-            {isCreatorMode ? 'Projektowanie szablonu 📋' : 'Aktywny trening ⚡'}
-          </h2>
-          <p className="text-xs text-textSecondary mt-0.5">
-            {isCreatorMode ? 'Definiujesz domyślne ćwiczenia i serie.' : `${localSeriesList.length} serii zapisanych w tej sesji.`}
-          </p>
-        </div>
-        <div className="flex gap-2 shrink-0">
-          <button onClick={handleExitToSelection} className="px-3 py-2 border border-zinc-800 hover:bg-zinc-800/30 text-textSecondary font-bold text-xs rounded-gp-md cursor-pointer transition-colors">
-            Wyjdź ✕
-          </button>
-          <button 
-            onClick={isCreatorMode ? handleSaveCustomTemplate : onSubmitWorkout} 
-            disabled={isCreatorMode ? templateSeriesList.length === 0 : localSeriesList.length === 0}
-            className={`px-4 py-2 font-black text-xs rounded-gp-md cursor-pointer transition-all active:scale-95 shadow-md disabled:opacity-40 ${isCreatorMode ? 'bg-gymPremium text-gymDark' : 'bg-gymSuccess text-gymDark'}`}
-          >
-            {isCreatorMode ? 'Zapisz plan' : 'Zakończ trening'}
-          </button>
-        </div>
-      </div>
-
-      <input
-        type="text"
-        placeholder={isCreatorMode ? "Podaj nazwę planu (np. Góra - Siła, Dół A)..." : "Nazwa dzisiejszego treningu..."}
-        value={isCreatorMode ? customTemplateName : workoutName}
-        onChange={e => isCreatorMode ? setCustomTemplateName(e.target.value) : setWorkoutName(e.target.value)}
-        className="w-full p-3 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm font-bold outline-none focus:border-gymRed"
-        required
-      />
-
-      {!isCreatorMode && <RestTimerWrapper timerRef={timerRef} key={0} />}
-
-      {sessionExercises.length > 0 && (
-        <div className="bg-gymCard border border-zinc-800/40 rounded-gp-lg overflow-hidden shadow-lg">
-          <div className="divide-y divide-zinc-800/50">
-            {sessionExercises.map(exId => {
-              const ex = exercises.find(e => e.id === exId)
-              if (!ex) return null
-              const series = getSeriesForExercise(exId)
-              const isActive = exId === activeExId
-
-              return (
-                <div key={exId} onClick={() => setActiveExId(exId)} className={`flex items-center p-3 gap-3 cursor-pointer transition-colors ${isActive ? 'bg-gymRed/5' : 'hover:bg-zinc-800/20'}`}>
-                  <div className={`w-2 h-2 rounded-full shrink-0 ${series.length > 0 ? (isCreatorMode ? 'text-gymPremium bg-gymPremium' : 'bg-gymSuccess') : 'bg-zinc-700'}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-sm truncate ${isActive ? (isCreatorMode ? 'text-gymPremium font-bold' : 'text-gymRed font-bold') : 'text-textPrimary'}`}>{ex.name}</div>
-                    {series.length > 0 && (
-                      <div className="text-xs text-textSecondary font-mono mt-0.5">
-                        {isCreatorMode ? `${series.length} zaplanowanych serii` : series.map(s => `${s.weight}×${s.reps}`).join('  ·  ')}
-                      </div>
-                    )}
-                  </div>
-                  <button onClick={e => { e.stopPropagation(); removeExerciseFromSession(exId) }} className="p-1 text-textSecondary hover:text-gymDanger opacity-60 hover:opacity-100 transition-all cursor-pointer">
-                    <i className="ti ti-x text-sm" />
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* LOGGER INPUTÓW */}
-          {activeEx && (
-            <div className="p-4 border-t border-zinc-800 bg-gymCardSecondary/40">
-              <div className={`text-xs font-bold uppercase tracking-wider mb-3 ${isCreatorMode ? 'text-gymPremium' : 'text-gymRed'}`}>
-                {activeEx.name} — {isCreatorMode ? `DODAWANIE SERII DOCELOWEJ #${activeSeriesList.length + 1}` : `SERIA # ${activeSeriesList.length + 1}`}
-              </div>
-
-              <div className="mb-3">
-                <label className="text-[11px] font-semibold text-textSecondary block mb-1">{isCreatorMode ? 'Sugerowany ciężar (kg):' : 'Ciężar (kg):'}</label>
-                <div className="flex gap-2 items-center">
-                  <button onClick={() => adjustWeight(-2.5)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer text-textPrimary active:scale-95 transition-transform">−</button>
-                  <input type="number" step="0.5" value={weight} onChange={e => setWeight(e.target.value)} className="flex-1 h-11 text-center font-mono text-xl font-bold bg-gymCard border border-zinc-800 rounded-gp-md text-white outline-none focus:border-gymRed" />
-                  <button onClick={() => adjustWeight(2.5)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer text-textPrimary active:scale-95 transition-transform">+</button>
-                </div>
-              </div>
-
-              <div className="mb-3">
-                <label className="text-[11px] font-semibold text-textSecondary block mb-1">{isCreatorMode ? 'Docelowa liczba powtórzeń:' : 'Powtórzenia:'}</label>
-                <div className="flex gap-2 items-center">
-                  <button onClick={() => adjustReps(-1)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer text-textPrimary active:scale-95 transition-transform">−</button>
-                  <input type="number" value={reps} onChange={e => setReps(e.target.value)} className="flex-1 h-11 text-center font-mono text-xl font-bold bg-gymCard border border-zinc-800 rounded-gp-md text-white outline-none focus:border-gymRed" />
-                  <button onClick={() => adjustReps(1)} className="w-11 h-11 rounded-gp-md border border-zinc-800 bg-gymCard hover:bg-zinc-800 text-xl font-light flex items-center justify-center cursor-pointer text-textPrimary active:scale-95 transition-transform">+</button>
-                </div>
-              </div>
-
-              <div className="flex gap-1 mb-4">
-                {[5, 6, 8, 10, 12, 15].map(r => (
-                  <button key={r} onClick={() => setReps(String(r))} className={`flex-1 py-1.5 rounded-gp-sm text-xs font-mono font-bold border transition-all cursor-pointer ${reps === String(r) ? (isCreatorMode ? 'border-gymPremium text-gymPremium bg-gymPremium/5' : 'border-gymRed text-gymRed bg-gymRed/5') : 'border-zinc-800 text-textSecondary bg-transparent hover:text-white'}`}>{r}</button>
-                ))}
-              </div>
-
-              <button 
-                onClick={confirmSeries} 
-                disabled={!weight || !reps} 
-                className={`w-full py-3 disabled:opacity-40 text-white font-bold text-sm rounded-gp-md cursor-pointer flex items-center justify-center gap-2 transition-all active:scale-[0.99] shadow-md ${isCreatorMode ? 'bg-gymPremium text-gymDark' : 'bg-gymRed hover:bg-gymRedHover'}`}
-              >
-                <i className="ti ti-check text-base" /> {isCreatorMode ? 'Dodaj serię do struktury szablonu' : 'Zapisz serię i włącz pauzę ⏱️'}
-              </button>
-
-              {activeSeriesList.length > 0 && (
-                <button onClick={() => removeLastSeries(activeExId)} className="w-full mt-2 py-1.5 border border-zinc-800 hover:border-zinc-700 bg-transparent text-textSecondary text-[11px] font-semibold rounded-gp-md cursor-pointer flex items-center justify-center gap-1 transition-colors">
-                  <i className="ti ti-arrow-back" /> Usuń ostatnią serię stąd
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {!isCreatorMode && (
-        <textarea placeholder="Komentarz lub notatki do dzisiejszego treningu (opcjonalnie)..." value={workoutComment} onChange={e => setWorkoutComment(e.target.value)} className="w-full p-3 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed min-h-[64px] resize-none" />
-      )}
-
-      {!isCreatorMode && localSeriesList.length > 0 && (
-        <div className="bg-gymCardSecondary border border-zinc-800/40 rounded-gp-lg p-3 shadow-md mb-4">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input type="checkbox" checked={saveAsTemplateCheckbox} onChange={e => setSaveAsTemplateCheckbox(e.target.checked)} className="w-4 h-4 rounded border-zinc-800 bg-gymCard accent-gymRed cursor-pointer" />
-            <span className="text-xs font-bold text-textPrimary">Zapisz ten bieżący trening jako nowy szablon</span>
-          </label>
-          {saveAsTemplateCheckbox && (
-            <input type="text" placeholder={workoutName.trim() || 'Nazwa nowego szablonu'} value={templateNameInput} onChange={e => setTemplateNameInput(e.target.value)} maxLength={100} className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm font-medium outline-none focus:border-gymRed mt-2 animate-in slide-in-from-top-2 duration-150" />
-          )}
-        </div>
-      )}
-
-      {/* 🛠️ [NOWOŚĆ] STICKY ACTION BUTTON — Przyklejony idealnie nad dolną belką PWA */}
-      <div className="sticky bottom-16 left-0 right-0 z-40 bg-gradient-to-t from-gymDark via-gymDark to-transparent pt-6 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
-        <button 
-          onClick={() => setView('builder')} 
-          className="w-full py-3.5 bg-gymCardSecondary border border-dashed border-zinc-800 hover:border-zinc-600 text-textSecondary hover:text-white text-xs font-bold rounded-gp-md cursor-pointer flex items-center justify-center gap-1.5 transition-colors shadow-xl"
-        >
-          <span className="text-gymRed font-black text-sm">＋</span> Dodaj ćwiczenie z atlasu
-        </button>
-      </div>
-
-      {/* 🛠️ [NOWOŚĆ] ATLAS JAKO INTEGRALNY BOTTOM SHEET DRAWER (ZAMIAST ROZWIJANIA INLINE) */}
-      {view === 'builder' && (
-        <div className="fixed inset-0 z-[1000] md:z-[998] animate-in fade-in duration-150">
-          {/* Ciemny backdrop blokujący kliknięcia w tle */}
-          <div onClick={() => setView('logger')} className="absolute inset-0 bg-black/75 backdrop-blur-xs" />
-          
-          {/* Wysuwany Drawer */}
-          <div className="absolute bottom-16 left-0 right-0 max-w-[640px] mx-auto bg-[#14161d] border-t border-zinc-800 rounded-t-2xl flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[72vh]">
-            <div className="w-12 h-1 bg-zinc-800 rounded-full mx-auto my-2.5 shrink-0" />
-            
-            <div className="px-4 pb-3 pt-1 border-b border-zinc-800/80 flex items-center justify-between gap-3 shrink-0">
-              <div className="flex-1 relative">
-                <input 
-                  type="search" 
-                  placeholder="Wyszukaj ruch po nazwie..." 
-                  value={searchQuery} 
-                  onChange={e => setSearchQuery(e.target.value)} 
-                  autoFocus 
-                  className="w-full p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm outline-none focus:border-gymRed font-medium" 
-                />
-              </div>
-              <button onClick={() => setView('logger')} className="text-textSecondary hover:text-white font-bold text-xs px-3 py-2 bg-gymCardSecondary border border-zinc-800 rounded-gp-md cursor-pointer shrink-0 transition-colors">
-                Zamknij
-              </button>
-            </div>
-            
-            {/* Lista przewijana wewnątrz sheetu */}
-            <div className="overflow-y-auto divide-y divide-zinc-800/40 flex-1 pb-6">
-              {Object.entries(grouped).map(([group, exList]) => (
-                <div key={group} className="text-left">
-                  <div className="px-4 py-1.5 text-[10px] font-bold text-textSecondary uppercase tracking-wider bg-gymCardSecondary/40 border-b border-zinc-800/20">{group}</div>
-                  {exList.map(ex => (
-                    <div 
-                      key={ex.id} 
-                      onClick={() => addExerciseToSession(ex.id)} 
-                      className="px-4 py-3 text-sm text-textPrimary hover:bg-gymRed/5 cursor-pointer flex items-center justify-between transition-colors border-b border-zinc-900/40"
-                    >
-                      <span className="font-medium">{ex.name}</span>
-                      <span className="text-gymRed font-bold text-base bg-gymRed/5 w-6 h-6 rounded-full flex items-center justify-center border border-red-500/10">＋</span>
-                    </div>
-                  ))}
-                </div>
-              ))}
-              {filteredExercises.length === 0 && (
-                <div className="p-12 text-center text-textSecondary text-xs italic">Nie znaleziono pozycji o nazwie &quot;{searchQuery}&quot;</div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* REAKTYWNY MODAL POTWIERDZENIA WYJŚCIA */}
-      {isCancelModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div onClick={() => setIsCancelModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
-          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
-            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Anulować konfigurację?</h3>
-            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Wszystkie wprowadzone serie robocze zostaną bezpowrotnie usunięte z tej sesji.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setIsCancelModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Kontynuuj</button>
-              <button onClick={confirmExit} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm cursor-pointer shadow-lg shadow-red-950/20">Tak, anuluj</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function RestTimerWrapper({ timerRef }) {
-  const timer = RestTimer({ onFinish: () => {} })
-  timerRef.current = { start: timer.start, stop: timer.stop }
-  return timer.TimerUI
 }
 </file>
 
@@ -4249,9 +3985,9 @@ function AppContent() {
     }
   };
 
-  const onSaveWorkout = async () => {
+  const onSaveWorkout = async (seriesOverride) => {
     try {
-      await handleSaveWorkout();
+      await handleSaveWorkout(seriesOverride);
       showToast('Trening zapisany pomyślnie! 🔥', 'success');
       await fetchAllData();
       navigate('/history');
@@ -4307,7 +4043,7 @@ function AppContent() {
 
   const onAddCustomExercise = async (name, muscleGroup) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/危险/exercises`, {
+      const res = await fetch(`${API_BASE_URL}/api/exercises`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -4493,6 +4229,686 @@ export default function App() {
       <AppContent />
     </BrowserRouter>
   )
+}
+</file>
+
+<file path="frontend/src/views/NewWorkout.jsx">
+// frontend/src/views/NewWorkout.jsx
+import React, { useState, useRef, useCallback, useEffect } from 'react'
+import RestTimer from './RestTimer'
+
+export default function NewWorkout({
+  exercises,
+  templates,
+  onSaveTemplate,
+  onDeleteTemplate,
+  workoutName,
+  setWorkoutName,
+  workoutComment,
+  setWorkoutComment,
+  localSeriesList,
+  setLocalSeriesList,
+  handleSaveWorkout,
+  showToast
+}) {
+  // GŁÓWNY STEROWNIK TRYBU: 'selection' | 'active_workout' | 'template_creator'
+  const [activeMode, setActiveMode] = useState(() => {
+    if (localSeriesList.length > 0) return 'active_workout'
+    return 'selection'
+  })
+
+  // Kolejność i lista bloków ćwiczeń wyświetlanych na ekranie
+  const [sessionExercises, setSessionExercises] = useState([])
+  
+  // Stany dla konfiguracji szablonu w domu (Couch Mode)
+  const [customTemplateName, setCustomTemplateName] = useState('')
+  const [templateSeriesList, setTemplateSeriesList] = useState([])
+
+  // Kontrola dolnego Drawera z atlasem ćwiczeń
+  const [isAtlasOpen, setIsAtlasOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  
+  // Stan aktywnego filtra grupy mięśniowej
+  const [selectedMuscleFilter, setSelectedMuscleFilter] = useState('Wszystkie')
+
+  // 🛠️ [NOWOŚĆ] Stan obsługi modalu z podglądem animacji i instrukcji ćwiczenia
+  const [infoExercise, setInfoExercise] = useState(null)
+  
+  // State dla bezpiecznego modalu anulowania treningu
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
+  
+  const timerRef = useRef(null)
+
+  // Automatyczna synchronizacja trybu przy czyszczeniu nadrzędnym
+  useEffect(() => {
+    if (localSeriesList.length === 0 && sessionExercises.length === 0 && !workoutName && activeMode === 'active_workout') {
+      setActiveMode('selection')
+    }
+  }, [localSeriesList, sessionExercises, workoutName, activeMode])
+
+  // Wyciąganie unikalnych grup mięśniowych z bazy do paska filtrów
+  const uniqueMuscleGroups = React.useMemo(() => {
+    const groups = exercises.map(e => e.muscle_group).filter(Boolean)
+    return ['Wszystkie', ...new Set(groups)]
+  }, [exercises])
+
+  // --- OBSŁUGA INTERFEJSU AKTYWNEGO TRENINGU (W LOCIE NA SIŁOWNI) ---
+
+  // Dodanie nowego ćwiczenia do aktywnego treningu lub szablonu
+  const handleAddExerciseToSession = (exId) => {
+    if (sessionExercises.includes(exId)) {
+      setIsAtlasOpen(false)
+      return
+    }
+
+    setSessionExercises(prev => [...prev, exId])
+    setIsAtlasOpen(false)
+    setSearchQuery('')
+    setSelectedMuscleFilter('Wszystkie') // Reset filtra przy wyborze
+
+    // Generujemy domyślnie 3 puste wiersze serii-placeholderów dla wybranego ćwiczenia
+    if (activeMode === 'template_creator') {
+      const defaultRows = [
+        { exerciseId: exId, weight: '', reps: '10', order: 1 },
+        { exerciseId: exId, weight: '', reps: '10', order: 2 },
+        { exerciseId: exId, weight: '', reps: '10', order: 3 }
+      ]
+      setTemplateSeriesList(prev => [...prev, ...defaultRows])
+    } else {
+      const defaultRows = [
+        { exerciseId: exId, weight: '', reps: '', order: 1, completed: false, estimatedOneRm: null },
+        { exerciseId: exId, weight: '', reps: '', order: 2, completed: false, estimatedOneRm: null },
+        { exerciseId: exId, weight: '', reps: '', order: 3, completed: false, estimatedOneRm: null }
+      ]
+      setLocalSeriesList(prev => [...prev, ...defaultRows])
+    }
+  }
+
+  // Usuwanie całego bloku ćwiczenia wraz z jego seriami
+  const handleRemoveExerciseFromSession = (exId) => {
+    setSessionExercises(prev => prev.filter(id => id !== exId))
+    if (activeMode === 'template_creator') {
+      setTemplateSeriesList(prev => prev.filter(s => s.exerciseId !== exId))
+    } else {
+      setLocalSeriesList(prev => prev.filter(s => s.exerciseId !== exId))
+    }
+  }
+
+  // Zarządzanie pojedynczymi wierszami serii (Zwiększanie/Zmniejszanie objętości bloku)
+  const handleAddRowToExercise = (exId) => {
+    if (activeMode === 'template_creator') {
+      const currentCount = templateSeriesList.filter(s => s.exerciseId === exId).length
+      const newRow = { exerciseId: exId, weight: '', reps: '10', order: currentCount + 1 }
+      setTemplateSeriesList(prev => [...prev, newRow])
+    } else {
+      const currentCount = localSeriesList.filter(s => s.exerciseId === exId).length
+      const newRow = { exerciseId: exId, weight: '', reps: '', order: currentCount + 1, completed: false, estimatedOneRm: null }
+      setLocalSeriesList(prev => [...prev, newRow])
+    }
+  }
+
+  const handleRemoveRowFromExercise = (exId) => {
+    const list = activeMode === 'template_creator' ? templateSeriesList : localSeriesList
+    const setter = activeMode === 'template_creator' ? setTemplateSeriesList : setLocalSeriesList
+    
+    // Szukamy indeksu ostatniej serii przypisanej do tego konkretnego ćwiczenia
+    const targetIdx = [...list].reverse().findIndex(s => s.exerciseId === exId)
+    if (targetIdx === -1) return
+    
+    const realIndex = list.length - 1 - targetIdx
+    setter(prev => prev.filter((_, i) => i !== realIndex))
+  }
+
+  // Inline edycja wartości wewnątrz tablicy stanów
+  const handleUpdateInlineValue = (globalIdx, field, val, modeStr) => {
+    const setter = modeStr === 'creator' ? setTemplateSeriesList : setLocalSeriesList
+    setter(prev => prev.map((item, i) => i === globalIdx ? { ...item, [field]: val } : item))
+  }
+
+  // Zaliczenie serii (Ptaszkiem ✓) -> Wyliczenie 1RM i aktywacja stopera
+  const handleToggleCompleteSeries = (globalIdx) => {
+    setLocalSeriesList(prev => prev.map((item, i) => {
+      if (i !== globalIdx) return item
+
+      const isTurningOn = !item.completed
+      const w = parseFloat(item.weight)
+      const r = parseInt(item.reps)
+
+      if (isTurningOn && (isNaN(w) || isNaN(r) || r < 1)) {
+        if (showToast) showToast('Wpisz poprawne wartości zanim zaliczysz serię! ⚠️', 'error')
+        return item
+      }
+
+      const oneRm = isTurningOn && r >= 1 && r <= 12 ? w * (1 + r / 30) : null
+      
+      if (isTurningOn && timerRef.current?.start) {
+        timerRef.current.start() // Odpalenie minutnika przerwy
+      }
+
+      return { ...item, completed: isTurningOn, estimatedOneRm: oneRm }
+    }))
+  }
+
+  // --- AKCJE KOŃCOWE / ZAPISY ---
+
+  const handleStartTemplateCreator = () => {
+    setCustomTemplateName('')
+    setTemplateSeriesList([])
+    setSessionExercises([])
+    setIsAtlasOpen(true) // Od razu sugerujemy wybór ćwiczeń
+    setActiveMode('template_creator')
+  }
+
+  const handleSaveCustomTemplate = async () => {
+    const name = customTemplateName.trim() || 'Nowy Szablon'
+    if (templateSeriesList.length === 0) {
+      if (showToast) showToast('Szablon musi mieć przypisane ćwiczenia! 📋', 'error')
+      return
+    }
+    const cleanSeries = templateSeriesList.map((s, i) => ({
+      exerciseId: s.exerciseId,
+      weight: parseFloat(s.weight) || 0,
+      reps: parseInt(s.reps) || 10,
+      order: i + 1
+    }))
+    const ok = await onSaveTemplate(name, cleanSeries)
+    if (ok) setActiveMode('selection')
+  }
+
+  const handleLoadTemplate = (templateId) => {
+    const tpl = templates?.find(t => t.id === templateId)
+    if (!tpl) return
+
+    setWorkoutName(tpl.name)
+    const exIds = [...new Set(tpl.series.map(s => s.exerciseId))]
+    setSessionExercises(exIds)
+
+    // Mapowanie struktury bazy na interaktywne, czyste wiersze loggera
+    const mapped = tpl.series.map(s => {
+      const ex = exercises.find(e => e.id === s.exerciseId)
+      return {
+        exerciseId: s.exerciseId,
+        exerciseName: ex?.name ?? 'Ćwiczenie',
+        weight: '', 
+        reps: s.reps ? String(s.reps) : '', 
+        completed: false,
+        estimatedOneRm: null
+      }
+    })
+    setLocalSeriesList(mapped)
+    setActiveMode('active_workout')
+  }
+
+  const handleStartEmptyWorkout = () => {
+    setWorkoutName(`Trening rutynowy - ${new Date().toLocaleDateString()}`)
+    setSessionExercises([])
+    setLocalSeriesList([])
+    setActiveMode('active_workout')
+  }
+
+  const handleExitToSelection = () => {
+    setIsCancelModalOpen(true)
+  }
+
+  const confirmExit = () => {
+    setWorkoutName('')
+    setWorkoutComment('')
+    setLocalSeriesList([])
+    setSessionExercises([])
+    setActiveMode('selection')
+    setIsCancelModalOpen(false)
+  }
+
+  const onSubmitActiveWorkout = async (e) => {
+    e?.preventDefault()
+    const finished = localSeriesList.filter(s => s.completed && s.weight && s.reps)
+    
+    if (finished.length === 0) {
+      if (showToast) showToast('Nie odznaczono żadnej ukończonej serii ptaszkiem ✓! ⚠️', 'error')
+      return
+    }
+
+    const normalized = finished.map((s, idx) => ({
+      ...s,
+      weight: parseFloat(s.weight),
+      reps: parseInt(s.reps),
+      order: idx + 1
+    }))
+
+    try {
+      await handleSaveWorkout(normalized)
+    } catch (err) {
+      if (showToast) showToast(err.message || 'Błąd zapisu treningu', 'error')
+    }
+  }
+
+  // Filtrowanie hybrydowe (Wyszukiwarka + Grupa mięśniowa)
+  const filteredExercises = exercises.filter(e => {
+    const matchesSearch = e.name.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesMuscle = selectedMuscleFilter === 'Wszystkie' || e.muscle_group === selectedMuscleFilter
+    return matchesSearch && matchesMuscle
+  })
+
+  const groupedExercises = filteredExercises.reduce((acc, ex) => {
+    const g = ex.muscle_group || 'Inne'
+    if (!acc[g]) acc[g] = []
+    acc[g].push(ex)
+    return acc
+  }, {})
+
+  const isCreatorMode = activeMode === 'template_creator'
+  const currentGlobalList = isCreatorMode ? templateSeriesList : localSeriesList
+
+  // =========================================================================
+  // STAN 1: HOME / COUCH MODE
+  // =========================================================================
+  if (activeMode === 'selection') {
+    return (
+      <div className="max-w-[640px] mx-auto flex flex-col gap-6 text-left animate-in fade-in duration-200">
+        <div>
+          <h2 className="text-2xl font-black tracking-tight text-white">Trening i Plany 🚀</h2>
+          <p className="text-xs text-textSecondary mt-0.5">Wybierz szablon na dziś lub skonfiguruj nowy plan w domu.</p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button onClick={handleStartEmptyWorkout} className="p-4 bg-gymCard hover:bg-zinc-800/40 border border-zinc-800 rounded-gp-lg text-left transition-all active:scale-[0.99] cursor-pointer flex items-center justify-between group">
+            <div>
+              <h3 className="text-sm font-bold text-white group-hover:text-gymRed transition-colors">Pusty trening ➕</h3>
+              <p className="text-[11px] text-textSecondary mt-0.5">Zaloguj spontaniczną sesję.</p>
+            </div>
+          </button>
+          
+          <button onClick={handleStartTemplateCreator} className="p-4 bg-gymCardSecondary hover:bg-zinc-800/40 border border-zinc-800/60 rounded-gp-lg text-left transition-all active:scale-[0.99] cursor-pointer flex items-center justify-between group">
+            <div>
+              <h3 className="text-sm font-bold text-gymPremium group-hover:text-amber-400 transition-colors">Stwórz nowy szablon 📋</h3>
+              <p className="text-[11px] text-textSecondary mt-0.5">Rozpisz plan na sucho poza treningiem.</p>
+            </div>
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <h3 className="text-xs font-bold text-textSecondary uppercase tracking-wider">Twoje Szablony ({templates?.length || 0})</h3>
+          {(!templates || templates.length === 0) ? (
+            <p className="text-xs text-textMuted italic bg-gymCard/20 p-6 rounded-gp-lg text-center border border-dashed border-zinc-800">Brak szablonów. Kliknij przycisk powyżej, aby dodać swój pierwszy plan!</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {templates.map(tpl => {
+                const uniqueExNames = [...new Set(tpl.series.map(s => exercises.find(e => e.id === s.exerciseId)?.name || 'Ćwiczenie'))].slice(0, 3)
+                return (
+                  <div key={tpl.id} className="bg-gymCard border border-zinc-800/60 rounded-gp-lg p-4 flex flex-col justify-between shadow-md group min-h-[135px]">
+                    <div className="cursor-pointer flex-1" onClick={() => handleLoadTemplate(tpl.id)}>
+                      <div className="flex justify-between items-start gap-2">
+                        <h4 className="text-sm font-bold text-white group-hover:text-gymRed transition-colors truncate max-w-[80%]">{tpl.name}</h4>
+                        <span className="text-[9px] font-black text-gymRed bg-gymRed/10 px-2 py-0.5 rounded-full uppercase shrink-0">{uniqueExNames.length} ćw.</span>
+                      </div>
+                      <p className="text-xs text-textSecondary mt-1.5 line-clamp-2 leading-relaxed">{uniqueExNames.join(', ')}{uniqueExNames.length > 3 ? '...' : ''}</p>
+                    </div>
+                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-zinc-800/40">
+                      <button onClick={() => handleLoadTemplate(tpl.id)} className="text-xs font-bold text-gymRed hover:text-red-400 cursor-pointer bg-transparent border-none">Trenuj ➔</button>
+                      <button onClick={() => onDeleteTemplate(tpl.id)} className="text-textMuted hover:text-gymDanger transition-colors cursor-pointer bg-transparent border-none p-1"><i className="ti ti-trash text-xs" /></button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-[640px] mx-auto flex flex-col gap-4 text-left animate-in fade-in duration-200 pb-20">
+      
+      {/* PANEL STEROWANIA FORMULARZA */}
+      <div className="flex items-start justify-between gap-3 border-b border-zinc-800 pb-3">
+        <div>
+          <h2 className={`text-xl font-black tracking-tight ${isCreatorMode ? 'text-gymPremium' : 'text-white'}`}>
+            {isCreatorMode ? 'Projektowanie szablonu 📋' : 'Aktywny trening ⚡'}
+          </h2>
+          <p className="text-xs text-textSecondary mt-0.5">
+            {isCreatorMode ? 'Definiujesz szkielet serii i powtórzeń.' : 'Wprowadź ciężary i odznaczaj ukończone serie.'}
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <button onClick={handleExitToSelection} className="px-3 py-2 border border-zinc-800 hover:bg-zinc-800/30 text-textSecondary font-bold text-xs rounded-gp-md cursor-pointer transition-colors">
+            Wyjdź ✕
+          </button>
+          <button 
+            onClick={isCreatorMode ? handleSaveCustomTemplate : onSubmitActiveWorkout} 
+            className={`px-4 py-2 font-black text-xs rounded-gp-md cursor-pointer transition-all active:scale-95 shadow-md ${isCreatorMode ? 'bg-gymPremium text-gymDark' : 'bg-gymSuccess text-gymDark'}`}
+          >
+            {isCreatorMode ? 'Zapisz plan' : 'Zakończ trening'}
+          </button>
+        </div>
+      </div>
+
+      <input
+        type="text"
+        placeholder={isCreatorMode ? "Podaj nazwę planu (np. Push Siła, Pull B)..." : "Nazwa dzisiejszej sesji..."}
+        value={isCreatorMode ? customTemplateName : workoutName}
+        onChange={e => isCreatorMode ? setCustomTemplateName(e.target.value) : setWorkoutName(e.target.value)}
+        className="w-full p-3 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-sm font-bold outline-none focus:border-gymRed"
+        required
+      />
+
+      {!isCreatorMode && <RestTimerWrapper timerRef={timerRef} />}
+
+      {/* RENDEROWANIE KART ELEMENTÓW NA OŚI SESJI */}
+      {sessionExercises.length === 0 ? (
+        <div className="text-center py-16 bg-gymCard/30 border border-dashed border-zinc-800 rounded-gp-lg p-6 text-textMuted text-xs italic">
+          Brak ćwiczeń w strukturze. Tapnij poniższy przycisk, aby rozbudować listę z atlasu.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {sessionExercises.map((exId) => {
+            const exerciseObj = exercises.find(e => e.id === exId)
+            if (!exerciseObj) return null
+
+            const exerciseRows = currentGlobalList
+              .map((s, globalIndex) => ({ ...s, globalIndex }))
+              .filter(s => s.exerciseId === exId)
+
+            return (
+              <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg shadow-lg overflow-hidden animate-in fade-in duration-150">
+                
+                {/* NAGŁÓWEK KARTY ĆWICZENIA (Zintegrowane Info ⓘ) */}
+                <div className="px-4 py-3 bg-gymCardSecondary/40 border-b border-zinc-800/60 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div>
+                      <h3 className="text-sm font-bold text-textPrimary leading-tight truncate">{exerciseObj.name}</h3>
+                      <span className="text-[10px] font-bold text-textMuted uppercase tracking-wider">{exerciseObj.muscle_group || 'Inne'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setInfoExercise(exerciseObj)}
+                      className="p-1 text-textMuted hover:text-white transition-colors cursor-pointer text-xs bg-zinc-800/40 hover:bg-zinc-800/80 rounded-md shrink-0 font-bold"
+                      title="Podgląd instrukcji"
+                    >
+                      ⓘ
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => handleRemoveExerciseFromSession(exId)}
+                    className="p-1 text-textMuted hover:text-gymDanger transition-colors cursor-pointer text-sm shrink-0"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* INTERAKTYWNA TABELA SERII INLINE */}
+                <div className="p-3">
+                  {exerciseRows.length === 0 ? (
+                    <p className="text-[11px] text-textMuted italic py-2">Brak zdefiniowanych wierszy serii.</p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      <div className="grid grid-cols-12 gap-2 text-center text-[10px] font-bold text-textMuted uppercase tracking-tight px-1">
+                        <div className="col-span-2 text-left">Seria</div>
+                        <div className="col-span-3">Poprzednio</div>
+                        <div className="col-span-3">Ciężar (kg)</div>
+                        <div className="col-span-2">Powt.</div>
+                        <div className="col-span-2">Status</div>
+                      </div>
+
+                      {exerciseRows.map((s, localIdx) => (
+                        <div 
+                          key={s.globalIndex} 
+                          className={`grid grid-cols-12 gap-2 items-center text-center p-1 rounded transition-colors ${
+                            s.completed ? 'bg-gymSuccess/5 border-l-2 border-gymSuccess' : 'bg-transparent'
+                          }`}
+                        >
+                          <div className="col-span-2 text-left font-mono text-xs font-bold text-textSecondary px-1">
+                            {localIdx + 1}
+                          </div>
+
+                          <div className="col-span-3 text-[11px] text-textMuted font-medium truncate font-mono">
+                            {isCreatorMode ? '—' : '60 kg x 8'}
+                          </div>
+
+                          <div className="col-span-3">
+                            <input 
+                              type="number"
+                              step="0.5"
+                              placeholder="0"
+                              disabled={s.completed}
+                              value={s.weight}
+                              onChange={e => handleUpdateInlineValue(s.globalIndex, 'weight', e.target.value, isCreatorMode ? 'creator' : 'workout')}
+                              className="w-full p-1.5 rounded bg-gymCardSecondary border border-zinc-800 text-center font-mono text-xs font-bold text-white outline-none focus:border-gymRed disabled:opacity-40"
+                            />
+                          </div>
+
+                          <div className="col-span-2">
+                            <input 
+                              type="number"
+                              placeholder="10"
+                              disabled={s.completed}
+                              value={s.reps}
+                              onChange={e => handleUpdateInlineValue(s.globalIndex, 'reps', e.target.value, isCreatorMode ? 'creator' : 'workout')}
+                              className="w-full p-1.5 rounded bg-gymCardSecondary border border-zinc-800 text-center font-mono text-xs font-bold text-white outline-none focus:border-gymRed disabled:opacity-40"
+                            />
+                          </div>
+
+                          <div className="col-span-2 flex justify-center">
+                            {isCreatorMode ? (
+                              <span className="text-textMuted text-xs font-bold">—</span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleCompleteSeries(s.globalIndex)}
+                                className={`w-7 h-7 rounded-md flex items-center justify-center font-black text-xs transition-all cursor-pointer border ${
+                                  s.completed 
+                                    ? 'bg-gymSuccess text-gymDark border-emerald-500' 
+                                    : 'bg-transparent text-textMuted border-zinc-800 hover:border-zinc-700 hover:text-white'
+                                }`}
+                              >
+                                ✓
+                              </button>
+                            )}
+                          </div>
+
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 justify-end mt-3 pt-2 border-t border-zinc-800/40 text-[11px]">
+                    <button 
+                      onClick={() => handleRemoveRowFromExercise(exId)} 
+                      disabled={exerciseRows.length === 0}
+                      className="px-2.5 py-1 rounded bg-zinc-800/60 border border-zinc-800 text-textSecondary hover:text-gymDanger disabled:opacity-30 transition-colors cursor-pointer font-bold"
+                    >
+                      － Seria
+                    </button>
+                    <button 
+                      onClick={() => handleAddRowToExercise(exId)}
+                      className="px-2.5 py-1 rounded bg-zinc-800/60 border border-zinc-800 text-textSecondary hover:text-white transition-colors cursor-pointer font-bold"
+                    >
+                      ＋ Seria
+                    </button>
+                  </div>
+
+                </div>
+
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* STICKY FOOTER ACTION BAR */}
+      <div className="fixed bottom-16 left-0 right-0 max-w-[640px] mx-auto z-40 bg-gradient-to-t from-gymDark via-gymDark to-transparent pt-6 pb-2 px-4 sm:px-0">
+        <button 
+          onClick={() => setIsAtlasOpen(true)} 
+          className="w-full py-3.5 bg-gymCardSecondary hover:bg-zinc-800/60 border border-dashed border-zinc-800 hover:border-zinc-600 text-textSecondary hover:text-white text-xs font-bold rounded-gp-md cursor-pointer flex items-center justify-center gap-1.5 transition-colors shadow-2xl"
+        >
+          <span className="text-gymRed font-black text-base">＋</span> Dodaj ćwiczenie do planu sesji
+        </button>
+      </div>
+
+      {/* ATLAS JAKO BOTTOM SHEET DRAWER PANEL */}
+      {isAtlasOpen && (
+        <div className="fixed inset-0 z-[1000] md:z-[998] animate-in fade-in duration-150">
+          <div onClick={() => setIsAtlasOpen(false)} className="absolute inset-0 bg-black/75 backdrop-blur-xs" />
+          
+          <div className="absolute bottom-16 left-0 right-0 max-w-[640px] mx-auto bg-[#14161d] border-t border-zinc-800 rounded-t-2xl flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[75vh]">
+            <div className="w-12 h-1 bg-zinc-800 rounded-full mx-auto my-2.5 shrink-0" />
+            
+            <div className="px-4 pb-3 pt-1 border-b border-zinc-800/80 flex flex-col gap-3 shrink-0">
+              <div className="flex items-center justify-between gap-3">
+                <input 
+                  type="search" 
+                  placeholder="Wyszukaj ćwiczenie..." 
+                  value={searchQuery} 
+                  onChange={e => setSearchQuery(e.target.value)} 
+                  className="flex-1 p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-base md:text-sm outline-none focus:border-gymRed font-medium" 
+                />
+                <button onClick={() => setIsAtlasOpen(false)} className="text-textSecondary hover:text-white font-bold text-xs px-3 py-2 bg-gymCardSecondary border border-zinc-800 rounded-gp-md cursor-pointer shrink-0 transition-colors">
+                  Anuluj
+                </button>
+              </div>
+
+              <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-2 px-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden select-none">
+                {uniqueMuscleGroups.map(group => {
+                  const isActive = selectedMuscleFilter === group
+                  return (
+                    <button
+                      key={group}
+                      type="button"
+                      onClick={() => setSelectedMuscleFilter(group)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold tracking-tight whitespace-nowrap transition-all border cursor-pointer active:scale-95 ${
+                        isActive
+                          ? 'bg-gymRed border-gymRed text-white shadow-md shadow-red-950/20'
+                          : 'bg-gymCard border-zinc-800 text-textSecondary hover:border-zinc-700 hover:text-white'
+                      }`}
+                    >
+                      {group}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            
+            <div className="overflow-y-auto divide-y divide-zinc-800/40 flex-1 pb-6">
+              {Object.entries(groupedExercises).map(([group, exList]) => (
+                <div key={group} className="text-left">
+                  <div className="px-4 py-1.5 text-[10px] font-bold text-textSecondary uppercase tracking-wider bg-gymCardSecondary/40 border-b border-zinc-800/20">{group}</div>
+                  {exList.map(ex => {
+                    const isAlreadyAdded = sessionExercises.includes(ex.id)
+                    return (
+                      <div 
+                        key={ex.id} 
+                        onClick={() => handleAddExerciseToSession(ex.id)} 
+                        className={`px-4 py-3 text-sm text-textPrimary hover:bg-gymRed/5 cursor-pointer flex items-center justify-between transition-colors border-b border-zinc-900/40 ${
+                          isAlreadyAdded ? 'opacity-40 pointer-events-none bg-zinc-900/20' : ''
+                        }`}
+                      >
+                        {/* 🛠️ Wyrównany kontener z odizolowaną ikonką Info ⓘ */}
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span className="font-medium truncate">{ex.name}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation(); // Kluczowe! Zapobiega dodaniu ćwiczenia pod spodem
+                              setInfoExercise(ex);
+                            }}
+                            className="p-1 text-textMuted hover:text-white transition-colors cursor-pointer text-[11px] bg-zinc-800/50 hover:bg-zinc-700 rounded-md font-bold shrink-0"
+                            title="Instrukcja wideo"
+                          >
+                            ⓘ
+                          </button>
+                        </div>
+                        <span className="text-gymRed font-bold text-base bg-gymRed/5 w-6 h-6 rounded-full flex items-center justify-center border border-red-500/10 ml-2 shrink-0">
+                          {isAlreadyAdded ? '✓' : '＋'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+              {filteredExercises.length === 0 && (
+                <div className="p-12 text-center text-textSecondary text-xs italic">Brak pozycji w bazie o nazwie &quot;{searchQuery}&quot;</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🛠️ [NOWOŚĆ] INTERAKTYWNY MODAL DETALI - PRZYGOTOWANY POD WIDEO MULTIMEDIA */}
+      {infoExercise && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div onClick={() => setInfoExercise(null)} className="absolute inset-0 bg-black/80 backdrop-blur-xs" />
+          
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl relative z-10 text-left animate-in zoom-in-95 duration-150">
+            
+            {/* Odtwarzacz wideo z auto-pętlą i fallbackiem */}
+            {infoExercise.video_url ? (
+              <video 
+                src={infoExercise.video_url} 
+                autoPlay 
+                muted 
+                loop 
+                playsInline 
+                className="w-full h-44 object-cover bg-black border-b border-zinc-800"
+              />
+            ) : (
+              <div className="w-full h-44 bg-zinc-900/60 border-b border-zinc-800 flex flex-col items-center justify-center text-center p-4 text-textMuted select-none">
+                <span className="text-2xl mb-1">🏋️‍♂️</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Pętla ruchu 3D / Video</span>
+                <span className="text-[9px] text-zinc-600 mt-1 max-w-[220px]">Zostanie wyrenderowana automatycznie po przypisaniu linku MP4 w bazie.</span>
+              </div>
+            )}
+
+            {/* Treść merytoryczna */}
+            <div className="p-5">
+              <span className="text-[10px] font-black text-gymRed uppercase tracking-wider block mb-0.5">
+                {infoExercise.muscle_group || 'Inne'}
+              </span>
+              <h3 className="text-base font-black text-white tracking-tight mb-3">
+                {infoExercise.name}
+              </h3>
+              
+              <div className="text-xs text-zinc-400 leading-relaxed bg-zinc-900/40 border border-zinc-800/60 p-3 rounded-xl max-h-36 overflow-y-auto font-medium">
+                {infoExercise.description ? infoExercise.description : (
+                  <span className="italic text-zinc-600 text-[11px]">Brak opisu technicznego dla tego ćwiczenia. Instrukcja zostanie zaciągnięta automatycznie z kolumny opisowej bazy danych.</span>
+                )}
+              </div>
+
+              <button 
+                type="button"
+                onClick={() => setInfoExercise(null)} 
+                className="w-full mt-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center"
+              >
+                Zamknij podgląd
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* REAKTYWNY MODAL POTWIERDZENIA WYJŚCIA */}
+      {isCancelModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={() => setIsCancelModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Anulować konfigurację?</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Wszystkie wprowadzone dane i wiersze zostaną usunięte z pamięci podręcznej.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setIsCancelModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Kontynuuj</button>
+              <button onClick={confirmExit} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm cursor-pointer shadow-lg shadow-red-950/20">Tak, anuluj</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RestTimerWrapper({ timerRef }) {
+  const timer = RestTimer({ onFinish: () => {} })
+  timerRef.current = { start: timer.start, stop: timer.stop }
+  return timer.TimerUI
 }
 </file>
 

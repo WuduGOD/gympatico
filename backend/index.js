@@ -60,9 +60,14 @@ app.use('/api/exercises', require('./routes/exercises'));
 app.use('/api/stats', require('./routes/stats'));
 app.use('/api/templates', templatesRouter);
 
-// Uruchomienie serwera
-app.listen(PORT, () => {
-  console.log(`🚀 Serwer GymPatico działa stabilnie i bezpiecznie na porcie ${PORT}`);
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true });
 });
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Serwer GymPatico działa stabilnie i bezpiecznie na porcie ${PORT}`);
+  });
+}
 
 module.exports = app;

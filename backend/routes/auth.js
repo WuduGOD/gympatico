@@ -6,19 +6,18 @@ const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
 const rateLimit = require('express-rate-limit');
 
-// KONFIGURACJA RATE LIMITERA DLA STRONY AUTH
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // Okno czasowe: 15 minut
-  max: 10, // Maksymalnie 10 prób z jednego adresu IP w danym oknie
-  
-  // Format odpowiedzi dopasowany do frontendu (obsługa catch(err) i showToast)
-  message: { 
-    error: "Zbyt wiele nieudanych prób! Twój adres IP został tymczasowo zablokowany. Spróbuj ponownie za 15 minut." 
-  },
-  
-  standardHeaders: true, // Zwraca informacje o limicie w nagłówkach RateLimit-*
-  legacyHeaders: false,  // Wyłącza przestarzałe nagłówki X-RateLimit-*
-});
+// KONFIGURACJA RATE LIMITERA DLA STRONY AUTH (wyłączony w testach API/E2E)
+const authLimiter = process.env.NODE_ENV === 'test'
+  ? (_req, _res, next) => next()
+  : rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 10,
+      message: {
+        error: "Zbyt wiele nieudanych prób! Twój adres IP został tymczasowo zablokowany. Spróbuj ponownie za 15 minut."
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
 
 // Rejestracja nowego użytkownika
 router.post('/register', authLimiter, async (req, res) => {
