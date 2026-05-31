@@ -1,12 +1,13 @@
+// frontend/src/views/Dashboard.jsx
 import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom' // <--- NOWY IMPORT DLA ONBOARDINGU
+import { useNavigate } from 'react-router-dom'
 import WeightChart from '../components/WeightChart'
 
 export default function Dashboard({
   user, weightLogs, weightInput, setWeightInput, handleAddWeight,
   exercises, onUpdateWeeklyTarget, progressionData, fetchProgression, onDeleteWeight
 }) {
-  const navigate = useNavigate() // <--- INSTANCJA ROUTERA
+  const navigate = useNavigate()
   const [selectedExercise, setSelectedExercise] = useState(exercises[0]?.id || '')
   const [localTarget, setLocalTarget] = useState(user?.weekly_target_workouts || 3)
 
@@ -14,12 +15,12 @@ export default function Dashboard({
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [logToDelete, setLogToDelete] = useState(null)
 
-  // Każdorazowa zmiana ćwiczenia w selektorze dzwoni do bazy po świeżą progresję 1RM
+  // [FIXED] Każdorazowa zmiana ćwiczenia w selektorze dzwoni do bazy po świeżą progresję 1RM (Bezpieczne referencje)
   useEffect(() => {
-    if (selectedExerciseId) {
-      fetchProgression(selectedExerciseId);
+    if (selectedExercise) {
+      fetchProgression(selectedExercise)
     }
-  }, [selectedExerciseId, fetchProgression]);
+  }, [selectedExercise, fetchProgression])
 
   // Automatyczne ustawienie pierwszego ćwiczenia, jeśli baza na starcie była pusta
   useEffect(() => {
@@ -169,7 +170,7 @@ export default function Dashboard({
               {localTarget} dni
             </span>
           </div>
-          <p className="text-zinc-500 text-xs mb-4">Zadeklaruj ile razy w tygodniu chcesz trenować w garażu.</p>
+          <p className="text-zinc-500 text-xs mb-4">Zadeklaruj ile razy w tygodniu chcesz trenować.</p>
           
           <input 
             type="range" 
