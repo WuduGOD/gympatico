@@ -1,3 +1,4 @@
+// frontend/src/views/RestTimer.jsx
 import { useState, useEffect, useRef, useCallback } from 'react'
 
 const PRESETS = [60, 90, 120, 180]
@@ -59,6 +60,12 @@ export default function RestTimer({ onFinish }) {
 
   useEffect(() => {
     if (!isRunning || remaining === null) return
+    
+    // 🛠️ [NOWOŚĆ] Haptyczne odliczanie: Krótkie wibracje-bzyknięcia ostrzegawcze od 5 do 1 sekundy przed końcem
+    if (remaining > 0 && remaining <= 5) {
+      try { navigator.vibrate?.(60) } catch (_) {}
+    }
+
     if (remaining <= 0) {
       clearTimer()
       setIsRunning(false)

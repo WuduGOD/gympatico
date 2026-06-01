@@ -52,7 +52,7 @@ export default function NewWorkout({
   const timerRef = useRef(null)
 
   // =========================================================================
-  // 2. GWARANTOWANE STANOWE ZMIENNE POCHODNE (NAPRAWIONO DUPLIKAT)
+  // 2. GWARANTOWANE STANOWE ZMIENNE POCHODNE
   // =========================================================================
   const isCreatorMode = activeMode === 'template_creator'
   const currentGlobalList = isCreatorMode ? templateSeriesList : localSeriesList
@@ -92,21 +92,25 @@ export default function NewWorkout({
     return result
   }, [activeInput, currentGlobalList, barbellBaseWeight])
 
-  // FUNKCJA INTELIGENTNEGO AUTO-SCROLLA I AUTO-FOKUSU PO PRZERWIE
+  // 🛠️ [FIXED] ZAKTUALIZOWANA I WYCZYSZCZONA FUNKCJA AUTO-SCROLLA NA BAZIE INDEXÓW TABLICY REALNEJ
   const handleScrollToNextActiveSeries = () => {
     if (isCreatorMode) return
 
-    const nextActiveSet = localSeriesList.find(s => !s.completed)
+    // Szukamy fizycznego indeksu pierwszej nieukończonej serii bezpośrednio w tablicy stanu bazy
+    const nextActiveIndex = localSeriesList.findIndex(s => !s.completed)
     
-    if (nextActiveSet) {
-      const targetElement = seriesRefs.current[nextActiveSet.globalIndex]
+    if (nextActiveIndex !== -1) {
+      const targetElement = seriesRefs.current[nextActiveIndex]
       if (targetElement) {
+        // 1. Płynne centrowanie widoku ekranu telefonu dokładnie na środku wyznaczonej serii
         targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
 
-        setHighlightedGlobalIdx(nextActiveSet.globalIndex)
+        // 2. Aktywacja optycznego pulsowania wiersza treningowego
+        setHighlightedGlobalIdx(nextActiveIndex)
         setTimeout(() => setHighlightedGlobalIdx(null), 2500)
 
-        setActiveInput({ globalIdx: nextActiveSet.globalIndex, field: 'weight' })
+        // 3. Automatyczne podniesienie Numpada dla klocka wagi tej serii
+        setActiveInput({ globalIdx: nextActiveIndex, field: 'weight' })
       }
     } else {
       if (showToast) {
@@ -480,6 +484,7 @@ export default function NewWorkout({
               .map((s, globalIndex) => ({ ...s, globalIndex }))
               .filter(s => s.exerciseId === exId)
 
+            // ULTRA-KOMPAKTOWY WIDOK JEDNOLINIJKOWY DLA PROJEKTOWANIA SZABLONU
             if (isCreatorMode) {
               return (
                 <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-3 flex items-center justify-between gap-4 shadow-md animate-in fade-in duration-150">
@@ -529,6 +534,7 @@ export default function NewWorkout({
               )
             }
 
+            // PEŁNY LOGGER NA SIŁOWNIĘ (Z BADGE'AMI TYPÓW SERII + IN-APP KLAWIATURĄ)
             return (
               <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg shadow-lg overflow-hidden animate-in fade-in duration-150">
                 <div className="px-4 py-3 bg-gymCardSecondary/40 border-b border-zinc-800/60 flex items-center justify-between gap-3">
