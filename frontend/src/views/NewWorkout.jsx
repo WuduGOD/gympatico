@@ -92,24 +92,21 @@ export default function NewWorkout({
     return result
   }, [activeInput, currentGlobalList, barbellBaseWeight])
 
-  // 🛠️ [FIXED] ZAKTUALIZOWANA I WYCZYSZCZONA FUNKCJA AUTO-SCROLLA NA BAZIE INDEXÓW TABLICY REALNEJ
+  // FUNKCJA INTELIGENTNEGO AUTO-SCROLLA I AUTO-FOKUSU PO PRZERWIE
   const handleScrollToNextActiveSeries = () => {
     if (isCreatorMode) return
 
-    // Szukamy fizycznego indeksu pierwszej nieukończonej serii bezpośrednio w tablicy stanu bazy
     const nextActiveIndex = localSeriesList.findIndex(s => !s.completed)
     
     if (nextActiveIndex !== -1) {
       const targetElement = seriesRefs.current[nextActiveIndex]
       if (targetElement) {
-        // 1. Płynne centrowanie widoku ekranu telefonu dokładnie na środku wyznaczonej serii
-        targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        // Przewijanie ustawione na 'start' dla maksymalnej widoczności nad klawiaturą
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
-        // 2. Aktywacja optycznego pulsowania wiersza treningowego
         setHighlightedGlobalIdx(nextActiveIndex)
         setTimeout(() => setHighlightedGlobalIdx(null), 2500)
 
-        // 3. Automatyczne podniesienie Numpada dla klocka wagi tej serii
         setActiveInput({ globalIdx: nextActiveIndex, field: 'weight' })
       }
     } else {
@@ -484,7 +481,6 @@ export default function NewWorkout({
               .map((s, globalIndex) => ({ ...s, globalIndex }))
               .filter(s => s.exerciseId === exId)
 
-            // ULTRA-KOMPAKTOWY WIDOK JEDNOLINIJKOWY DLA PROJEKTOWANIA SZABLONU
             if (isCreatorMode) {
               return (
                 <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-3 flex items-center justify-between gap-4 shadow-md animate-in fade-in duration-150">
@@ -534,7 +530,6 @@ export default function NewWorkout({
               )
             }
 
-            // PEŁNY LOGGER NA SIŁOWNIĘ (Z BADGE'AMI TYPÓW SERII + IN-APP KLAWIATURĄ)
             return (
               <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg shadow-lg overflow-hidden animate-in fade-in duration-150">
                 <div className="px-4 py-3 bg-gymCardSecondary/40 border-b border-zinc-800/60 flex items-center justify-between gap-3">
@@ -585,7 +580,7 @@ export default function NewWorkout({
                         <div 
                           key={s.globalIndex} 
                           ref={el => { if (el) seriesRefs.current[s.globalIndex] = el }}
-                          className={`grid grid-cols-12 gap-2 items-center text-center p-1 rounded transition-all ${
+                          className={`grid grid-cols-12 gap-2 items-center text-center p-1 rounded transition-all scroll-mt-28 ${
                             s.completed 
                               ? 'bg-gymSuccess/5 border-l-2 border-gymSuccess' 
                               : highlightedGlobalIdx === s.globalIndex 
@@ -761,7 +756,7 @@ export default function NewWorkout({
             </div>
           )}
 
-          {/* PRZYCISKI KROKOWE KOREKT */}
+          {/* PRZYCISKI KROKOWE */}
           {activeInput.field === 'weight' ? (
             <div className="flex flex-col gap-1 mb-2">
               <div className="grid grid-cols-3 gap-1.5 font-mono">
@@ -876,6 +871,7 @@ export default function NewWorkout({
               </div>
             </div>
             <div className="overflow-y-auto divide-y divide-zinc-800/40 flex-1 pb-6">
+              {/* 🛠️ [NAPRAWIONO SYNTAL_TYPO] Nawias zamieniający pętlę na bezpieczny kod JSX ())} */}
               {Object.entries(groupedExercises).map(([group, exList]) => (
                 <div key={group} className="text-left">
                   <div className="px-4 py-1.5 text-[10px] font-bold text-textSecondary uppercase tracking-wider bg-gymCardSecondary/40 border-b border-zinc-800/20">{group}</div>
