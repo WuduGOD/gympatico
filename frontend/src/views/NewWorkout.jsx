@@ -40,13 +40,18 @@ export default function NewWorkout({
   const [selectedMuscleFilter, setSelectedMuscleFilter] = useState('Wszystkie')
   const [infoExercise, setInfoExercise] = useState(null)
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
+  
+  // Stany zarządzające In-App Numpadem
   const [activeInput, setActiveInput] = useState(null) // { globalIdx, field: 'weight' | 'reps' }
   const [showPlateCalc, setShowPlateCalc] = useState(false)
+  
+  // 🛠️ [NOWOŚĆ] Stan wagi bazowej do kalkulatora talerzy (20kg / 15kg / 0kg dla maszyn)
+  const [barbellBaseWeight, setBarbellBaseWeight] = useState(20)
 
   const timerRef = useRef(null)
 
   // =========================================================================
-  // 2. GWARANTOWANE STANOWE ZMIENNE POCHODNE (PRODUKCYJNY BEZPIECZNIK SCOPE)
+  // 2. GWARANTOWANE STANOWE ZMIENNE POCHODNE
   // =========================================================================
   const isCreatorMode = activeMode === 'template_creator'
   const currentGlobalList = isCreatorMode ? templateSeriesList : localSeriesList
@@ -65,12 +70,14 @@ export default function NewWorkout({
     return ['Wszystkie', ...new Set(groups)]
   }, [exercises])
 
+  // 🛠️ [ZAKTUALIZOWANO] Inteligentny kalkulator talerzy uwzględniający wybraną wagę bazową
   const platesConfig = React.useMemo(() => {
     if (!activeInput) return []
     const list = currentGlobalList
     const targetWeight = parseFloat(list[activeInput.globalIdx]?.weight || 0)
     
-    const weightOnOneSide = (targetWeight - 20) / 2
+    // Dynamiczny wzór uzależniony od typu wybranego przyrządu
+    const weightOnOneSide = (targetWeight - barbellBaseWeight) / 2
     if (weightOnOneSide <= 0 || isNaN(weightOnOneSide)) return []
 
     const availablePlates = [25, 20, 15, 10, 5, 2.5, 1.25]
@@ -84,7 +91,7 @@ export default function NewWorkout({
       }
     }
     return result
-  }, [activeInput, currentGlobalList])
+  }, [activeInput, currentGlobalList, barbellBaseWeight])
 
   // =========================================================================
   // 4. LOGIKA OPERACYJNA INTERFEJSU
@@ -431,7 +438,6 @@ export default function NewWorkout({
               .map((s, globalIndex) => ({ ...s, globalIndex }))
               .filter(s => s.exerciseId === exId)
 
-            // ULTRA-KOMPAKTOWY WIDOK JEDNOLINIJKOWY DLA PROJEKTOWANIA SZABLONU
             if (isCreatorMode) {
               return (
                 <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-3 flex items-center justify-between gap-4 shadow-md animate-in fade-in duration-150">
@@ -481,7 +487,6 @@ export default function NewWorkout({
               )
             }
 
-            // PEŁNY LOGGER NA SIŁOWNIĘ (Z BADGE'AMI TYPÓW SERII + IN-APP KLAWIATURĄ)
             return (
               <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg shadow-lg overflow-hidden animate-in fade-in duration-150">
                 <div className="px-4 py-3 bg-gymCardSecondary/40 border-b border-zinc-800/60 flex items-center justify-between gap-3">
@@ -550,7 +555,6 @@ export default function NewWorkout({
                             —
                           </div>
 
-                          {/* INPUT CIĘŻARU (WŁASNY NUMPAD) */}
                           <div className="col-span-3">
                             <input 
                               type="text"
@@ -566,7 +570,6 @@ export default function NewWorkout({
                             />
                           </div>
 
-                          {/* INPUT POWTÓRZEŃ (WŁASNY NUMPAD) */}
                           <div className="col-span-2">
                             <input 
                               type="text"
@@ -625,7 +628,7 @@ export default function NewWorkout({
         </div>
       )}
 
-      {/* STICKY FOOTER ACTION BAR */}
+      {/* STICKY FOOTER */}
       <div className={`fixed bottom-16 left-0 right-0 max-w-[640px] mx-auto z-40 bg-gradient-to-t from-gymDark via-gymDark to-transparent pt-6 pb-2 px-4 sm:px-0 transition-transform duration-200 ${activeInput ? 'translate-y-20 opacity-0 pointer-events-none' : ''}`}>
         <button 
           onClick={() => setIsAtlasOpen(true)} 
@@ -635,7 +638,7 @@ export default function NewWorkout({
         </button>
       </div>
 
-      {/* INTERAKTYWNY IN-APP NUMPAD + KROKOWE MODYFIKATORY +/- (PRODUKCYJNIE ZABEZPIECZONY) */}
+      {/* INTERAKTYWNY IN-APP NUMPAD + ZAAWANSOWANY PRZELICZNIK DLA MASZYN/SZTANG */}
       {activeInput && (
         <div className="fixed bottom-0 left-0 right-0 max-w-[640px] mx-auto bg-[#15181f] border-t-2 border-zinc-800 z-[9999] p-3 animate-in slide-in-from-bottom duration-200 select-none pb-safe">
           
@@ -648,12 +651,6 @@ export default function NewWorkout({
             </div>
 
             <div className="flex items-center gap-1.5 text-zinc-400">
-              {activeInput.field === 'weight' && platesConfig.length > 0 && showPlateCalc && (
-                <div className="flex items-center gap-1 bg-gymPremium/10 text-gymPremium font-mono font-black text-[10px] px-2 py-0.5 rounded border border-gymPremium/20 animate-in zoom-in-95">
-                  🏋️‍♂️ Na stronę: {platesConfig.join(' + ')} kg
-                </div>
-              )}
-              
               {activeInput.field === 'weight' && (
                 <button
                   type="button"
@@ -672,6 +669,41 @@ export default function NewWorkout({
               </button>
             </div>
           </div>
+
+          {/* 🛠️ [ROZBUDOWANY] PANEL WYBORU SPRZĘTU + PRZELICZANIE TALERZY DLA MASZYN/SZTANG */}
+          {activeInput.field === 'weight' && showPlateCalc && (
+            <div className="flex flex-col gap-2 bg-zinc-900/90 border border-zinc-800/80 p-2.5 rounded-gp-md mb-2 animate-in zoom-in-95">
+              <div className="flex items-center justify-between text-[10px] text-textSecondary font-bold border-b border-zinc-800/50 pb-2">
+                <span>TYP PRZYRZĄDU (WAGA BAZOWA):</span>
+                <div className="flex gap-1.5">
+                  {[
+                    { label: 'Sztanga 20kg 🏋️‍♂️', val: 20 },
+                    { label: 'Sztanga 15kg 🏋️‍♀️', val: 15 },
+                    { label: 'Maszyna (0kg) 🤖', val: 0 }
+                  ].map(b => (
+                    <button
+                      key={b.val}
+                      type="button"
+                      onClick={() => setBarbellBaseWeight(b.val)}
+                      className={`px-2 py-1 rounded text-[9px] font-black tracking-tight transition-colors cursor-pointer ${barbellBaseWeight === b.val ? 'bg-gymRed text-white' : 'bg-zinc-800 text-textMuted hover:text-white'}`}
+                    >
+                      {b.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-zinc-400">Na jedną stronę zakładaj:</span>
+                {platesConfig.length > 0 ? (
+                  <div className="flex items-center gap-1 bg-gymPremium/10 text-gymPremium font-mono font-black text-[11px] px-2 py-0.5 rounded border border-gymPremium/20">
+                    {platesConfig.join(' + ')} kg
+                  </div>
+                ) : (
+                  <span className="text-textMuted text-[10px] italic">Waga mniejsza lub równa masie bazy</span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* SZYBKIE PRZYCISKI KROKOWYCH KOREKT DLA KCIUKA */}
           {activeInput.field === 'weight' ? (
@@ -710,7 +742,7 @@ export default function NewWorkout({
             </div>
           )}
 
-          {/* KLAWIATURA CYFROWA NATYWNA */}
+          {/* KLAWIATURA CYFROWA */}
           <div className="grid grid-cols-3 gap-1.5 font-mono">
             {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
               <button
@@ -780,7 +812,7 @@ export default function NewWorkout({
                       key={group}
                       type="button"
                       onClick={() => setSelectedMuscleFilter(group)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-bold tracking-tight whitespace-nowrap transition-all border cursor-pointer active:scale-95 ${isActive ? 'bg-gymRed border-gymRed text-white' : 'bg-gymCard border-zinc-800 text-textSecondary hover:text-white'}`}
+                      className="px-3 py-1.5 rounded-full text-xs font-bold tracking-tight whitespace-nowrap transition-all border cursor-pointer active:scale-95 bg-gymCard border-zinc-800 text-textSecondary hover:text-white"
                     >
                       {group}
                     </button>
