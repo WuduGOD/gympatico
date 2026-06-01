@@ -70,7 +70,8 @@ CREATE TABLE log_series (
     series_order INT NOT NULL,
     estimated_one_rm NUMERIC,
     is_alternative BOOLEAN DEFAULT FALSE,
-    comment TEXT
+    comment TEXT,
+    series_type VARCHAR(20) DEFAULT 'NORMAL' NOT NULL
 );
 
 -- 8. Tabela Główna Szablonów Treningowych

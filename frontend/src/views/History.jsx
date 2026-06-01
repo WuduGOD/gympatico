@@ -33,7 +33,7 @@ export default function History({
   const [editName, setEditName] = useState('')
   const [editComment, setEditComment] = useState('')
 
-  const isPremiumUser = user?.is_premium || user?.role === 'TRAINER';
+  const isPremiumUser = user?.is_premium || user?.isPremium || user?.role === 'TRAINER';
   const remaining = Math.max(0, totalWorkoutsCount - workoutsHistory.length);
 
   const handleExportCSV = async () => {

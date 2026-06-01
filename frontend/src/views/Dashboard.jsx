@@ -73,7 +73,7 @@ export default function Dashboard({
 
   const validData = progressionData.filter(d => !isNaN(d.oneRm))
   const isNewUser = weightLogs.length === 0 && validData.length === 0
-  const isPremiumUser = user?.is_premium || user?.role === 'TRAINER';
+  const isPremiumUser = user?.is_premium || user?.isPremium || user?.role === 'TRAINER';
 
   let pointsPath = ''
   let gradientPath = ''

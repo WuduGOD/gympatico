@@ -57,9 +57,12 @@ function AppContent() {
   } = useWorkouts(token, exercises, showToast)
 
   const handleLoginSuccess = (userToken, userData) => {
+    // 🛠️ [NOWOŚĆ] Pancerne ujednolicenie obu formatów zapisu dla pełnego bezpieczeństwa widoków
+    const isPremiumVal = userData.isPremium || userData.is_premium || false;
     const normalizedLoginUser = {
       ...userData,
-      is_premium: userData.isPremium || userData.is_premium || false
+      is_premium: isPremiumVal,
+      isPremium: isPremiumVal
     };
 
     localStorage.setItem('gp_token', userToken);
@@ -116,9 +119,12 @@ function AppContent() {
       })
         .then(res => { if (!res.ok) throw new Error('Błąd profilu'); return res.json(); })
         .then(data => {
+          // 🛠️ [NOWOŚĆ] Zapisujemy do stanu i localStorage oba warianty klucza
+          const isPremiumVal = data.is_premium || false;
           const normalizedUser = {
             ...data,
-            isPremium: data.is_premium, 
+            is_premium: isPremiumVal,
+            isPremium: isPremiumVal, 
           };
           setUser(normalizedUser);
           localStorage.setItem('gp_user', JSON.stringify(normalizedUser));
