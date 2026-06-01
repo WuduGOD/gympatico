@@ -24,16 +24,14 @@ export default function NewWorkout({
   handleSaveWorkout,
   showToast
 }) {
-  // 1. GŁÓWNY STEROWNIK TRYBU
+  // =========================================================================
+  // 1. REJESTRACJA HOOKÓW STANÓW (USTATE / USEREF)
+  // =========================================================================
   const [activeMode, setActiveMode] = useState(() => {
     if (localSeriesList.length > 0) return 'active_workout'
     return 'selection'
   })
 
-  // Flagę trybu projektowania definiujemy na samej górze
-  const isCreatorMode = activeMode === 'template_creator'
-
-  // 2. STANY KOMPONENTU
   const [sessionExercises, setSessionExercises] = useState([])
   const [customTemplateName, setCustomTemplateName] = useState('')
   const [templateSeriesList, setTemplateSeriesList] = useState([])
@@ -42,30 +40,34 @@ export default function NewWorkout({
   const [selectedMuscleFilter, setSelectedMuscleFilter] = useState('Wszystkie')
   const [infoExercise, setInfoExercise] = useState(null)
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
-  
-  // Stany zarządzające In-App Numpadem
   const [activeInput, setActiveInput] = useState(null) // { globalIdx, field: 'weight' | 'reps' }
   const [showPlateCalc, setShowPlateCalc] = useState(false)
 
   const timerRef = useRef(null)
 
-  // Automatyczna synchronizacja trybu przy czyszczeniu nadrzędnym
+  // =========================================================================
+  // 2. GWARANTOWANE STANOWE ZMIENNE POCHODNE (PRODUKCYJNY BEZPIECZNIK SCOPE)
+  // =========================================================================
+  const isCreatorMode = activeMode === 'template_creator'
+  const currentGlobalList = isCreatorMode ? templateSeriesList : localSeriesList
+
+  // =========================================================================
+  // 3. EFEKTY I REAKTYWNE KALKULATORY (USEEFFECT / USEMEMO)
+  // =========================================================================
   useEffect(() => {
     if (localSeriesList.length === 0 && sessionExercises.length === 0 && !workoutName && activeMode === 'active_workout') {
       setActiveMode('selection')
     }
   }, [localSeriesList, sessionExercises, workoutName, activeMode])
 
-  // Wyciąganie unikalnych grup mięśniowych z bazy do paska filtrów
   const uniqueMuscleGroups = React.useMemo(() => {
     const groups = exercises.map(e => e.muscle_group).filter(Boolean)
     return ['Wszystkie', ...new Set(groups)]
   }, [exercises])
 
-  // Algorytm obliczania talerzy na jedną stronę sztangi 20 kg
   const platesConfig = React.useMemo(() => {
     if (!activeInput) return []
-    const list = isCreatorMode ? templateSeriesList : localSeriesList
+    const list = currentGlobalList
     const targetWeight = parseFloat(list[activeInput.globalIdx]?.weight || 0)
     
     const weightOnOneSide = (targetWeight - 20) / 2
@@ -82,10 +84,11 @@ export default function NewWorkout({
       }
     }
     return result
-  }, [activeInput, localSeriesList, templateSeriesList, isCreatorMode])
+  }, [activeInput, currentGlobalList])
 
-  // --- OBSŁUGA INTERFEJSU AKTYWNEGO TRENINGU ---
-
+  // =========================================================================
+  // 4. LOGIKA OPERACYJNA INTERFEJSU
+  // =========================================================================
   const handleAddExerciseToSession = (exId) => {
     if (sessionExercises.includes(exId)) {
       setIsAtlasOpen(false)
@@ -164,7 +167,6 @@ export default function NewWorkout({
     setter(prev => prev.map((item, i) => i === globalIdx ? { ...item, seriesType: nextType } : item))
   }
 
-  // 🛠️ ZAKTUALIZOWANA LOGIKA NACISKANIA KLAWISZY NA WŁASNYM NUMPADZIE (Z OBSŁUGĄ +/-)
   const handleNumpadPress = (key) => {
     if (!activeInput) return
     const modeStr = isCreatorMode ? 'creator' : 'workout'
@@ -186,16 +188,13 @@ export default function NewWorkout({
         setShowPlateCalc(false)
       }
     } else if (key.startsWith('+') || key.startsWith('-')) {
-      // Wyliczenia dla modyfikacji krokowych (+/- kg oraz +/- powtórzeń)
       if (activeInput.field === 'weight') {
         const inc = parseFloat(key.replace(' kg', ''))
         const currentNum = parseFloat(currentVal) || 0
         const MathResult = currentNum + inc
-        // Zabezpieczenie przed ujemnym ciężarem i ucinanie śmieciowych zer po kropce
         const newVal = MathResult <= 0 ? '' : String(Number(MathResult.toFixed(2)))
         handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, newVal, modeStr)
       } else {
-        // Modyfikacja powtórzeń (Reps)
         const inc = parseInt(key, 10)
         const currentNum = parseInt(currentVal, 10) || 0
         const MathResult = currentNum + inc
@@ -322,7 +321,7 @@ export default function NewWorkout({
   }, {})
 
   // =========================================================================
-  // STAN 1: SELECTION (COUCH MODE HOME)
+  // RENDER: 1. HOME SELECTION (COUCH MODE)
   // =========================================================================
   if (activeMode === 'selection') {
     return (
@@ -380,7 +379,7 @@ export default function NewWorkout({
   }
 
   // =========================================================================
-  // STAN 2: ACTIVE WORKOUT / TEMPLATE CREATOR PANEL
+  // RENDER: 2. ACTIVE LOGGER / TEMPLATE CREATOR
   // =========================================================================
   return (
     <div className="max-w-[640px] mx-auto flex flex-col gap-4 text-left animate-in fade-in duration-200 pb-20">
@@ -396,7 +395,7 @@ export default function NewWorkout({
         </div>
         <div className="flex gap-2 shrink-0">
           <button onClick={() => setIsCancelModalOpen(true)} className="px-3 py-2 border border-zinc-800 hover:bg-zinc-800/30 text-textSecondary font-bold text-xs rounded-gp-md cursor-pointer transition-colors">
-            Wyźdź ✕
+            Wyjdź ✕
           </button>
           <button 
             onClick={isCreatorMode ? handleSaveCustomTemplate : onSubmitActiveWorkout} 
@@ -432,7 +431,7 @@ export default function NewWorkout({
               .map((s, globalIndex) => ({ ...s, globalIndex }))
               .filter(s => s.exerciseId === exId)
 
-            // ULTRA-KOMPAKTOWY WIDOK JEDNOLINIJKOWY DLA PROJEKTOWANIA PLANU
+            // ULTRA-KOMPAKTOWY WIDOK JEDNOLINIJKOWY DLA PROJEKTOWANIA SZABLONU
             if (isCreatorMode) {
               return (
                 <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-3 flex items-center justify-between gap-4 shadow-md animate-in fade-in duration-150">
@@ -626,7 +625,7 @@ export default function NewWorkout({
         </div>
       )}
 
-      {/* STICKY FOOTER */}
+      {/* STICKY FOOTER ACTION BAR */}
       <div className={`fixed bottom-16 left-0 right-0 max-w-[640px] mx-auto z-40 bg-gradient-to-t from-gymDark via-gymDark to-transparent pt-6 pb-2 px-4 sm:px-0 transition-transform duration-200 ${activeInput ? 'translate-y-20 opacity-0 pointer-events-none' : ''}`}>
         <button 
           onClick={() => setIsAtlasOpen(true)} 
@@ -636,7 +635,7 @@ export default function NewWorkout({
         </button>
       </div>
 
-      {/* 🛠️ WTRZYKNIĘTY INTERAKTYWNY IN-APP NUMPAD + KROKOWE MODYFIKATORY +/- */}
+      {/* INTERAKTYWNY IN-APP NUMPAD + KROKOWE MODYFIKATORY +/- (PRODUKCYJNIE ZABEZPIECZONY) */}
       {activeInput && (
         <div className="fixed bottom-0 left-0 right-0 max-w-[640px] mx-auto bg-[#15181f] border-t-2 border-zinc-800 z-[9999] p-3 animate-in slide-in-from-bottom duration-200 select-none pb-safe">
           
@@ -674,7 +673,7 @@ export default function NewWorkout({
             </div>
           </div>
 
-          {/* 🛠️ SZYBKIE PRZYCISKI MODYFIKATORÓW KROKOWYCH DLA CIĘŻARU LUB POWTÓRZEŃ */}
+          {/* SZYBKIE PRZYCISKI KROKOWYCH KOREKT DLA KCIUKA */}
           {activeInput.field === 'weight' ? (
             <div className="flex flex-col gap-1 mb-2">
               <div className="grid grid-cols-3 gap-1.5 font-mono">
@@ -705,13 +704,13 @@ export default function NewWorkout({
                   key={inc} type="button" onClick={() => handleNumpadPress(inc)}
                   className={`py-1.5 bg-zinc-800/30 hover:bg-zinc-800 border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm ${inc.startsWith('+') ? 'text-emerald-400' : 'text-rose-400'}`}
                 >
-                  {inc === '+1' ? '＋1' : '－1'}
+                  {inc === '+1' ? '＋1 Powtórzenie' : '－1 Powtórzenie'}
                 </button>
               ))}
             </div>
           )}
 
-          {/* KLAWIATURA CYFROWA */}
+          {/* KLAWIATURA CYFROWA NATYWNA */}
           <div className="grid grid-cols-3 gap-1.5 font-mono">
             {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
               <button
