@@ -30,7 +30,7 @@ export default function NewWorkout({
     return 'selection'
   })
 
-  // 🛠️ [POPRAWKA TDZ] Deklaracja przeniesiona na samą górę ciała komponentu
+  // Flagę trybu projektowania definiujemy na samej górze
   const isCreatorMode = activeMode === 'template_creator'
 
   // 2. STANY KOMPONENTU
@@ -62,7 +62,7 @@ export default function NewWorkout({
     return ['Wszystkie', ...new Set(groups)]
   }, [exercises])
 
-  // 🛠️ [POPRAWKA] Algorytm obliczania talerzy na jedną stronę sztangi 20 kg z poprawnymi zależnościami
+  // Algorytm obliczania talerzy na jedną stronę sztangi 20 kg
   const platesConfig = React.useMemo(() => {
     if (!activeInput) return []
     const list = isCreatorMode ? templateSeriesList : localSeriesList
@@ -164,7 +164,7 @@ export default function NewWorkout({
     setter(prev => prev.map((item, i) => i === globalIdx ? { ...item, seriesType: nextType } : item))
   }
 
-  // LOGIKA NACISKANIA KLAWISZY NA WŁASNYM NUMPADZIE
+  // 🛠️ ZAKTUALIZOWANA LOGIKA NACISKANIA KLAWISZY NA WŁASNYM NUMPADZIE (Z OBSŁUGĄ +/-)
   const handleNumpadPress = (key) => {
     if (!activeInput) return
     const modeStr = isCreatorMode ? 'creator' : 'workout'
@@ -185,11 +185,23 @@ export default function NewWorkout({
         setActiveInput(null)
         setShowPlateCalc(false)
       }
-    } else if (key.startsWith('+')) {
-      const inc = parseFloat(key.replace(' kg', ''))
-      const currentNum = parseFloat(currentVal) || 0
-      const newVal = String(currentNum + inc)
-      handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, newVal, modeStr)
+    } else if (key.startsWith('+') || key.startsWith('-')) {
+      // Wyliczenia dla modyfikacji krokowych (+/- kg oraz +/- powtórzeń)
+      if (activeInput.field === 'weight') {
+        const inc = parseFloat(key.replace(' kg', ''))
+        const currentNum = parseFloat(currentVal) || 0
+        const MathResult = currentNum + inc
+        // Zabezpieczenie przed ujemnym ciężarem i ucinanie śmieciowych zer po kropce
+        const newVal = MathResult <= 0 ? '' : String(Number(MathResult.toFixed(2)))
+        handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, newVal, modeStr)
+      } else {
+        // Modyfikacja powtórzeń (Reps)
+        const inc = parseInt(key, 10)
+        const currentNum = parseInt(currentVal, 10) || 0
+        const MathResult = currentNum + inc
+        const newVal = MathResult <= 0 ? '' : String(MathResult)
+        handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, newVal, modeStr)
+      }
     } else {
       const newVal = currentVal === '0' ? key : currentVal + key
       handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, newVal, modeStr)
@@ -214,15 +226,6 @@ export default function NewWorkout({
       }
       return { ...item, completed: isTurningOn, estimatedOneRm: oneRm }
     }))
-  }
-
-  // --- SAVES & LOADING ---
-  const handleStartTemplateCreator = () => {
-    setCustomTemplateName('')
-    setTemplateSeriesList([])
-    setSessionExercises([])
-    setIsAtlasOpen(true)
-    setActiveMode('template_creator')
   }
 
   const handleSaveCustomTemplate = async () => {
@@ -318,8 +321,6 @@ export default function NewWorkout({
     return acc
   }, {})
 
-  const currentGlobalList = isCreatorMode ? templateSeriesList : localSeriesList
-
   // =========================================================================
   // STAN 1: SELECTION (COUCH MODE HOME)
   // =========================================================================
@@ -339,7 +340,7 @@ export default function NewWorkout({
             </div>
           </button>
           
-          <button onClick={handleStartTemplateCreator} className="p-4 bg-gymCardSecondary hover:bg-zinc-800/40 border border-zinc-800/60 rounded-gp-lg text-left transition-all active:scale-[0.99] cursor-pointer flex items-center justify-between group">
+          <button onClick={() => { setActiveMode('template_creator'); setIsAtlasOpen(true); }} className="p-4 bg-gymCardSecondary hover:bg-zinc-800/40 border border-zinc-800/60 rounded-gp-lg text-left transition-all active:scale-[0.99] cursor-pointer flex items-center justify-between group">
             <div>
               <h3 className="text-sm font-bold text-gymPremium group-hover:text-amber-400 transition-colors">Stwórz nowy szablon 📋</h3>
               <p className="text-[11px] text-textSecondary mt-0.5">Rozpisz plan na sucho poza treningiem.</p>
@@ -395,7 +396,7 @@ export default function NewWorkout({
         </div>
         <div className="flex gap-2 shrink-0">
           <button onClick={() => setIsCancelModalOpen(true)} className="px-3 py-2 border border-zinc-800 hover:bg-zinc-800/30 text-textSecondary font-bold text-xs rounded-gp-md cursor-pointer transition-colors">
-            Wyjdź ✕
+            Wyźdź ✕
           </button>
           <button 
             onClick={isCreatorMode ? handleSaveCustomTemplate : onSubmitActiveWorkout} 
@@ -566,7 +567,7 @@ export default function NewWorkout({
                             />
                           </div>
 
-                          {/* INPUT POWTÓRZEŃ (WŁASNY NUMPAD - NAPRAWIONY ŚREDNIK) */}
+                          {/* INPUT POWTÓRZEŃ (WŁASNY NUMPAD) */}
                           <div className="col-span-2">
                             <input 
                               type="text"
@@ -635,7 +636,7 @@ export default function NewWorkout({
         </button>
       </div>
 
-      {/* INTERAKTYWNY IN-APP NUMPAD + PLATE CALCULATOR DRAW PANEL */}
+      {/* 🛠️ WTRZYKNIĘTY INTERAKTYWNY IN-APP NUMPAD + KROKOWE MODYFIKATORY +/- */}
       {activeInput && (
         <div className="fixed bottom-0 left-0 right-0 max-w-[640px] mx-auto bg-[#15181f] border-t-2 border-zinc-800 z-[9999] p-3 animate-in slide-in-from-bottom duration-200 select-none pb-safe">
           
@@ -673,15 +674,38 @@ export default function NewWorkout({
             </div>
           </div>
 
-          {/* SZYBKIE PRZYCISKI MIKRO-OBCIĄŻEŃ */}
-          {activeInput.field === 'weight' && (
-            <div className="grid grid-cols-3 gap-1.5 mb-2 font-mono">
-              {['+1.25 kg', '+2.5 kg', '+5 kg'].map(inc => (
+          {/* 🛠️ SZYBKIE PRZYCISKI MODYFIKATORÓW KROKOWYCH DLA CIĘŻARU LUB POWTÓRZEŃ */}
+          {activeInput.field === 'weight' ? (
+            <div className="flex flex-col gap-1 mb-2">
+              <div className="grid grid-cols-3 gap-1.5 font-mono">
+                {['+1.25 kg', '+2.5 kg', '+5 kg'].map(inc => (
+                  <button
+                    key={inc} type="button" onClick={() => handleNumpadPress(inc)}
+                    className="py-1.5 bg-zinc-800/30 hover:bg-zinc-800 text-emerald-400 border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm"
+                  >
+                    {inc}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-3 gap-1.5 font-mono">
+                {['-1.25 kg', '-2.5 kg', '-5 kg'].map(inc => (
+                  <button
+                    key={inc} type="button" onClick={() => handleNumpadPress(inc)}
+                    className="py-1.5 bg-zinc-800/30 hover:bg-zinc-800 text-rose-400 border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm"
+                  >
+                    {inc}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-1.5 mb-2 font-mono">
+              {['+1', '-1'].map(inc => (
                 <button
                   key={inc} type="button" onClick={() => handleNumpadPress(inc)}
-                  className="py-2 bg-gymCardSecondary/60 hover:bg-zinc-800 text-gymPremium border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm"
+                  className={`py-1.5 bg-zinc-800/30 hover:bg-zinc-800 border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm ${inc.startsWith('+') ? 'text-emerald-400' : 'text-rose-400'}`}
                 >
-                  {inc}
+                  {inc === '+1' ? '＋1' : '－1'}
                 </button>
               ))}
             </div>
@@ -733,7 +757,7 @@ export default function NewWorkout({
       {/* ATLAS DRAWER */}
       {isAtlasOpen && (
         <div className="fixed inset-0 z-[1000] md:z-[998] animate-in fade-in duration-150">
-          <div onClick={() => setIsAtlasOpen(false)} className="absolute inset-0 bg-black/77 backdrop-blur-xs" />
+          <div onClick={() => setIsAtlasOpen(false)} className="absolute inset-0 bg-black/75 backdrop-blur-xs" />
           <div className="absolute bottom-16 left-0 right-0 max-w-[640px] mx-auto bg-[#14161d] border-t border-zinc-800 rounded-t-2xl flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[75vh]">
             <div className="w-12 h-1 bg-zinc-800 rounded-full mx-auto my-2.5 shrink-0" />
             <div className="px-4 pb-3 pt-1 border-b border-zinc-800/80 flex flex-col gap-3 shrink-0">
