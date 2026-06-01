@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import RestTimer from './RestTimer'
 
+// Definicja dostępnych typów serii, ich etykiet i klas kolorystycznych Tailwind
 const SERIES_TYPES = {
   NORMAL: { label: (idx) => idx + 1, bg: 'bg-zinc-800/40 text-textSecondary border-zinc-700/50' },
   WARMUP: { label: () => 'W', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
@@ -39,10 +40,15 @@ export default function NewWorkout({
   const [selectedMuscleFilter, setSelectedMuscleFilter] = useState('Wszystkie')
   const [infoExercise, setInfoExercise] = useState(null)
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
+  
+  // Stany zarządzające In-App Numpadem
   const [activeInput, setActiveInput] = useState(null) // { globalIdx, field: 'weight' | 'reps' }
   const [showPlateCalc, setShowPlateCalc] = useState(false)
   const [barbellBaseWeight, setBarbellBaseWeight] = useState(20)
 
+  // 🛠️ [NOWOŚĆ] Stany i referencje dla automatycznego scrollowania i pulsowania wiersza
+  const [highlightedGlobalIdx, setHighlightedGlobalIdx] = useState(null)
+  const seriesRefs = useRef({})
   const timerRef = useRef(null)
 
   // =========================================================================
@@ -85,6 +91,35 @@ export default function NewWorkout({
     }
     return result
   }, [activeInput, currentGlobalList, barbellBaseWeight])
+
+  // =========================================================================
+  // 🛠️ [NOWOŚĆ] FUNKCJA INTELIGENTNEGO AUTO-SCROLLA I AUTO-FOKUSU PO PRZERWIE
+  // =========================================================================
+  const handleScrollToNextActiveSeries = () => {
+    if (isCreatorMode) return
+
+    // Szukamy pierwszego nieukończonego wiersza serii w aktywnym treningu
+    const nextActiveSet = localSeriesList.find(s => !s.completed)
+    
+    if (nextActiveSet) {
+      const targetElement = seriesRefs.current[nextActiveSet.globalIndex]
+      if (targetElement) {
+        // 1. Płynne centrowanie widoku ekranu telefonu na serii
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+        // 2. Aktywacja optycznego pulsowania wiersza (na 2.5 sekundy)
+        setHighlightedGlobalIdx(nextActiveSet.globalIndex)
+        setTimeout(() => setHighlightedGlobalIdx(null), 2500)
+
+        // 3. Automatyczne podniesienie In-App Numpada na polu wagi tej serii
+        setActiveInput({ globalIdx: nextActiveSet.globalIndex, field: 'weight' })
+      }
+    } else {
+      if (showToast) {
+        showToast('Wszystkie zaplanowane serie na dziś zostały ukończone! Kapitalna robota! 🦾🔥', 'success')
+      }
+    }
+  }
 
   // =========================================================================
   // 4. LOGIKA OPERACYJNA INTERFEJSU
@@ -207,7 +242,6 @@ export default function NewWorkout({
     }
   }
 
-  // 🛠️ [ZAKTUALIZOWANO] Wdrożenie pancernego mechanizmu SMART AUTO-COMPLETE
   const handleToggleCompleteSeries = (globalIdx) => {
     setLocalSeriesList(prev => prev.map((item, i) => {
       if (i !== globalIdx) return item
@@ -216,13 +250,10 @@ export default function NewWorkout({
       let finalWeight = item.weight
       let finalReps = item.reps
 
-      // Jeśli użytkownik zatwierdza pustą serię (Smart Auto-Complete)
       if (isTurningOn && (!finalWeight || !finalReps)) {
-        // Szukamy w dół tablicy serii tego samego ćwiczenia wykonanych wcześniej
         const previousSetsSameExercise = prev.slice(0, i).filter(s => s.exerciseId === item.exerciseId)
         
         if (previousSetsSameExercise.length > 0) {
-          // Pobieramy dane z serii bezpośrednio wyżej
           const upperSet = previousSetsSameExercise[previousSetsSameExercise.length - 1]
           if (!finalWeight) finalWeight = upperSet.weight
           if (!finalReps) finalReps = upperSet.reps
@@ -232,7 +263,6 @@ export default function NewWorkout({
       const w = parseFloat(finalWeight)
       const r = parseInt(finalReps, 10)
 
-      // Zabezpieczenie dla 1. serii na 1. treningu (Brak danych wyżej i brak wpisu ręcznego)
       if (isTurningOn && (isNaN(w) || isNaN(r) || r < 1)) {
         if (showToast) showToast('Wpisz ciężar i powtórzenia dla pierwszej serii! ⚠️', 'error')
         return item
@@ -440,7 +470,8 @@ export default function NewWorkout({
         required
       />
 
-      {!isCreatorMode && <RestTimerWrapper timerRef={timerRef} />}
+      {/* 🛠️ [ZAKTUALIZOWANO] Przekazanie pętli zwrotnej auto-scrolla do stopera */}
+      {!isCreatorMode && <RestTimerWrapper timerRef={timerRef} onTimerFinish={handleScrollToNextActiveSeries} />}
 
       {sessionExercises.length === 0 ? (
         <div className="text-center py-16 bg-gymCard/30 border border-dashed border-zinc-800 rounded-gp-lg p-6 text-textMuted text-xs italic">
@@ -546,7 +577,6 @@ export default function NewWorkout({
                       const isWeightActive = activeInput?.globalIdx === s.globalIndex && activeInput?.field === 'weight'
                       const isRepsActive = activeInput?.globalIdx === s.globalIndex && activeInput?.field === 'reps'
 
-                      // 🛠️ DYNAMICZNE WYLICZANIE PLACEHOLDERÓW DLA SILNIKA SMART AUTO-COMPLETE
                       const previousSets = currentGlobalList.slice(0, s.globalIndex).filter(item => item.exerciseId === s.exerciseId)
                       const hasUpperData = previousSets.length > 0
                       const placeholderWeight = hasUpperData ? previousSets[previousSets.length - 1].weight : '0'
@@ -555,13 +585,17 @@ export default function NewWorkout({
                       return (
                         <div 
                           key={s.globalIndex} 
+                          {/* 🛠️ [NOWOŚĆ] Rejestracja referencji elementu DOM pod bezpieczne scrollowanie */}
+                          ref={el => { if (el) seriesRefs.current[s.globalIndex] = el }}
                           className={`grid grid-cols-12 gap-2 items-center text-center p-1 rounded transition-all ${
                             s.completed 
                               ? 'bg-gymSuccess/5 border-l-2 border-gymSuccess' 
-                              : s.seriesType === 'WARMUP' ? 'bg-amber-500/[0.02]'
-                              : s.seriesType === 'DROP_SET' ? 'bg-purple-500/[0.02]'
-                              : s.seriesType === 'FAILURE' ? 'bg-red-500/[0.02]'
-                              : 'bg-transparent'
+                              : highlightedGlobalIdx === s.globalIndex 
+                                ? 'bg-gymRed/10 border-l-2 border-gymRed animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.15)]' // Styl aktywnego wywołania po przerwie
+                                : s.seriesType === 'WARMUP' ? 'bg-amber-500/[0.02]'
+                                : s.seriesType === 'DROP_SET' ? 'bg-purple-500/[0.02]'
+                                : s.seriesType === 'FAILURE' ? 'bg-red-500/[0.02]'
+                                : 'bg-transparent'
                           }`}
                         >
                           <div className="col-span-2 text-left px-0.5">
@@ -584,7 +618,7 @@ export default function NewWorkout({
                               type="text"
                               inputMode="none"
                               readOnly={true}
-                              placeholder={placeholderWeight} // Dynamiczny placeholder
+                              placeholder={placeholderWeight}
                               disabled={s.completed}
                               value={s.weight}
                               onClick={() => !s.completed && setActiveInput({ globalIdx: s.globalIndex, field: 'weight' })}
@@ -599,7 +633,7 @@ export default function NewWorkout({
                               type="text"
                               inputMode="none"
                               readOnly={true}
-                              placeholder={placeholderReps} // Dynamiczny placeholder
+                              placeholder={placeholderReps}
                               disabled={s.completed}
                               value={s.reps}
                               onClick={() => !s.completed && setActiveInput({ globalIdx: s.globalIndex, field: 'reps' })}
@@ -694,7 +728,7 @@ export default function NewWorkout({
             </div>
           </div>
 
-          {/* PANEL WYBORU SPRZĘTU + PRZELICZANIE TALERZY */}
+          {/* PANEL WYBORU SPRZĘTU */}
           {activeInput.field === 'weight' && showPlateCalc && (
             <div className="flex flex-col gap-2 bg-zinc-900/90 border border-zinc-800/80 p-2.5 rounded-gp-md mb-2 animate-in zoom-in-95">
               <div className="flex items-center justify-between text-[10px] text-textSecondary font-bold border-b border-zinc-800/50 pb-2">
@@ -922,8 +956,9 @@ export default function NewWorkout({
   )
 }
 
-function RestTimerWrapper({ timerRef }) {
-  const timer = RestTimer({ onFinish: () => {} })
+// 🛠️ [ZAKTUALIZOWANO] Przyjmowanie i bindowanie callbacku końca odliczania przerwy
+function RestTimerWrapper({ timerRef, onTimerFinish }) {
+  const timer = RestTimer({ onFinish: onTimerFinish || (() => {}) })
   timerRef.current = { start: timer.start, stop: timer.stop }
   return timer.TimerUI
 }
