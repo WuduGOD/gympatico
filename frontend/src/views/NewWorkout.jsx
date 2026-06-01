@@ -46,13 +46,13 @@ export default function NewWorkout({
   const [showPlateCalc, setShowPlateCalc] = useState(false)
   const [barbellBaseWeight, setBarbellBaseWeight] = useState(20)
 
-  // 🛠️ [NOWOŚĆ] Stany i referencje dla automatycznego scrollowania i pulsowania wiersza
+  // Stany i referencje dla automatycznego scrollowania i pulsowania wiersza
   const [highlightedGlobalIdx, setHighlightedGlobalIdx] = useState(null)
   const seriesRefs = useRef({})
   const timerRef = useRef(null)
 
   // =========================================================================
-  // 2. GWARANTOWANE STANOWE ZMIENNE POCHODNE
+  // 2. GWARANTOWANE STANOWE ZMIENNE POCHODNE (NAPRAWIONO DUPLIKAT)
   // =========================================================================
   const isCreatorMode = activeMode === 'template_creator'
   const currentGlobalList = isCreatorMode ? templateSeriesList : localSeriesList
@@ -92,26 +92,20 @@ export default function NewWorkout({
     return result
   }, [activeInput, currentGlobalList, barbellBaseWeight])
 
-  // =========================================================================
-  // 🛠️ [NOWOŚĆ] FUNKCJA INTELIGENTNEGO AUTO-SCROLLA I AUTO-FOKUSU PO PRZERWIE
-  // =========================================================================
+  // FUNKCJA INTELIGENTNEGO AUTO-SCROLLA I AUTO-FOKUSU PO PRZERWIE
   const handleScrollToNextActiveSeries = () => {
     if (isCreatorMode) return
 
-    // Szukamy pierwszego nieukończonego wiersza serii w aktywnym treningu
     const nextActiveSet = localSeriesList.find(s => !s.completed)
     
     if (nextActiveSet) {
       const targetElement = seriesRefs.current[nextActiveSet.globalIndex]
       if (targetElement) {
-        // 1. Płynne centrowanie widoku ekranu telefonu na serii
         targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
 
-        // 2. Aktywacja optycznego pulsowania wiersza (na 2.5 sekundy)
         setHighlightedGlobalIdx(nextActiveSet.globalIndex)
         setTimeout(() => setHighlightedGlobalIdx(null), 2500)
 
-        // 3. Automatyczne podniesienie In-App Numpada na polu wagi tej serii
         setActiveInput({ globalIdx: nextActiveSet.globalIndex, field: 'weight' })
       }
     } else {
@@ -470,7 +464,6 @@ export default function NewWorkout({
         required
       />
 
-      {/* 🛠️ [ZAKTUALIZOWANO] Przekazanie pętli zwrotnej auto-scrolla do stopera */}
       {!isCreatorMode && <RestTimerWrapper timerRef={timerRef} onTimerFinish={handleScrollToNextActiveSeries} />}
 
       {sessionExercises.length === 0 ? (
@@ -585,13 +578,12 @@ export default function NewWorkout({
                       return (
                         <div 
                           key={s.globalIndex} 
-                          {/* 🛠️ [NOWOŚĆ] Rejestracja referencji elementu DOM pod bezpieczne scrollowanie */}
                           ref={el => { if (el) seriesRefs.current[s.globalIndex] = el }}
                           className={`grid grid-cols-12 gap-2 items-center text-center p-1 rounded transition-all ${
                             s.completed 
                               ? 'bg-gymSuccess/5 border-l-2 border-gymSuccess' 
                               : highlightedGlobalIdx === s.globalIndex 
-                                ? 'bg-gymRed/10 border-l-2 border-gymRed animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.15)]' // Styl aktywnego wywołania po przerwie
+                                ? 'bg-gymRed/10 border-l-2 border-gymRed animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.15)]'
                                 : s.seriesType === 'WARMUP' ? 'bg-amber-500/[0.02]'
                                 : s.seriesType === 'DROP_SET' ? 'bg-purple-500/[0.02]'
                                 : s.seriesType === 'FAILURE' ? 'bg-red-500/[0.02]'
@@ -728,7 +720,7 @@ export default function NewWorkout({
             </div>
           </div>
 
-          {/* PANEL WYBORU SPRZĘTU */}
+          {/* PANEL PRZELICZANIA TALERZY */}
           {activeInput.field === 'weight' && showPlateCalc && (
             <div className="flex flex-col gap-2 bg-zinc-900/90 border border-zinc-800/80 p-2.5 rounded-gp-md mb-2 animate-in zoom-in-95">
               <div className="flex items-center justify-between text-[10px] text-textSecondary font-bold border-b border-zinc-800/50 pb-2">
@@ -763,7 +755,7 @@ export default function NewWorkout({
             </div>
           )}
 
-          {/* PRZYCISKI KROKOWE */}
+          {/* PRZYCISKI KROKOWE KOREKT */}
           {activeInput.field === 'weight' ? (
             <div className="flex flex-col gap-1 mb-2">
               <div className="grid grid-cols-3 gap-1.5 font-mono">
@@ -864,13 +856,12 @@ export default function NewWorkout({
               </div>
               <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-2 px-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden select-none">
                 {uniqueMuscleGroups.map(group => {
-                  const isActive = selectedMuscleFilter === group
                   return (
                     <button
                       key={group}
                       type="button"
                       onClick={() => setSelectedMuscleFilter(group)}
-                      className="px-3 py-1.5 rounded-full text-xs font-bold tracking-tight whitespace-nowrap transition-all border cursor-pointer active:scale-95 bg-gymCard border-zinc-800 text-textSecondary hover:text-white"
+                      className="px-3 py-1.5 rounded-full text-xs font-bold tracking-tight whitespace-nowrap transition-all border cursor-pointer bg-gymCard border-zinc-800 text-textSecondary hover:text-white"
                     >
                       {group}
                     </button>
@@ -956,7 +947,6 @@ export default function NewWorkout({
   )
 }
 
-// 🛠️ [ZAKTUALIZOWANO] Przyjmowanie i bindowanie callbacku końca odliczania przerwy
 function RestTimerWrapper({ timerRef, onTimerFinish }) {
   const timer = RestTimer({ onFinish: onTimerFinish || (() => {}) })
   timerRef.current = { start: timer.start, stop: timer.stop }
