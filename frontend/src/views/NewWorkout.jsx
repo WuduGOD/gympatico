@@ -2,7 +2,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import RestTimer from './RestTimer'
 
-// Definicja dostępnych typów serii, ich etykiet i klas kolorystycznych Tailwind
 const SERIES_TYPES = {
   NORMAL: { label: (idx) => idx + 1, bg: 'bg-zinc-800/40 text-textSecondary border-zinc-700/50' },
   WARMUP: { label: () => 'W', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
@@ -40,12 +39,8 @@ export default function NewWorkout({
   const [selectedMuscleFilter, setSelectedMuscleFilter] = useState('Wszystkie')
   const [infoExercise, setInfoExercise] = useState(null)
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
-  
-  // Stany zarządzające In-App Numpadem
   const [activeInput, setActiveInput] = useState(null) // { globalIdx, field: 'weight' | 'reps' }
   const [showPlateCalc, setShowPlateCalc] = useState(false)
-  
-  // 🛠️ [NOWOŚĆ] Stan wagi bazowej do kalkulatora talerzy (20kg / 15kg / 0kg dla maszyn)
   const [barbellBaseWeight, setBarbellBaseWeight] = useState(20)
 
   const timerRef = useRef(null)
@@ -70,13 +65,11 @@ export default function NewWorkout({
     return ['Wszystkie', ...new Set(groups)]
   }, [exercises])
 
-  // 🛠️ [ZAKTUALIZOWANO] Inteligentny kalkulator talerzy uwzględniający wybraną wagę bazową
   const platesConfig = React.useMemo(() => {
     if (!activeInput) return []
     const list = currentGlobalList
     const targetWeight = parseFloat(list[activeInput.globalIdx]?.weight || 0)
     
-    // Dynamiczny wzór uzależniony od typu wybranego przyrządu
     const weightOnOneSide = (targetWeight - barbellBaseWeight) / 2
     if (weightOnOneSide <= 0 || isNaN(weightOnOneSide)) return []
 
@@ -214,15 +207,34 @@ export default function NewWorkout({
     }
   }
 
+  // 🛠️ [ZAKTUALIZOWANO] Wdrożenie pancernego mechanizmu SMART AUTO-COMPLETE
   const handleToggleCompleteSeries = (globalIdx) => {
     setLocalSeriesList(prev => prev.map((item, i) => {
       if (i !== globalIdx) return item
       const isTurningOn = !item.completed
-      const w = parseFloat(item.weight)
-      const r = parseInt(item.reps)
 
+      let finalWeight = item.weight
+      let finalReps = item.reps
+
+      // Jeśli użytkownik zatwierdza pustą serię (Smart Auto-Complete)
+      if (isTurningOn && (!finalWeight || !finalReps)) {
+        // Szukamy w dół tablicy serii tego samego ćwiczenia wykonanych wcześniej
+        const previousSetsSameExercise = prev.slice(0, i).filter(s => s.exerciseId === item.exerciseId)
+        
+        if (previousSetsSameExercise.length > 0) {
+          // Pobieramy dane z serii bezpośrednio wyżej
+          const upperSet = previousSetsSameExercise[previousSetsSameExercise.length - 1]
+          if (!finalWeight) finalWeight = upperSet.weight
+          if (!finalReps) finalReps = upperSet.reps
+        }
+      }
+
+      const w = parseFloat(finalWeight)
+      const r = parseInt(finalReps, 10)
+
+      // Zabezpieczenie dla 1. serii na 1. treningu (Brak danych wyżej i brak wpisu ręcznego)
       if (isTurningOn && (isNaN(w) || isNaN(r) || r < 1)) {
-        if (showToast) showToast('Wpisz poprawne wartości zanim zaliczysz serię! ⚠️', 'error')
+        if (showToast) showToast('Wpisz ciężar i powtórzenia dla pierwszej serii! ⚠️', 'error')
         return item
       }
 
@@ -230,7 +242,13 @@ export default function NewWorkout({
       if (isTurningOn && timerRef.current?.start) {
         timerRef.current.start()
       }
-      return { ...item, completed: isTurningOn, estimatedOneRm: oneRm }
+      return { 
+        ...item, 
+        weight: finalWeight, 
+        reps: finalReps, 
+        completed: isTurningOn, 
+        estimatedOneRm: oneRm 
+      }
     }))
   }
 
@@ -528,6 +546,12 @@ export default function NewWorkout({
                       const isWeightActive = activeInput?.globalIdx === s.globalIndex && activeInput?.field === 'weight'
                       const isRepsActive = activeInput?.globalIdx === s.globalIndex && activeInput?.field === 'reps'
 
+                      // 🛠️ DYNAMICZNE WYLICZANIE PLACEHOLDERÓW DLA SILNIKA SMART AUTO-COMPLETE
+                      const previousSets = currentGlobalList.slice(0, s.globalIndex).filter(item => item.exerciseId === s.exerciseId)
+                      const hasUpperData = previousSets.length > 0
+                      const placeholderWeight = hasUpperData ? previousSets[previousSets.length - 1].weight : '0'
+                      const placeholderReps = hasUpperData ? previousSets[previousSets.length - 1].reps : '10'
+
                       return (
                         <div 
                           key={s.globalIndex} 
@@ -560,7 +584,7 @@ export default function NewWorkout({
                               type="text"
                               inputMode="none"
                               readOnly={true}
-                              placeholder="0"
+                              placeholder={placeholderWeight} // Dynamiczny placeholder
                               disabled={s.completed}
                               value={s.weight}
                               onClick={() => !s.completed && setActiveInput({ globalIdx: s.globalIndex, field: 'weight' })}
@@ -575,7 +599,7 @@ export default function NewWorkout({
                               type="text"
                               inputMode="none"
                               readOnly={true}
-                              placeholder="10"
+                              placeholder={placeholderReps} // Dynamiczny placeholder
                               disabled={s.completed}
                               value={s.reps}
                               onClick={() => !s.completed && setActiveInput({ globalIdx: s.globalIndex, field: 'reps' })}
@@ -638,7 +662,7 @@ export default function NewWorkout({
         </button>
       </div>
 
-      {/* INTERAKTYWNY IN-APP NUMPAD + ZAAWANSOWANY PRZELICZNIK DLA MASZYN/SZTANG */}
+      {/* INTERAKTYWNY IN-APP NUMPAD */}
       {activeInput && (
         <div className="fixed bottom-0 left-0 right-0 max-w-[640px] mx-auto bg-[#15181f] border-t-2 border-zinc-800 z-[9999] p-3 animate-in slide-in-from-bottom duration-200 select-none pb-safe">
           
@@ -670,7 +694,7 @@ export default function NewWorkout({
             </div>
           </div>
 
-          {/* 🛠️ [ROZBUDOWANY] PANEL WYBORU SPRZĘTU + PRZELICZANIE TALERZY DLA MASZYN/SZTANG */}
+          {/* PANEL WYBORU SPRZĘTU + PRZELICZANIE TALERZY */}
           {activeInput.field === 'weight' && showPlateCalc && (
             <div className="flex flex-col gap-2 bg-zinc-900/90 border border-zinc-800/80 p-2.5 rounded-gp-md mb-2 animate-in zoom-in-95">
               <div className="flex items-center justify-between text-[10px] text-textSecondary font-bold border-b border-zinc-800/50 pb-2">
@@ -705,7 +729,7 @@ export default function NewWorkout({
             </div>
           )}
 
-          {/* SZYBKIE PRZYCISKI KROKOWYCH KOREKT DLA KCIUKA */}
+          {/* PRZYCISKI KROKOWE */}
           {activeInput.field === 'weight' ? (
             <div className="flex flex-col gap-1 mb-2">
               <div className="grid grid-cols-3 gap-1.5 font-mono">
