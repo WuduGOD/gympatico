@@ -1,8 +1,7 @@
 // frontend/src/views/NewWorkout.jsx
-import React, { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import RestTimer from './RestTimer'
 
-// Definicja dostępnych typów serii, ich etykiet i klas kolorystycznych Tailwind v4
 const SERIES_TYPES = {
   NORMAL: { label: (idx) => idx + 1, bg: 'bg-zinc-800/40 text-textSecondary border-zinc-700/50' },
   WARMUP: { label: () => 'W', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
@@ -38,6 +37,10 @@ export default function NewWorkout({
   const [infoExercise, setInfoExercise] = useState(null)
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
   
+  // 🛠️ [NOWOŚĆ] Stan zarządzający aktywnym polem tekstowym w In-App Numpad
+  const [activeInput, setActiveInput] = useState(null) // { globalIdx, field: 'weight' | 'reps' }
+  const [showPlateCalc, setShowPlateCalc] = useState(false)
+
   const timerRef = useRef(null)
 
   useEffect(() => {
@@ -51,7 +54,28 @@ export default function NewWorkout({
     return ['Wszystkie', ...new Set(groups)]
   }, [exercises])
 
-  // Dodanie ćwiczenia do sesji
+  // Algorytm obliczania talerzy na jedną stronę sztangi 20 kg
+  const platesConfig = React.useMemo(() => {
+    if (!activeInput) return []
+    const list = isCreatorMode ? templateSeriesList : localSeriesList
+    const targetWeight = parseFloat(list[activeInput.globalIdx]?.weight || 0)
+    
+    const weightOnOneSide = (targetWeight - 20) / 2
+    if (weightOnOneSide <= 0 || isNaN(weightOnOneSide)) return []
+
+    const availablePlates = [25, 20, 15, 10, 5, 2.5, 1.25]
+    let remaining = weightOnOneSide
+    const result = []
+
+    for (const plate of availablePlates) {
+      while (remaining >= plate) {
+        result.push(plate)
+        remaining -= plate
+      }
+    }
+    return result
+  }, [activeInput, localSeriesList, templateSeriesList])
+
   const handleAddExerciseToSession = (exId) => {
     if (sessionExercises.includes(exId)) {
       setIsAtlasOpen(false)
@@ -87,6 +111,7 @@ export default function NewWorkout({
     } else {
       setLocalSeriesList(prev => prev.filter(s => s.exerciseId !== exId))
     }
+    setActiveInput(null)
   }
 
   const handleAddRowToExercise = (exId) => {
@@ -108,6 +133,7 @@ export default function NewWorkout({
     if (targetIdx === -1) return
     const realIndex = list.length - 1 - targetIdx
     setter(prev => prev.filter((_, i) => i !== realIndex))
+    setActiveInput(null)
   }
 
   const handleUpdateInlineValue = (globalIdx, field, val, modeStr) => {
@@ -115,12 +141,10 @@ export default function NewWorkout({
     setter(prev => prev.map((item, i) => i === globalIdx ? { ...item, [field]: val } : item))
   }
 
-  // 🛠️ [NOWOŚĆ] ROTATOR TYPÓW SERII (Tapping cycles through NORMAL -> WARMUP -> DROP_SET -> FAILURE)
   const handleCycleSeriesType = (globalIdx, modeStr) => {
     const setter = modeStr === 'creator' ? setTemplateSeriesList : setLocalSeriesList
     const list = modeStr === 'creator' ? templateSeriesList : localSeriesList
-    
-    if (list[globalIdx]?.completed) return // Zablokuj edycję typu jeśli seria zaliczona
+    if (list[globalIdx]?.completed) return
 
     const currentType = list[globalIdx]?.seriesType || 'NORMAL'
     const typesKeys = Object.keys(SERIES_TYPES)
@@ -128,6 +152,42 @@ export default function NewWorkout({
     const nextType = typesKeys[nextIndex]
 
     setter(prev => prev.map((item, i) => i === globalIdx ? { ...item, seriesType: nextType } : item))
+  }
+
+  // 🛠️ [NOWOŚĆ] LOGIKA NACISKANIA KLAWISZY NA WŁASNYM NUMPADZIE
+  const handleNumpadPress = (key) => {
+    if (!activeInput) return
+    const modeStr = isCreatorMode ? 'creator' : 'workout'
+    const list = isCreatorMode ? templateSeriesList : localSeriesList
+    const currentVal = String(list[activeInput.globalIdx]?.[activeInput.field] || '')
+
+    if (key === 'BACKSPACE') {
+      const newVal = currentVal.slice(0, -1)
+      handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, newVal, modeStr)
+    } else if (key === '.') {
+      if (activeInput.field === 'reps') return // Reps nie mają ułamków
+      if (currentVal.includes('.')) return
+      handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, currentVal + '.', modeStr)
+    } else if (key === 'DALEJ') {
+      if (activeInput.field === 'weight') {
+        // Przeskakujemy z ciężaru na powtórzenia w tym samym wierszu
+        setActiveInput({ globalIdx: activeInput.globalIdx, field: 'reps' })
+      } else {
+        // Zamykamy lub szukamy kolejnego pustego pola
+        setActiveInput(null)
+        setShowPlateCalc(false)
+      }
+    } else if (key.startsWith('+')) {
+      // Obsługa szybkiego dodawania tonażu (+1.25, +2.5, +5)
+      const inc = parseFloat(key.replace(' kg', ''))
+      const currentNum = parseFloat(currentVal) || 0
+      const newVal = String(currentNum + inc)
+      handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, newVal, modeStr)
+    } else {
+      // Zwykła cyfra 0-9
+      const newVal = currentVal === '0' ? key : currentVal + key
+      handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, newVal, modeStr)
+    }
   }
 
   const handleToggleCompleteSeries = (globalIdx) => {
@@ -150,7 +210,6 @@ export default function NewWorkout({
     }))
   }
 
-  // --- SAVES & LOADING ---
   const handleStartTemplateCreator = () => {
     setCustomTemplateName('')
     setTemplateSeriesList([])
@@ -170,7 +229,7 @@ export default function NewWorkout({
       weight: parseFloat(s.weight) || 0,
       reps: parseInt(s.reps) || 10,
       order: i + 1,
-      seriesType: s.seriesType || 'NORMAL' // Przekazanie typu
+      seriesType: s.seriesType || 'NORMAL'
     }))
     const ok = await onSaveTemplate(name, cleanSeries)
     if (ok) setActiveMode('selection')
@@ -193,7 +252,7 @@ export default function NewWorkout({
         reps: s.reps ? String(s.reps) : '', 
         completed: false,
         estimatedOneRm: null,
-        seriesType: s.seriesType || 'NORMAL' // Ładowanie typu z bazy
+        seriesType: s.seriesType || 'NORMAL'
       }
     })
     setLocalSeriesList(mapped)
@@ -212,6 +271,7 @@ export default function NewWorkout({
     setWorkoutComment('')
     setLocalSeriesList([])
     setSessionExercises([])
+    setActiveInput(null)
     setActiveMode('selection')
     setIsCancelModalOpen(false)
   }
@@ -228,7 +288,7 @@ export default function NewWorkout({
       weight: parseFloat(s.weight),
       reps: parseInt(s.reps),
       order: idx + 1,
-      seriesType: s.seriesType || 'NORMAL' // Przekazanie typu serii do backendu
+      seriesType: s.seriesType || 'NORMAL'
     }))
 
     try {
@@ -350,7 +410,7 @@ export default function NewWorkout({
           Brak ćwiczeń w strukturze. Tapnij poniższy przycisk, aby rozbudować listę z atlasu.
         </div>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           {sessionExercises.map((exId) => {
             const exerciseObj = exercises.find(e => e.id === exId)
             if (!exerciseObj) return null
@@ -359,7 +419,6 @@ export default function NewWorkout({
               .map((s, globalIndex) => ({ ...s, globalIndex }))
               .filter(s => s.exerciseId === exId)
 
-            // ULTRA-KOMPAKTOWY WIDOK JEDNOLINIJKOWY DLA PROJEKTOWANIA PLANU
             if (isCreatorMode) {
               return (
                 <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-3 flex items-center justify-between gap-4 shadow-md animate-in fade-in duration-150">
@@ -409,7 +468,6 @@ export default function NewWorkout({
               )
             }
 
-            // PEŁNY LOGGER NA SIŁOWNIĘ (Z BADGE'AMI TYPÓW SERII)
             return (
               <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg shadow-lg overflow-hidden animate-in fade-in duration-150">
                 <div className="px-4 py-3 bg-gymCardSecondary/40 border-b border-zinc-800/60 flex items-center justify-between gap-3">
@@ -448,6 +506,10 @@ export default function NewWorkout({
                       const currentCfg = SERIES_TYPES[s.seriesType || 'NORMAL']
                       const renderedLabel = currentCfg.label(localIdx)
 
+                      // Sprawdzamy czy dany input jest aktualnie aktywny w naszym Numpadzie
+                      const isWeightActive = activeInput?.globalIdx === s.globalIndex && activeInput?.field === 'weight'
+                      const isRepsActive = activeInput?.globalIdx === s.globalIndex && activeInput?.field === 'reps'
+
                       return (
                         <div 
                           key={s.globalIndex} 
@@ -460,14 +522,12 @@ export default function NewWorkout({
                               : 'bg-transparent'
                           }`}
                         >
-                          {/* 🛠️ INTERAKTYWNY BADGE SERII: Tapnięcie zmienia NORMAL -> W -> D -> F */}
                           <div className="col-span-2 text-left px-0.5">
                             <button
                               type="button"
                               disabled={s.completed}
                               onClick={() => handleCycleSeriesType(s.globalIndex, 'workout')}
                               className={`w-7 h-7 rounded-md border text-center font-mono text-xs font-black transition-all cursor-pointer flex items-center justify-center active:scale-90 ${currentCfg.bg} disabled:opacity-100 disabled:cursor-default`}
-                              title="Zmień typ serii (Zwykła, Rozgrzewka, Drop, Załamanie)"
                             >
                               {renderedLabel}
                             </button>
@@ -477,26 +537,35 @@ export default function NewWorkout({
                             —
                           </div>
 
+                          {/* 🛠️ INPUT CIĘŻARU: Całkowicie readOnly + wywołanie Numpada */}
                           <div className="col-span-3">
                             <input 
-                              type="number"
-                              step="0.5"
+                              type="text"
+                              inputMode="none"
+                              readOnly={true}
                               placeholder="0"
                               disabled={s.completed}
                               value={s.weight}
-                              onChange={e => handleUpdateInlineValue(s.globalIndex, 'weight', e.target.value, 'workout')}
-                              className="w-full p-1.5 rounded bg-gymCardSecondary border border-zinc-800 text-center font-mono text-xs font-bold text-white outline-none focus:border-gymRed disabled:opacity-40"
+                              onClick={() => !s.completed && setActiveInput({ globalIdx: s.globalIndex, field: 'weight' })}
+                              className={`w-full p-1.5 rounded bg-gymCardSecondary border text-center font-mono text-xs font-bold text-white outline-none cursor-pointer disabled:opacity-40 transition-all ${
+                                isWeightActive ? 'border-gymRed ring-1 ring-gymRed shadow-[0_0_8px_rgba(239,68,68,0.2)]' : 'border-zinc-800'
+                              }`}
                             />
                           </div>
 
+                          {/* 🛠️ INPUT POWTÓRZEŃ: Całkowicie readOnly + wywołanie Numpada */}
                           <div className="col-span-2">
                             <input 
-                              type="number"
+                              type="text"
+                              inputMode="none"
+                              readOnly={true} // Średnik usunięty, teraz parser bez problemu zamknie tag
                               placeholder="10"
                               disabled={s.completed}
                               value={s.reps}
-                              onChange={e => handleUpdateInlineValue(s.globalIndex, 'reps', e.target.value, 'workout')}
-                              className="w-full p-1.5 rounded bg-gymCardSecondary border border-zinc-800 text-center font-mono text-xs font-bold text-white outline-none focus:border-gymRed disabled:opacity-40"
+                              onClick={() => !s.completed && setActiveInput({ globalIdx: s.globalIndex, field: 'reps' })}
+                              className={`w-full p-1.5 rounded bg-gymCardSecondary border text-center font-mono text-xs font-bold text-white outline-none cursor-pointer disabled:opacity-40 transition-all ${
+                                isRepsActive ? 'border-gymRed ring-1 ring-gymRed shadow-[0_0_8px_rgba(239,68,68,0.2)]' : 'border-zinc-800'
+                              }`}
                             />
                           </div>
 
@@ -544,7 +613,7 @@ export default function NewWorkout({
       )}
 
       {/* STICKY FOOTER */}
-      <div className="fixed bottom-16 left-0 right-0 max-w-[640px] mx-auto z-40 bg-gradient-to-t from-gymDark via-gymDark to-transparent pt-6 pb-2 px-4 sm:px-0">
+      <div className={`fixed bottom-16 left-0 right-0 max-w-[640px] mx-auto z-40 bg-gradient-to-t from-gymDark via-gymDark to-transparent pt-6 pb-2 px-4 sm:px-0 transition-transform duration-200 ${activeInput ? 'translate-y-20 opacity-0 pointer-events-none' : ''}`}>
         <button 
           onClick={() => setIsAtlasOpen(true)} 
           className="w-full py-3.5 bg-gymCardSecondary hover:bg-zinc-800/60 border border-dashed border-zinc-800 hover:border-zinc-600 text-textSecondary hover:text-white text-xs font-bold rounded-gp-md cursor-pointer flex items-center justify-center gap-1.5 transition-colors shadow-2xl"
@@ -552,6 +621,105 @@ export default function NewWorkout({
           <span className="text-gymRed font-black text-base">＋</span> Dodaj ćwiczenie do planu sesji
         </button>
       </div>
+
+      {/* 🛠️ [NOWOŚĆ] INTERAKTYWNY IN-APP NUMPAD + PLATE CALCULATOR DRAW PANEL */}
+      {activeInput && (
+        <div className="fixed bottom-0 left-0 right-0 max-w-[640px] mx-auto bg-[#15181f] border-t-2 border-zinc-800 z-[9999] p-3 animate-in slide-in-from-bottom duration-200 select-none pb-safe">
+          
+          {/* PASEK SZYBKIEGO PODGLĄDU ORAZ WZORU TALERZY */}
+          <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2 mb-2 px-1 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-zinc-400">Pole:</span>
+              <span className="font-black uppercase text-gymRed bg-gymRed/10 px-2 py-0.5 rounded-md tracking-wider text-[10px]">
+                {activeInput.field === 'weight' ? 'Ciężar (kg) ⚖️' : 'Powtórzenia 🔁'}
+              </span>
+            </div>
+
+            {/* Wyświetlanie konfiguracji krążków sztangi */}
+            <div className="flex items-center gap-1.5 text-zinc-400">
+              {activeInput.field === 'weight' && platesConfig.length > 0 && showPlateCalc && (
+                <div className="flex items-center gap-1 bg-gymPremium/10 text-gymPremium font-mono font-black text-[10px] px-2 py-0.5 rounded border border-gymPremium/20 animate-in zoom-in-95">
+                  🏋️‍♂️ Na stronę: {platesConfig.join(' + ')} kg
+                </div>
+              )}
+              
+              {activeInput.field === 'weight' && (
+                <button
+                  type="button"
+                  onClick={() => setShowPlateCalc(!showPlateCalc)}
+                  className={`p-1 rounded font-bold text-xs cursor-pointer transition-colors ${showPlateCalc ? 'bg-gymPremium text-gymDark' : 'bg-zinc-800 text-textSecondary hover:text-white'}`}
+                  title="Przelicznik talerzy"
+                >
+                  🛠️ Talerze
+                </button>
+              )}
+              <button 
+                type="button" 
+                onClick={() => { setActiveInput(null); setShowPlateCalc(false); }} 
+                className="text-textMuted hover:text-white font-bold px-2 py-1 bg-zinc-900 rounded border border-zinc-800 cursor-pointer ml-1"
+              >
+                Zamknij
+              </button>
+            </div>
+          </div>
+
+          {/* SZYBKIE PRZYCISKI MIKRO-OBCIĄŻEŃ DLA KULTURYSTÓW */}
+          {activeInput.field === 'weight' && (
+            <div className="grid grid-cols-3 gap-1.5 mb-2 font-mono">
+              {['+1.25 kg', '+2.5 kg', '+5 kg'].map(inc => (
+                <button
+                  key={inc} type="button" onClick={() => handleNumpadPress(inc)}
+                  className="py-2 bg-gymCardSecondary/60 hover:bg-zinc-800 text-gymPremium border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm"
+                >
+                  {inc}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* MATRYCA MATEMATYCZNA KLAWIATURY INTERAKTYWNEJ */}
+          <div className="grid grid-cols-3 gap-1.5 font-mono">
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
+              <button
+                key={num} type="button" onClick={() => handleNumpadPress(num)}
+                className="py-3 bg-zinc-800/50 hover:bg-zinc-800 active:bg-zinc-700 text-white font-black text-lg rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/40"
+              >
+                {num}
+              </button>
+            ))}
+            <button
+              type="button" onClick={() => handleNumpadPress('.')}
+              className={`py-3 text-center font-black text-lg rounded-gp-md cursor-pointer border shadow-md transition-colors ${
+                activeInput.field === 'reps' ? 'opacity-20 bg-zinc-900 border-zinc-900 text-zinc-700 cursor-not-allowed' : 'bg-zinc-800/50 hover:bg-zinc-800 text-white border-zinc-800/40'
+              }`}
+            >
+              .
+            </button>
+            <button
+              type="button" onClick={() => handleNumpadPress('0')}
+              className="py-3 bg-zinc-800/50 hover:bg-zinc-800 active:bg-zinc-700 text-white font-black text-lg rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/40"
+            >
+              0
+            </button>
+            <button
+              type="button" onClick={() => handleNumpadPress('BACKSPACE')}
+              className="py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-black text-sm rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/60 flex items-center justify-center"
+            >
+              ⌫
+            </button>
+          </div>
+
+          {/* WIELKI ERGONOMICZNY PRZYCISK DALEJ / POTWIERDŹ DLA KCIUKA */}
+          <button
+            type="button"
+            onClick={() => handleNumpadPress('DALEJ')}
+            className="w-full mt-2 py-3 bg-gymRed hover:bg-red-600 text-white font-black text-sm uppercase tracking-wider rounded-gp-md cursor-pointer transition-all active:scale-[0.99] shadow-lg shadow-red-950/20 text-center"
+          >
+            {activeInput.field === 'weight' ? 'Dalej ➔ (Wpisz powtórzenia)' : 'Zatwierdź pole ✓'}
+          </button>
+
+        </div>
+      )}
 
       {/* ATLAS DRAWER */}
       {isAtlasOpen && (
@@ -623,7 +791,7 @@ export default function NewWorkout({
         </div>
       )}
 
-      {/* DETALS MODAL */}
+      {/* DETAILS MODAL */}
       {infoExercise && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div onClick={() => setInfoExercise(null)} className="absolute inset-0 bg-black/80 backdrop-blur-xs" />
@@ -666,6 +834,7 @@ export default function NewWorkout({
   )
 }
 
+// Wrapper na stoper
 function RestTimerWrapper({ timerRef }) {
   const timer = RestTimer({ onFinish: () => {} })
   timerRef.current = { start: timer.start, stop: timer.stop }
