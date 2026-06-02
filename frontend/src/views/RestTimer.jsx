@@ -58,27 +58,47 @@ export default function RestTimer({ onFinish }) {
     setIsRunning(true)
   }, [clearTimer, duration])
 
+  // =========================================================================
+  // 🔴 POPRAWKA: 1. EFEKT ZARZĄDZANIA JEDYNYM INTERWAŁEM (BRAK RE-CREATION LOCKA)
+  // =========================================================================
   useEffect(() => {
-    if (!isRunning || remaining === null) return
+    if (!isRunning) {
+      clearTimer()
+      return
+    }
+
+    // Interwał tworzy się TYLKO RAZ, gdy stoper rusza
+    intervalRef.current = setInterval(() => {
+      setRemaining(prev => {
+        if (prev !== null && prev <= 1) {
+          clearTimer() // Zatrzymujemy stoper z poziomu callbacku
+          return 0
+        }
+        return prev !== null ? prev - 1 : null
+      })
+    }, 1000)
+
+    return clearTimer
+  }, [isRunning, clearTimer]) // remaining usunięte z zależności — koniec z resetowaniem zegara sieciowego!
+
+  // =========================================================================
+  // 🔴 POPRAWKA: 2. EFEKT OBSŁUGI ZDARZEŃ I REAKCJI HAPTYCZNYCH
+  // =========================================================================
+  useEffect(() => {
+    if (remaining === null) return
     
-    // 🛠️ [NOWOŚĆ] Haptyczne odliczanie: Krótkie wibracje-bzyknięcia ostrzegawcze od 5 do 1 sekundy przed końcem
+    // Haptyczne wibracje ostrzegawcze (krótkie bzyknięcia) na 5, 4, 3, 2, 1 sekundy przed końcem
     if (remaining > 0 && remaining <= 5) {
       try { navigator.vibrate?.(60) } catch (_) {}
     }
 
-    if (remaining <= 0) {
-      clearTimer()
+    // Gdy licznik osiągnie stan terminalny (0), odpalamy akcje i powiadomienia
+    if (remaining === 0 && isRunning) {
       setIsRunning(false)
-      setRemaining(0)
       playDone()
       onFinish?.()
-      return
     }
-    intervalRef.current = setInterval(() => {
-      setRemaining(prev => prev - 1)
-    }, 1000)
-    return clearTimer
-  }, [isRunning, remaining, clearTimer, playDone, onFinish])
+  }, [remaining, isRunning, playDone, onFinish])
 
   const addTime = (secs) => {
     setRemaining(prev => Math.max(0, (prev ?? 0) + secs))

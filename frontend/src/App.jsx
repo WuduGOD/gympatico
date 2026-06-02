@@ -26,7 +26,6 @@ function AppContent() {
   const [stats, setStats] = useState(null)
   const [loadingData, setLoadingData] = useState(false)
 
-  // Stan obsługi dolnego menu "Więcej..." (Bottom Sheet Drawer)
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
 
   const navigate = useNavigate()
@@ -53,11 +52,10 @@ function AppContent() {
     seriesReps, setSeriesReps, localSeriesList, setLocalSeriesList, addSeriesToLocalList, 
     handleSaveWorkout, fetchWorkoutsData, removeSeriesFromLocalList, progressionData, 
     fetchProgression, handleDeleteWorkout, hasMoreWorkouts, handleUpdateWorkout,
-    totalWorkoutsCount // <--- [FIXED] DODANO DO DESTRUKCJI Z HOOKA
+    totalWorkoutsCount 
   } = useWorkouts(token, exercises, showToast)
 
   const handleLoginSuccess = (userToken, userData) => {
-    // 🛠️ [NOWOŚĆ] Pancerne ujednolicenie obu formatów zapisu dla pełnego bezpieczeństwa widoków
     const isPremiumVal = userData.isPremium || userData.is_premium || false;
     const normalizedLoginUser = {
       ...userData,
@@ -119,7 +117,6 @@ function AppContent() {
       })
         .then(res => { if (!res.ok) throw new Error('Błąd profilu'); return res.json(); })
         .then(data => {
-          // 🛠️ [NOWOŚĆ] Zapisujemy do stanu i localStorage oba warianty klucza
           const isPremiumVal = data.is_premium || false;
           const normalizedUser = {
             ...data,
@@ -145,7 +142,7 @@ function AppContent() {
     } finally {
       setLoadingData(false);
     }
-  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates, fetchProgression]);
+  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates]);
 
   useEffect(() => {
     fetchAllData()
@@ -184,10 +181,22 @@ function AppContent() {
     }
   };
 
+  // 🔴 NOWOŚĆ: Dedykowany wrapper dla zapisu wagi synchronizujący całą aplikację w tle
+  const onAddWeight = async (e) => {
+    if (e) e.preventDefault();
+    try {
+      await handleAddWeight(e);
+      await fetchAllData(); // Błyskawiczne odświeżenie wykresów, trendów i KPI
+    } catch (err) {
+      // Błąd został obsłużony wewnątrz hooka
+    }
+  };
+
   const onDeleteWeightLog = async (logId) => {
     try {
       await handleDeleteWeight(logId);
       showToast('Pomiar wagi został usunięty ⚖️', 'success');
+      await fetchAllData();
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -204,8 +213,7 @@ function AppContent() {
     }
   };
 
-  const onSendFriendRequest = async (e) => {
-    e.preventDefault();
+  const onSendFriendRequest = async () => {
     try {
       await handleSendFriendRequest(friendNickInput);
       showToast('Zaproszenie wysłane pomyślnie! ✉️', 'success');
@@ -245,7 +253,7 @@ function AppContent() {
     }
   };
 
-  const onLoadMoreWorkouts = async () => {
+  const mtLoadMoreWorkouts = async () => {
     await fetchWorkoutsData(workoutsHistory.length, true);
   };
 
@@ -323,7 +331,7 @@ function AppContent() {
             </button>
           </header>
 
-          {/* DOLNA BELKA MOBILNA (5 POZYCJI) */}
+          {/* DOLNA BELKA MOBILNA */}
           <nav className="grid grid-cols-5 md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#181a20] border-t border-zinc-800/60 shadow-2xl z-[999] py-1 px-1 items-center">
             <button onClick={() => { navigate('/'); setIsMoreMenuOpen(false); }} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${location.pathname === '/' ? 'text-gymRed' : 'text-zinc-500'}`}>
               <span className="text-lg">📊</span><span>Panel</span>
@@ -379,7 +387,10 @@ function AppContent() {
       <main className="pb-24 md:pb-0">
         <Routes>
           <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
-          <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={handleAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} workoutsHistory={workoutsHistory} templates={templates} /> : <Navigate to="/login" />} />
+          
+          {/* 🔴 POPRAWKA: Przekazujemy onAddWeight jako handleAddWeight do Dashboardu */}
+          <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={onAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} workoutsHistory={workoutsHistory} templates={templates} /> : <Navigate to="/login" />} />
+          
           <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} onDeleteExercise={onDeleteCustomExercise} /> : <Navigate to="/login" />} />
           
           <Route path="/new-workout" element={token ? (
@@ -403,7 +414,7 @@ function AppContent() {
             <History 
               workoutsHistory={workoutsHistory} 
               onDeleteWorkout={onDeleteWorkout} 
-              onLoadMoreWorkouts={onLoadMoreWorkouts} 
+              onLoadMoreWorkouts={mtLoadMoreWorkouts} 
               hasMoreWorkouts={hasMoreWorkouts} 
               onUpdateWorkout={onUpdateWorkoutMetadata} 
               user={user} 
@@ -413,7 +424,7 @@ function AppContent() {
             />
           ) : <Navigate to="/login" />} />
           
-          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} /> : <Navigate to="/login" />} />
+          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} /> : <Navigate to="/login" />} />
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>

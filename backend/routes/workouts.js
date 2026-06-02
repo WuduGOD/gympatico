@@ -6,8 +6,10 @@ const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
 const { getUserPlan } = require('../utils/userHelpers');
 
-// 1. ZAPISANIE TRENINGU (Zoptymalizowany UNNEST Batch Insert z obsługą serii W, D, F)
-router.post('/', authenticateToken, async (req, res) => {
+// =========================================================================
+// 1. ZAPISANIE TRENINGU (Zabezpieczone transakcyjnie + Blokada FOR UPDATE + Progi Streaka)
+// =========================================================================
+router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) => {
   const { name, comment, series } = req.body;
   const userId = req.user.userId;
 
@@ -20,12 +22,43 @@ router.post('/', authenticateToken, async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    // Blokada pesymistyczna (Pessimistic Locking) na wierszu użytkownika.
+    // Zapobiega wyścigom żądań (Race Conditions) przy jednoczesnych requestach sieciowych.
+    const userResult = await client.query(
+      'SELECT current_streak, weekly_target_workouts, last_workout_at FROM users WHERE id = $1 FOR UPDATE', 
+      [userId]
+    );
+    
+    if (userResult.rowCount === 0) {
+      throw new Error("Użytkownik nie istnieje w systemie.");
+    }
+
+    const { current_streak, weekly_target_workouts, last_workout_at } = userResult.rows[0];
+    const target = weekly_target_workouts ?? 3;
+
+    // Symetryczne pobieranie stanu licznika tygodniowego PRZED zapisem nowej sesji
+    const lastWeekResult = await client.query(
+      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
+      AND started_at >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw' 
+      AND started_at < date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
+    );
+    const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count, 10);
+
+    const thisWeekResult = await client.query(
+      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
+      AND started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
+    );
+    // Liczba sesji przed wstawieniem aktualnej
+    const workoutsBeforeThisOne = parseInt(thisWeekResult.rows[0].count, 10);
+
+    // --- BEZPIECZNE WSTAWIENIE NAGŁÓWKA SESJI ---
     const sessionResult = await client.query(
       "INSERT INTO workout_sessions (user_id, name, comment, started_at, ended_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id",
-      [userId, name, comment || null]
+      [userId, name.trim(), comment || null]
     );
     const sessionId = sessionResult.rows[0].id;
 
+    // Przygotowanie płaskich tablic dla optymalizacji sieciowej UNNEST Batch Insert
     const exerciseIds = [];
     const weights = [];
     const reps = [];
@@ -33,11 +66,13 @@ router.post('/', authenticateToken, async (req, res) => {
     const estimatedOneRMs = [];
     const isAlternatives = [];
     const seriesComments = [];
-    const seriesTypes = []; // 🛠️ [NOWOŚĆ] Tablica na typy serii
+    const seriesTypes = [];
 
     for (let i = 0; i < series.length; i++) {
       const s = series[i];
       let estimatedOneRM = null;
+      
+      // Wyliczenie 1RM wg sprawdzonego wzoru Epleya (dla serii od 1 do 12 powtórzeń)
       if (s.reps >= 1 && s.reps <= 12) {
         estimatedOneRM = s.weight * (1 + s.reps / 30);
       }
@@ -49,10 +84,10 @@ router.post('/', authenticateToken, async (req, res) => {
       estimatedOneRMs.push(estimatedOneRM);
       isAlternatives.push(s.isAlternative || false);
       seriesComments.push(s.comment || null);
-      seriesTypes.push(s.seriesType || 'NORMAL'); // 🛠️ [NOWOŚĆ] Wstrzyknięcie typu serii (NORMAL/WARMUP/DROP_SET/FAILURE)
+      seriesTypes.push(s.seriesType || 'NORMAL');
     }
 
-    // 🛠️ [NOWOŚĆ] Rozbudowane zapytanie o kolumnę series_type i rzutowanie typu varchar[]
+    // Błyskawiczny zapis wielowierszowy (0 marnowania round-tripów sieciowych do bazy)
     const bulkInsertSeriesQuery = `
       INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment, series_type)
       SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::numeric[], $7::boolean[], $8::text[], $9::varchar[])
@@ -62,19 +97,7 @@ router.post('/', authenticateToken, async (req, res) => {
       sessionId, exerciseIds, weights, reps, orders, estimatedOneRMs, isAlternatives, seriesComments, seriesTypes
     ]);
 
-    // Pobranie parametrów użytkownika do wyliczenia streaka
-    const userResult = await client.query('SELECT current_streak, weekly_target_workouts, last_workout_at FROM users WHERE id = $1', [userId]);
-    const { current_streak, weekly_target_workouts, last_workout_at } = userResult.rows[0];
-
-    const target = weekly_target_workouts ?? 3;
-
-    const lastWeekResult = await client.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
-      AND started_at >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw' 
-      AND started_at < date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
-    );
-    const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count);
-
+    // --- ANALIZA I AKTUALIZACJA CIĄGŁOŚCI TRENINGOWEJ (STREAK) ---
     let effectiveStreak = current_streak;
 
     if (last_workout_at) {
@@ -84,24 +107,25 @@ router.post('/', authenticateToken, async (req, res) => {
       const startOfThisWeek = new Date(startOfThisWeekResult.rows[0].start_of_week);
       const lastWorkoutDate = new Date(last_workout_at);
 
+      // Jeśli ostatni trening odbył się przed bieżącym tygodniem, weryfikujemy czy cel został domknięty
       if (lastWorkoutDate < startOfThisWeek) {
         if (workoutsLastWeek < target) {
-          effectiveStreak = 0; 
+          effectiveStreak = 0; // Przerwana ciągłość -> reset streaka
         }
       }
     }
 
-    const thisWeekResult = await client.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
-      AND started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
-    );
-    const workoutsThisWeek = parseInt(thisWeekResult.rows[0].count);
-
+    // Dodając ten trening, łączna suma w tym tygodniu wyniesie:
+    const workoutsWithThisOne = workoutsBeforeThisOne + 1;
     let newStreak = effectiveStreak;
-    if (workoutsThisWeek === target) {
+
+    // Próg bezpieczeństwa (Threshold Guard). Streak rośnie tylko wtedy,
+    // gdy ten konkretny trening przebija barierę celu, chroniąc przed "farmowaniem" streaka.
+    if (workoutsWithThisOne >= target && workoutsBeforeThisOne < target) {
       newStreak = effectiveStreak + 1;
     }
 
+    // Aktualizacja rekordu użytkownika przy użyciu GREATEST dla bezpiecznego max_streak
     await client.query(
       'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
       [newStreak, userId]
@@ -111,13 +135,15 @@ router.post('/', authenticateToken, async (req, res) => {
     res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
   } catch (error) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: "Błąd transakcji", details: error.message });
+    res.status(500).json({ error: "Błąd transakcji podczas zapisywania treningu", details: error.message });
   } finally {
     client.release();
   }
 });
 
-// 2. POBRANIE HISTORII TRENINGÓW (Zwracanie kolumny series_type dla frontendu)
+// =========================================================================
+// 2. POBRANIE HISTORII TRENINGÓW (Z paginacją i twardym limitem 10 sesji dla FREE)
+// =========================================================================
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   
@@ -135,6 +161,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const countResult = await pool.query(countQuery, [userId]);
     let totalCount = parseInt(countResult.rows[0].count, 10);
 
+    // Wymuszanie twardego sufitu biznesowego dla kont bez subskrypcji Premium / Roli Trenera
     if (!plan.is_premium && plan.role !== 'TRAINER') {
       totalCount = Math.min(totalCount, 10);
       if (offset >= 10) {
@@ -159,7 +186,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const sessionIds = sessions.map(s => s.id);
 
-    // 🛠️ [NOWOŚĆ] Pobieramy ls.series_type AS "seriesType"
+    // Pobranie powiązanych serii z uwzględnieniem mapowania camelCase klucza seriesType
     const seriesQuery = `
       SELECT 
         ls.id, 
@@ -192,7 +219,9 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// 3. EKSPORT HISTORII DO PLIKU CSV
+// =========================================================================
+// 3. EKSPORT HISTORII DO PLIKU CSV (Tylko dla Premium / Trainer)
+// =========================================================================
 router.get('/export', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
@@ -232,6 +261,7 @@ router.get('/export', authenticateToken, async (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename=gympatico_historia_treningow.csv');
     
+    // Wstrzyknięcie znacznika BOM dla prawidłowego kodowania polskich znaków w MS Excel
     res.write('\uFEFF');
 
     const headers = ["Data", "Nazwa treningu", "Komentarz do treningu", "Ćwiczenie", "Grupa mięśniowa", "Numer serii", "Typ serii", "Ciężar (kg)", "Powtórzenia", "Estymowane 1RM"];
@@ -254,7 +284,9 @@ router.get('/export', authenticateToken, async (req, res) => {
   }
 });
 
-// 4. POBRANIE PROGRESJI 1RM ĆWICZENIA
+// =========================================================================
+// 4. POBRANIE PROGRESJI 1RM ĆWICZENIA (Z ograniczeniem czasowym 30 dni dla FREE)
+// =========================================================================
 router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
   const { exerciseId } = req.params;
   const userId = req.user.userId;
@@ -298,13 +330,15 @@ router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
   }
 });
 
-// 5. USUNIĘCIE TRENINGU
+// =========================================================================
+// 5. USUNIĘCIE TRENINGU (Z weryfikacją uprawnień właściciela)
+// =========================================================================
 router.delete('/:sessionId', authenticateToken, async (req, res) => {
   const { sessionId } = req.params;
   const userId = req.user.userId;
 
   try {
-    const checkQuery = 'SELECT * FROM workout_sessions WHERE id = $1 AND user_id = $2';
+    const checkQuery = 'SELECT id FROM workout_sessions WHERE id = $1 AND user_id = $2';
     const checkResult = await pool.query(checkQuery, [sessionId, userId]);
 
     if (checkResult.rows.length === 0) {
@@ -314,11 +348,13 @@ router.delete('/:sessionId', authenticateToken, async (req, res) => {
     await pool.query('DELETE FROM workout_sessions WHERE id = $1', [sessionId]);
     res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
   } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas Screen usunięcia treningu", details: error.message });
+    res.status(500).json({ error: "Błąd serwera podczas usunięcia treningu", details: error.message });
   }
 });
 
-// 6. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz)
+// =========================================================================
+// 6. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz z walidacją długości znaków)
+// =========================================================================
 router.patch('/:sessionId', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   const { sessionId } = req.params;
@@ -346,7 +382,8 @@ router.patch('/:sessionId', authenticateToken, async (req, res) => {
       WHERE id = $3 AND user_id = $4 
       RETURNING id, name, comment
     `;
-    const result = await pool.query(updateQuery, [name.trim(), comment ? comment.trim() : null, sessionId, userId]);
+    // 🔴 POPRAWKA: Usunięto nadmiarowe wywołania .trim() z parametrów tablicy SQL
+    const result = await pool.query(updateQuery, [name, comment, sessionId, userId]);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ error: "Nie znaleziono sesji treningowej lub brak uprawnień." });

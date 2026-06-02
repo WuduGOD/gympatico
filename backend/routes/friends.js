@@ -1,10 +1,14 @@
+// backend/routes/friends.js
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
+const { getUserPlan } = require('../utils/userHelpers'); // Import helpera uprawnień
 
-// Wysyłanie zaproszenia
+// =========================================================================
+// 1. WYSŁANIE ZAPROSZENIA DO ZNAJOMYCH
+// =========================================================================
 router.post('/request', authenticateToken, checkLimits('friends'), async (req, res) => {
   const { targetNick } = req.body;
   const senderId = req.user.userId;
@@ -35,11 +39,12 @@ router.post('/request', authenticateToken, checkLimits('friends'), async (req, r
   }
 });
 
-// Pobranie rankingu znajomych
+// =========================================================================
+// 2. POBRANIE RANKINGU ZNAJOMYCH (Zgłoszenie ciągłości streaków)
+// =========================================================================
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
-    // Łączymy wyniki znajomych z danymi zalogowanego usera przez UNION
     const query = `
       SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
         CASE 
@@ -69,7 +74,9 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// Skrzynka odbiorcza zaproszeń
+// =========================================================================
+// 3. SKRZYNKA ODBIORCZA ZAPROSZEŃ
+// =========================================================================
 router.get('/requests', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
@@ -86,52 +93,108 @@ router.get('/requests', authenticateToken, async (req, res) => {
   }
 });
 
-// Akceptacja zaproszenia
+// =========================================================================
+// 🔴 4. AKCEPTACJA ZAPROSZENIA (W pełni utwardzona przed Race Condition i ominięciem limitów)
+// =========================================================================
 router.post('/accept', authenticateToken, async (req, res) => {
   const { friendshipId } = req.body;
-  const userId = req.user.userId; // Wyciągamy ID zalogowanego użytkownika z tokenu
+  const userId = req.user.userId; // ID zalogowanego użytkownika (odbiorcy)
 
   if (!friendshipId) {
     return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
   }
 
+  const client = await pool.connect();
+
   try {
-    // Dodajemy warunek: receiver_id = $2
-    const query = `
-      UPDATE friendships 
-      SET status = 'ACCEPTED' 
-      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING' 
-      RETURNING *
-    `;
-    
-    const result = await pool.query(query, [friendshipId, userId]);
-    
-    // Jeśli zaproszenie nie należało do usera, zapytanie nie zmodyfikuje żadnego wiersza
-    if (result.rows.length === 0) {
+    await client.query('BEGIN');
+
+    // KROK A: Pobieramy rekord zaproszenia nakładając twardą blokadę wiersza relacji
+    const friendshipRes = await client.query(
+      `SELECT sender_id, receiver_id FROM friendships 
+       WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING' FOR UPDATE`,
+      [friendshipId, userId]
+    );
+
+    if (friendshipRes.rowCount === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ 
         error: "Zaproszenie nie istnieje, zostało już przetworzone lub nie masz uprawnień do jego akceptacji." 
       });
     }
-    
+
+    const senderId = friendshipRes.rows[0].sender_id;
+
+    // KROK B: Defensywne sortowanie ID w celu uniknięcia zakleszczeń (Deadlocks) przy jednoczesnych akceptacjach krzyżowych
+    const firstId = userId < senderId ? userId : senderId;
+    const secondId = userId < senderId ? senderId : userId;
+
+    // Blokujemy pesymistycznie konta użytkowników biorących udział w relacji
+    await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [firstId]);
+    await client.query('SELECT id FROM users WHERE id = $2 FOR UPDATE', [secondId]);
+
+    // KROK C: Weryfikacja twardego limitu znajomych po stronie ODBIORCY (zalogowanego użytkownika)
+    const receiverPlan = await getUserPlan(userId, client);
+    if (!receiverPlan.is_premium && receiverPlan.role !== 'TRAINER') {
+      const countRes = await client.query(
+        `SELECT COUNT(*) FROM friendships 
+         WHERE status = 'ACCEPTED' AND (sender_id = $1 OR receiver_id = $1)`,
+        [userId]
+      );
+      if (parseInt(countRes.rows[0].count, 10) >= 5) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ 
+          error: "Nie możesz zaakceptować zaproszenia. Osiągnięto limit planu darmowego (maksymalnie 5 znajomych w gangu). Przejdź na Premium 👥!" 
+        });
+      }
+    }
+
+    // KROK D: Weryfikacja twardego limitu po stronie NADAWCY (chroni system przed exploitami z obu stron)
+    const senderPlan = await getUserPlan(senderId, client);
+    if (!senderPlan.is_premium && senderPlan.role !== 'TRAINER') {
+      const countRes = await client.query(
+        `SELECT COUNT(*) FROM friendships 
+         WHERE status = 'ACCEPTED' AND (sender_id = $1 OR receiver_id = $1)`,
+        [senderId]
+      );
+      if (parseInt(countRes.rows[0].count, 10) >= 5) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ 
+          error: "Nie można zaakceptować zaproszenia. Nadawca osiągnął już maksymalny limit 5 znajomych w swoim gangu planu darmowego!" 
+        });
+      }
+    }
+
+    // KROK E: Zmiana statusu znajomości na aktywną dopiero po pomyślnym przejściu testów bezpieczeństwa
+    await client.query(
+      "UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1",
+      [friendshipId]
+    );
+
+    await client.query('COMMIT');
     res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
   } catch (error) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
+  } finally {
+    client.release();
   }
 });
 
+// =========================================================================
+// 5. ODRZUCENIE / USUNIĘCIE ZAPROSZENIA
+// =========================================================================
 router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
   const { friendshipId } = req.params;
   const userId = req.user.userId;
 
   try {
-    // Pancerne i szybkie zapytanie: kasujemy tylko, jeśli ID się zgadza, status to PENDING i zalogowany user jest ODBIORCĄ
     const deleteQuery = `
       DELETE FROM friendships 
       WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING'
     `;
     const result = await pool.query(deleteQuery, [friendshipId, userId]);
 
-    // Jeśli baza danych nie usunęła żadnego wiersza (rowCount === 0), zwracamy błąd uprawnień lub braku rekordu
     if (result.rowCount === 0) {
       return res.status(404).json({ 
         error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." 

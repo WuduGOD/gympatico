@@ -1,15 +1,23 @@
+// frontend/src/views/Social.jsx
 import React from 'react'
 
 export default function Social({
   friendNickInput, 
   setFriendNickInput,
-  handleSendFriendRequest, 
+  onSendFriendRequest, // 🔴 POPRAWKA: Czytelna nazwa callbacku zamiast mylącego handleSendFriendRequest
   pendingRequests, 
   handleAcceptFriend, 
   handleRejectFriend,
   friends,
   user
 }) {
+  
+  // 🔴 POPRAWKA: Lokalny handler izolujący zarządzanie zdarzeniami DOM (e.preventDefault)
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSendFriendRequest(); // Wywołujemy czystą akcję biznesową bez brudzenia jej obiektem eventu
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
       
@@ -21,7 +29,8 @@ export default function Social({
           <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">Szukaj znajomych 🔍</h2>
           <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangu.</p>
           
-          <form onSubmit={handleSendFriendRequest} className="flex gap-2">
+          {/* 🔴 POPRAWKA: Podpięcie dedykowanego, lokalnego handlera */}
+          <form onSubmit={handleSubmit} className="flex gap-2">
             <input 
               type="text" 
               placeholder="np. MarekWorkout" 

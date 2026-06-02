@@ -1,3 +1,4 @@
+// backend/tests/helpers.js
 const pool = require('../config/db');
 
 const EXERCISE_SEED = [
@@ -6,9 +7,26 @@ const EXERCISE_SEED = [
 ];
 
 async function ensureTestSchema() {
+  // 1. Zapewniamy istnienie kolumny (jeśli bazy w ogóle nie było)
   await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'USER';
+  `);
+
+  // 2. 🔴 POPRAWKA: Wymuszamy twarde rzutowanie typu na VARCHAR(20) 
+  // Jeśli kolumna istniała jako ENUM, Postgres przekonwertuje obecne wartości (np. 'USER') na czysty string
+  await pool.query(`
+    ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20) USING role::varchar;
+  `);
+
+  // 3. Czyszczenie ewentualnych wartości NULL przed nałożeniem restrykcji NOT NULL
+  await pool.query(`
     UPDATE users SET role = 'USER' WHERE role IS NULL;
+  `);
+
+  // 4. 🔴 POPRAWKA: Wyrównanie restrykcji do produkcyjnego init.sql
+  await pool.query(`
+    ALTER TABLE users ALTER COLUMN role SET DEFAULT 'USER';
+    ALTER TABLE users ALTER COLUMN role SET NOT NULL;
   `);
 }
 
