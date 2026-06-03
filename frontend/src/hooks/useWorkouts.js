@@ -1,5 +1,5 @@
 // frontend/src/hooks/useWorkouts.js
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { API_BASE_URL } from '../config/api'
 
 export function useWorkouts(token, exercises, showToast) {
