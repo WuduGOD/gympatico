@@ -24,7 +24,6 @@ router.post('/request', authenticateToken, checkLimits('friends'), async (req, r
     const receiverId = userResult.rows[0].id;
     if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
 
-    // 🔴 POPRAWKA: Rzutowanie na ::uuid chroni przed błędami parsowania relacji krzyżowych
     const checkResult = await pool.query(
       `SELECT * FROM friendships 
        WHERE (sender_id = $1::uuid AND receiver_id = $2::uuid) 
@@ -43,7 +42,7 @@ router.post('/request', authenticateToken, checkLimits('friends'), async (req, r
 });
 
 // =========================================================================
-// 2. POBRANIE RANKINGU ZNAJOMYCH
+// 2. POBRANIE RANKINGU ZNAJOMYCH (Zgłoszenie ciągłości streaków)
 // =========================================================================
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
@@ -97,7 +96,7 @@ router.get('/requests', authenticateToken, async (req, res) => {
 });
 
 // =========================================================================
-// 4. AKCEPTACJA ZAPROSZENIA (W pełni odporna na "could not determine data type")
+// 4. AKCEPTACJA ZAPROSZENIA (W pełni załatana faza błędu parametrów)
 // =========================================================================
 router.post('/accept', authenticateToken, async (req, res) => {
   const { friendshipId } = req.body;
@@ -112,7 +111,7 @@ router.post('/accept', authenticateToken, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // KROK A: 🔴 POPRAWKA — Dodano jawne rzutowanie $1::uuid oraz $2::uuid
+    // KROK A: Pobieramy rekord zaproszenia z blokadą wiersza relacji
     const friendshipRes = await client.query(
       `SELECT sender_id, receiver_id FROM friendships 
        WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING' FOR UPDATE`,
@@ -128,18 +127,17 @@ router.post('/accept', authenticateToken, async (req, res) => {
 
     const senderId = friendshipRes.rows[0].sender_id;
 
-    // KROK B: Defensywne układanie blokad pesymistycznych
+    // KROK B: Defensywne sortowanie ID w celu uniknięcia zakleszczeń (Deadlocks) bazy danych
     const firstId = userId < senderId ? userId : senderId;
     const secondId = userId < senderId ? senderId : userId;
 
-    // 🔴 POPRAWKA — Dodano rzutowanie na uuid dla blokad rekordów
+    // 🔴 POPRAWKA: Oba zapytania używają teraz niezależnego $1::uuid, ponieważ to dwa odrębne wywołania funkcji!
     await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [firstId]);
-    await client.query('SELECT id FROM users WHERE id = $2::uuid FOR UPDATE', [secondId]);
+    await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [secondId]);
 
     // KROK C: Weryfikacja limitu gangu po stronie ODBIORCY
     const receiverPlan = await getUserPlan(userId, client);
     if (receiverPlan && !receiverPlan.is_premium && receiverPlan.role !== 'TRAINER') {
-      // 🔴 POPRAWKA — Kluczowe miejsce błędu! Dodano $1::uuid w klauzuli OR złożonej struktury logicznej
       const countRes = await client.query(
         `SELECT COUNT(*) FROM friendships 
          WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`,
@@ -156,7 +154,6 @@ router.post('/accept', authenticateToken, async (req, res) => {
     // KROK D: Weryfikacja limitu po stronie NADAWCY
     const senderPlan = await getUserPlan(senderId, client);
     if (senderPlan && !senderPlan.is_premium && senderPlan.role !== 'TRAINER') {
-      // 🔴 POPRAWKA — Dodano rzutowanie $1::uuid chroniące nadawcę zaproszenia
       const countRes = await client.query(
         `SELECT COUNT(*) FROM friendships 
          WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`,
@@ -171,7 +168,6 @@ router.post('/accept', authenticateToken, async (req, res) => {
     }
 
     // KROK E: Zmiana statusu znajomości na aktywną
-    // 🔴 POPRAWKA — Dodano rzutowanie przy ostatecznej modyfikacji statusu
     await client.query(
       "UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1::uuid",
       [friendshipId]
