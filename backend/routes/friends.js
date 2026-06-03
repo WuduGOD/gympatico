@@ -4,7 +4,8 @@ const router = express.Router();
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
-const { getUserPlan } = require('../utils/userHelpers'); // Import helpera uprawnień
+// 🔴 KLUCZOWY IMPORT: Brak tego helpera powodował błąd 500 na serwerze!
+const { getUserPlan } = require('../utils/userHelpers'); 
 
 // =========================================================================
 // 1. WYSŁANIE ZAPROSZENIA DO ZNAJOMYCH
@@ -94,11 +95,11 @@ router.get('/requests', authenticateToken, async (req, res) => {
 });
 
 // =========================================================================
-// 🔴 4. AKCEPTACJA ZAPROSZENIA (W pełni utwardzona przed Race Condition i ominięciem limitów)
+// 4. AKCEPTACJA ZAPROSZENIA (W pełni bezpieczna i transakcyjna)
 // =========================================================================
 router.post('/accept', authenticateToken, async (req, res) => {
   const { friendshipId } = req.body;
-  const userId = req.user.userId; // ID zalogowanego użytkownika (odbiorcy)
+  const userId = req.user.userId; 
 
   if (!friendshipId) {
     return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
@@ -109,7 +110,7 @@ router.post('/accept', authenticateToken, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // KROK A: Pobieramy rekord zaproszenia nakładając twardą blokadę wiersza relacji
+    // KROK A: Pobieramy rekord zaproszenia z blokadą wiersza relacji
     const friendshipRes = await client.query(
       `SELECT sender_id, receiver_id FROM friendships 
        WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING' FOR UPDATE`,
@@ -125,17 +126,16 @@ router.post('/accept', authenticateToken, async (req, res) => {
 
     const senderId = friendshipRes.rows[0].sender_id;
 
-    // KROK B: Defensywne sortowanie ID w celu uniknięcia zakleszczeń (Deadlocks) przy jednoczesnych akceptacjach krzyżowych
+    // KROK B: Sortowanie ID w celu uniknięcia zakleszczeń (Deadlocks) bazy danych
     const firstId = userId < senderId ? userId : senderId;
     const secondId = userId < senderId ? senderId : userId;
 
-    // Blokujemy pesymistycznie konta użytkowników biorących udział w relacji
     await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [firstId]);
     await client.query('SELECT id FROM users WHERE id = $2 FOR UPDATE', [secondId]);
 
-    // KROK C: Weryfikacja twardego limitu znajomych po stronie ODBIORCY (zalogowanego użytkownika)
+    // KROK C: Weryfikacja limitu gangu po stronie ODBIORCY
     const receiverPlan = await getUserPlan(userId, client);
-    if (!receiverPlan.is_premium && receiverPlan.role !== 'TRAINER') {
+    if (receiverPlan && !receiverPlan.is_premium && receiverPlan.role !== 'TRAINER') {
       const countRes = await client.query(
         `SELECT COUNT(*) FROM friendships 
          WHERE status = 'ACCEPTED' AND (sender_id = $1 OR receiver_id = $1)`,
@@ -144,14 +144,14 @@ router.post('/accept', authenticateToken, async (req, res) => {
       if (parseInt(countRes.rows[0].count, 10) >= 5) {
         await client.query('ROLLBACK');
         return res.status(403).json({ 
-          error: "Nie możesz zaakceptować zaproszenia. Osiągnięto limit planu darmowego (maksymalnie 5 znajomych w gangu). Przejdź na Premium 👥!" 
+          error: "Nie możesz zaakceptować zaproszenia. Osiągnięto limit planu darmowego (maksymalnie 5 znajomych w gangu). Odblokuj Premium 👥!" 
         });
       }
     }
 
-    // KROK D: Weryfikacja twardego limitu po stronie NADAWCY (chroni system przed exploitami z obu stron)
+    // KROK D: Weryfikacja limitu po stronie NADAWCY
     const senderPlan = await getUserPlan(senderId, client);
-    if (!senderPlan.is_premium && senderPlan.role !== 'TRAINER') {
+    if (senderPlan && !senderPlan.is_premium && senderPlan.role !== 'TRAINER') {
       const countRes = await client.query(
         `SELECT COUNT(*) FROM friendships 
          WHERE status = 'ACCEPTED' AND (sender_id = $1 OR receiver_id = $1)`,
@@ -160,12 +160,12 @@ router.post('/accept', authenticateToken, async (req, res) => {
       if (parseInt(countRes.rows[0].count, 10) >= 5) {
         await client.query('ROLLBACK');
         return res.status(403).json({ 
-          error: "Nie można zaakceptować zaproszenia. Nadawca osiągnął już maksymalny limit 5 znajomych w swoim gangu planu darmowego!" 
+          error: "Nie można zaakceptować zaproszenia. Nadawca osiągnął już maksymalny limit 5 znajomych w swoim darmowym gangu!" 
         });
       }
     }
 
-    // KROK E: Zmiana statusu znajomości na aktywną dopiero po pomyślnym przejściu testów bezpieczeństwa
+    // KROK E: Zmiana statusu znajomości na aktywną
     await client.query(
       "UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1",
       [friendshipId]
@@ -175,6 +175,8 @@ router.post('/accept', authenticateToken, async (req, res) => {
     res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
   } catch (error) {
     await client.query('ROLLBACK');
+    // 🔴 DODANO DIAGNOSTYKĘ LOGÓW: Zapis błędu bezpośrednio w konsoli deweloperskiej Rendera
+    console.error("❌ CRITICAL BACKEND ERROR IN POST /accept:", error);
     res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
   } finally {
     client.release();
