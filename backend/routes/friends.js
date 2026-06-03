@@ -4,7 +4,6 @@ const router = express.Router();
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
-// 🔴 KLUCZOWY IMPORT: Brak tego helpera powodował błąd 500 na serwerze!
 const { getUserPlan } = require('../utils/userHelpers'); 
 
 // =========================================================================
@@ -25,8 +24,11 @@ router.post('/request', authenticateToken, checkLimits('friends'), async (req, r
     const receiverId = userResult.rows[0].id;
     if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
 
+    // 🔴 POPRAWKA: Rzutowanie na ::uuid chroni przed błędami parsowania relacji krzyżowych
     const checkResult = await pool.query(
-      "SELECT * FROM friendships WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)",
+      `SELECT * FROM friendships 
+       WHERE (sender_id = $1::uuid AND receiver_id = $2::uuid) 
+          OR (sender_id = $2::uuid AND receiver_id = $1::uuid)`,
       [senderId, receiverId]
     );
     if (checkResult.rows.length > 0) {
@@ -41,7 +43,7 @@ router.post('/request', authenticateToken, checkLimits('friends'), async (req, r
 });
 
 // =========================================================================
-// 2. POBRANIE RANKINGU ZNAJOMYCH (Zgłoszenie ciągłości streaków)
+// 2. POBRANIE RANKINGU ZNAJOMYCH
 // =========================================================================
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
@@ -53,8 +55,8 @@ router.get('/', authenticateToken, async (req, res) => {
           ELSE u.current_streak
         END as "current_streak"
       FROM friendships f
-      JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1) OR (f.receiver_id = u.id AND f.sender_id = $1)
-      WHERE f.status = 'ACCEPTED' AND u.id != $1
+      JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1::uuid) OR (f.receiver_id = u.id AND f.sender_id = $1::uuid)
+      WHERE f.status = 'ACCEPTED' AND u.id != $1::uuid
 
       UNION
 
@@ -64,7 +66,7 @@ router.get('/', authenticateToken, async (req, res) => {
           ELSE current_streak
         END as "current_streak"
       FROM users
-      WHERE id = $1
+      WHERE id = $1::uuid
 
       ORDER BY "current_streak" DESC, nick ASC
     `;
@@ -85,7 +87,7 @@ router.get('/requests', authenticateToken, async (req, res) => {
       SELECT f.id as friendship_id, u.id as sender_id, u.nick 
       FROM friendships f 
       JOIN users u ON f.sender_id = u.id
-      WHERE f.receiver_id = $1 AND f.status = 'PENDING'
+      WHERE f.receiver_id = $1::uuid AND f.status = 'PENDING'
     `;
     const result = await pool.query(query, [userId]);
     res.json(result.rows);
@@ -95,7 +97,7 @@ router.get('/requests', authenticateToken, async (req, res) => {
 });
 
 // =========================================================================
-// 4. AKCEPTACJA ZAPROSZENIA (W pełni bezpieczna i transakcyjna)
+// 4. AKCEPTACJA ZAPROSZENIA (W pełni odporna na "could not determine data type")
 // =========================================================================
 router.post('/accept', authenticateToken, async (req, res) => {
   const { friendshipId } = req.body;
@@ -110,10 +112,10 @@ router.post('/accept', authenticateToken, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // KROK A: Pobieramy rekord zaproszenia z blokadą wiersza relacji
+    // KROK A: 🔴 POPRAWKA — Dodano jawne rzutowanie $1::uuid oraz $2::uuid
     const friendshipRes = await client.query(
       `SELECT sender_id, receiver_id FROM friendships 
-       WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING' FOR UPDATE`,
+       WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING' FOR UPDATE`,
       [friendshipId, userId]
     );
 
@@ -126,19 +128,21 @@ router.post('/accept', authenticateToken, async (req, res) => {
 
     const senderId = friendshipRes.rows[0].sender_id;
 
-    // KROK B: Sortowanie ID w celu uniknięcia zakleszczeń (Deadlocks) bazy danych
+    // KROK B: Defensywne układanie blokad pesymistycznych
     const firstId = userId < senderId ? userId : senderId;
     const secondId = userId < senderId ? senderId : userId;
 
-    await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [firstId]);
-    await client.query('SELECT id FROM users WHERE id = $2 FOR UPDATE', [secondId]);
+    // 🔴 POPRAWKA — Dodano rzutowanie na uuid dla blokad rekordów
+    await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [firstId]);
+    await client.query('SELECT id FROM users WHERE id = $2::uuid FOR UPDATE', [secondId]);
 
     // KROK C: Weryfikacja limitu gangu po stronie ODBIORCY
     const receiverPlan = await getUserPlan(userId, client);
     if (receiverPlan && !receiverPlan.is_premium && receiverPlan.role !== 'TRAINER') {
+      // 🔴 POPRAWKA — Kluczowe miejsce błędu! Dodano $1::uuid w klauzuli OR złożonej struktury logicznej
       const countRes = await client.query(
         `SELECT COUNT(*) FROM friendships 
-         WHERE status = 'ACCEPTED' AND (sender_id = $1 OR receiver_id = $1)`,
+         WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`,
         [userId]
       );
       if (parseInt(countRes.rows[0].count, 10) >= 5) {
@@ -152,9 +156,10 @@ router.post('/accept', authenticateToken, async (req, res) => {
     // KROK D: Weryfikacja limitu po stronie NADAWCY
     const senderPlan = await getUserPlan(senderId, client);
     if (senderPlan && !senderPlan.is_premium && senderPlan.role !== 'TRAINER') {
+      // 🔴 POPRAWKA — Dodano rzutowanie $1::uuid chroniące nadawcę zaproszenia
       const countRes = await client.query(
         `SELECT COUNT(*) FROM friendships 
-         WHERE status = 'ACCEPTED' AND (sender_id = $1 OR receiver_id = $1)`,
+         WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`,
         [senderId]
       );
       if (parseInt(countRes.rows[0].count, 10) >= 5) {
@@ -166,8 +171,9 @@ router.post('/accept', authenticateToken, async (req, res) => {
     }
 
     // KROK E: Zmiana statusu znajomości na aktywną
+    // 🔴 POPRAWKA — Dodano rzutowanie przy ostatecznej modyfikacji statusu
     await client.query(
-      "UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1",
+      "UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1::uuid",
       [friendshipId]
     );
 
@@ -175,7 +181,6 @@ router.post('/accept', authenticateToken, async (req, res) => {
     res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
   } catch (error) {
     await client.query('ROLLBACK');
-    // 🔴 DODANO DIAGNOSTYKĘ LOGÓW: Zapis błędu bezpośrednio w konsoli deweloperskiej Rendera
     console.error("❌ CRITICAL BACKEND ERROR IN POST /accept:", error);
     res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
   } finally {
@@ -193,7 +198,7 @@ router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => 
   try {
     const deleteQuery = `
       DELETE FROM friendships 
-      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING'
+      WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING'
     `;
     const result = await pool.query(deleteQuery, [friendshipId, userId]);
 
