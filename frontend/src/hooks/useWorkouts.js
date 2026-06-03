@@ -1,10 +1,10 @@
 // frontend/src/hooks/useWorkouts.js
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react'
 import { API_BASE_URL } from '../config/api'
 
 export function useWorkouts(token, exercises, showToast) {
   const [workoutsHistory, setWorkoutsHistory] = useState([])
-  const [totalWorkoutsCount, setTotalWorkoutsCount] = useState(0) // <--- NOWY STAN LICZNIKA
+  const [totalWorkoutsCount, setTotalWorkoutsCount] = useState(0)
   const [hasMoreWorkouts, setHasMoreWorkouts] = useState(true)
 
   const [workoutName, setWorkoutName] = useState('')
@@ -17,11 +17,17 @@ export function useWorkouts(token, exercises, showToast) {
 
   const [progressionData, setProgressionData] = useState([])
 
-  const isFetchingRef = useRef(false);
+  // 🔴 SEMAFOR BLOKUJĄCY PODWÓJNE KLIKNIĘCIA W PAGINACJĘ
+  const isFetchingRef = useRef(false)
 
   const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
-    if (!token || isFetchingRef.current) return;
-    isFetchingRef.current = true;
+    // Jeśli nie ma tokenu lub request już trwa -> przerywamy
+    if (!token || isFetchingRef.current) return
+    
+    // 🔴 POPRAWKA: Deklaracja limitu w prawidłowym zasięgu (Scope)
+    const limit = 20
+    isFetchingRef.current = true // Zakładamy blokadę
+
     try {
       const res = await fetch(`${API_BASE_URL}/api/workouts?limit=${limit}&offset=${currentLength}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -40,8 +46,9 @@ export function useWorkouts(token, exercises, showToast) {
     } catch (err) {
       console.error('Błąd pobierania historii:', err.message)
     } finally {
-     isFetchingRef.current = false;
-  }
+      // 🔴 ZDEJMOWANIE BLOKADY niezależnie od tego, czy był sukces czy błąd
+      isFetchingRef.current = false 
+    }
   }, [token])
 
   const addSeriesToLocalList = useCallback((e) => {
@@ -153,7 +160,7 @@ export function useWorkouts(token, exercises, showToast) {
   }, [token])
 
   return {
-    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, totalWorkoutsCount, fetchWorkoutsData, // <--- EKSPORT LICZNIKA
+    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, totalWorkoutsCount, fetchWorkoutsData,
     workoutName, setWorkoutName,
     workoutComment, setWorkoutComment,
     currentSelectedExercise, setCurrentSelectedExercise,
