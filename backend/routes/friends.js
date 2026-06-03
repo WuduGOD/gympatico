@@ -6,9 +6,7 @@ const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
 const { getUserPlan } = require('../utils/userHelpers'); 
 
-// =========================================================================
 // 1. WYSŁANIE ZAPROSZENIA DO ZNAJOMYCH
-// =========================================================================
 router.post('/request', authenticateToken, checkLimits('friends'), async (req, res) => {
   const { targetNick } = req.body;
   const senderId = req.user.userId;
@@ -16,7 +14,8 @@ router.post('/request', authenticateToken, checkLimits('friends'), async (req, r
   if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
 
   try {
-    const userResult = await pool.query('SELECT id FROM users WHERE nick = $1', [targetNick]);
+    // 🔴 POPRAWKA: Wyszukiwanie niewrażliwe na wielkość liter (Case-Insensitive)
+    const userResult = await pool.query('SELECT id FROM users WHERE LOWER(nick) = LOWER($1)', [targetNick.trim()]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
     }
@@ -34,16 +33,14 @@ router.post('/request', authenticateToken, checkLimits('friends'), async (req, r
       return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
     }
 
-    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1, $2, \'PENDING\')', [senderId, receiverId]);
+    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1::uuid, $2::uuid, \'PENDING\')', [senderId, receiverId]);
     res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
   } catch (error) {
     res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
   }
 });
 
-// =========================================================================
-// 2. POBRANIE RANKINGU ZNAJOMYCH (Zgłoszenie ciągłości streaków)
-// =========================================================================
+// 2. POBRANIE RANKINGU ZNAJOMYCH
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
@@ -76,9 +73,7 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// =========================================================================
 // 3. SKRZYNKA ODBIORCZA ZAPROSZEŃ
-// =========================================================================
 router.get('/requests', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
@@ -95,23 +90,18 @@ router.get('/requests', authenticateToken, async (req, res) => {
   }
 });
 
-// =========================================================================
-// 4. AKCEPTACJA ZAPROSZENIA (W pełni załatana faza błędu parametrów)
-// =========================================================================
+// 4. AKCEPTACJA ZAPROSZENIA
 router.post('/accept', authenticateToken, async (req, res) => {
   const { friendshipId } = req.body;
   const userId = req.user.userId; 
 
-  if (!friendshipId) {
-    return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
-  }
+  if (!friendshipId) return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
 
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
 
-    // KROK A: Pobieramy rekord zaproszenia z blokadą wiersza relacji
     const friendshipRes = await client.query(
       `SELECT sender_id, receiver_id FROM friendships 
        WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING' FOR UPDATE`,
@@ -120,22 +110,17 @@ router.post('/accept', authenticateToken, async (req, res) => {
 
     if (friendshipRes.rowCount === 0) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ 
-        error: "Zaproszenie nie istnieje, zostało już przetworzone lub nie masz uprawnień do jego akceptacji." 
-      });
+      return res.status(404).json({ error: "Zaproszenie nie istnieje lub zostało przetworzone." });
     }
 
     const senderId = friendshipRes.rows[0].sender_id;
 
-    // KROK B: Defensywne sortowanie ID w celu uniknięcia zakleszczeń (Deadlocks) bazy danych
     const firstId = userId < senderId ? userId : senderId;
     const secondId = userId < senderId ? senderId : userId;
 
-    // 🔴 POPRAWKA: Oba zapytania używają teraz niezależnego $1::uuid, ponieważ to dwa odrębne wywołania funkcji!
     await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [firstId]);
     await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [secondId]);
 
-    // KROK C: Weryfikacja limitu gangu po stronie ODBIORCY
     const receiverPlan = await getUserPlan(userId, client);
     if (receiverPlan && !receiverPlan.is_premium && receiverPlan.role !== 'TRAINER') {
       const countRes = await client.query(
@@ -145,13 +130,10 @@ router.post('/accept', authenticateToken, async (req, res) => {
       );
       if (parseInt(countRes.rows[0].count, 10) >= 5) {
         await client.query('ROLLBACK');
-        return res.status(403).json({ 
-          error: "Nie możesz zaakceptować zaproszenia. Osiągnięto limit planu darmowego (maksymalnie 5 znajomych w gangu). Odblokuj Premium 👥!" 
-        });
+        return res.status(403).json({ error: "Osiągnięto limit planu darmowego (5 znajomych w gangu). Odblokuj Premium!" });
       }
     }
 
-    // KROK D: Weryfikacja limitu po stronie NADAWCY
     const senderPlan = await getUserPlan(senderId, client);
     if (senderPlan && !senderPlan.is_premium && senderPlan.role !== 'TRAINER') {
       const countRes = await client.query(
@@ -161,52 +143,37 @@ router.post('/accept', authenticateToken, async (req, res) => {
       );
       if (parseInt(countRes.rows[0].count, 10) >= 5) {
         await client.query('ROLLBACK');
-        return res.status(403).json({ 
-          error: "Nie można zaakceptować zaproszenia. Nadawca osiągnął już maksymalny limit 5 znajomych w swoim darmowym gangu!" 
-        });
+        return res.status(403).json({ error: "Nadawca osiągnął już maksymalny limit 5 znajomych w swoim darmowym gangu!" });
       }
     }
 
-    // KROK E: Zmiana statusu znajomości na aktywną
-    await client.query(
-      "UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1::uuid",
-      [friendshipId]
-    );
-
+    await client.query("UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1::uuid", [friendshipId]);
     await client.query('COMMIT');
     res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error("❌ CRITICAL BACKEND ERROR IN POST /accept:", error);
-    res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
+    res.status(500).json({ error: "Błąd serwera podczas akceptacji", details: error.message });
   } finally {
     client.release();
   }
 });
 
-// =========================================================================
-// 5. ODRZUCENIE / USUNIĘCIE ZAPROSZENIA
-// =========================================================================
+// 5. ODRZUCENIE ZAPROSZENIA
 router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
   const { friendshipId } = req.params;
   const userId = req.user.userId;
 
   try {
-    const deleteQuery = `
-      DELETE FROM friendships 
-      WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING'
-    `;
-    const result = await pool.query(deleteQuery, [friendshipId, userId]);
-
+    const result = await pool.query(
+      "DELETE FROM friendships WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING'", 
+      [friendshipId, userId]
+    );
     if (result.rowCount === 0) {
-      return res.status(404).json({ 
-        error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." 
-      });
+      return res.status(404).json({ error: "Nie znaleziono zaproszenia." });
     }
-
     res.json({ message: "Zaproszenie zostało odrzucone. ✕" });
   } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas odrzucania zaproszenia", details: error.message });
+    res.status(500).json({ error: "Błąd odrzucania zaproszenia", details: error.message });
   }
 });
 

@@ -143,56 +143,6 @@ module.exports = authenticateToken;
 -- Ten plik pozostaje tylko jako wskaźnik dla starszych skryptów.
 </file>
 
-<file path="backend/tests/helpers.js">
-const pool = require('../config/db');
-
-const EXERCISE_SEED = [
-  ['Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'],
-  ['Przysiad ze sztangą na plecach (Back squat)', 'Nogi'],
-];
-
-async function ensureTestSchema() {
-  await pool.query(`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'USER';
-    UPDATE users SET role = 'USER' WHERE role IS NULL;
-  `);
-}
-
-async function resetDatabase() {
-  await ensureTestSchema();
-  await pool.query('TRUNCATE users CASCADE');
-  await pool.query('TRUNCATE exercises CASCADE');
-}
-
-async function seedExercises() {
-  for (const [name, muscleGroup] of EXERCISE_SEED) {
-    await pool.query(
-      `INSERT INTO exercises (name, muscle_group) VALUES ($1, $2)`,
-      [name, muscleGroup]
-    );
-  }
-}
-
-async function getExerciseIdByName(namePattern) {
-  const result = await pool.query(
-    `SELECT id FROM exercises WHERE name ILIKE $1 LIMIT 1`,
-    [namePattern]
-  );
-  return result.rows[0]?.id;
-}
-
-async function closePool() {
-  await pool.end();
-}
-
-module.exports = {
-  resetDatabase,
-  seedExercises,
-  getExerciseIdByName,
-  closePool,
-};
-</file>
-
 <file path="backend/utils/userHelpers.js">
 // backend/utils/userHelpers.js
 const pool = require('../config/db');
@@ -595,71 +545,6 @@ export function useTemplates(token, showToast) {
   }, [token, showToast]);
 
   return { templates, loadingTemplates, fetchTemplates, handleSaveTemplate, handleDeleteTemplate };
-}
-</file>
-
-<file path="frontend/src/hooks/useWeightLogs.js">
-import { useState, useCallback } from 'react'; // <--- DODAJ useCallback DO IMPORTU
-import { API_BASE_URL } from '../config/api';
-
-export function useWeightLogs(token, showToast) {
-  const [weightLogs, setWeightLogs] = useState([]);
-  const [weightInput, setWeightInput] = useState('');
-
-  // Owijamy w useCallback, aby referencja była stabilna
-  const fetchWeightLogs = useCallback(async () => {
-    if (!token) return;
-    const res = await fetch(`${API_BASE_URL}/api/weight`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error('Błąd historii wagi');
-    const data = await res.json();
-    setWeightLogs(data);
-  }, [token]); // <--- Zależność to tylko token
-
-  const handleAddWeight = (e) => {
-    e.preventDefault();
-    if (!weightInput) return;
-    
-    fetch(`${API_BASE_URL}/api/weight`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ weight: weightInput })
-    })
-      .then(async res => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Nie udało się zapisać pomiaru wagi.');
-        return data;
-      })
-      .then(data => {
-        setWeightLogs([data.log, ...weightLogs]);
-        setWeightInput('');
-        if (showToast) showToast('Waga zapisana pomyślnie! 📉', 'success');
-      })
-      .catch(err => {
-        console.error("❌ Błąd zapisu wagi:", err.message);
-        if (showToast) showToast(err.message, 'error');
-      });
-  };
-
-  // NOWOŚĆ: Logika usuwania wpisu z bazy i stanu
-  const handleDeleteWeight = useCallback(async (logId) => {
-    if (!token) return;
-
-    const res = await fetch(`${API_BASE_URL}/api/weight/${logId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć pomiaru wagi.');
-
-    // Optymistyczna, natychmiastowa aktualizacja interfejsu
-    setWeightLogs(prev => prev.filter(log => log.id !== logId));
-    return data;
-  }, [token]);
-
-  return { weightLogs, setWeightLogs, weightInput, setWeightInput, handleAddWeight, fetchWeightLogs, handleDeleteWeight };
 }
 </file>
 
@@ -1250,48 +1135,72 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="backend/routes/weight.js">
-// backend/routes/weight.js
-const express = require('express');
-const router = express.Router();
+<file path="backend/tests/helpers.js">
+// backend/tests/helpers.js
 const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
-const { getUserPlan } = require('../utils/userHelpers'); // <--- IMPORT HELPERA
 
-// Pobieranie historii wagi
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  
-  try {
-    // Korzystamy z ujednoliconego helpera
-    const plan = await getUserPlan(userId);
+const EXERCISE_SEED = [
+  ['Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'],
+  ['Przysiad ze sztangą na plecach (Back squat)', 'Nogi'],
+];
 
-    if (!plan) {
-      return res.status(404).json({ error: "Użytkownik nie istnieje." });
-    }
+async function ensureTestSchema() {
+  // 1. Zapewniamy istnienie kolumny (jeśli bazy w ogóle nie było)
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'USER';
+  `);
 
-    // Twardy sufit dla planu darmowego
-    let sqlLimitFilter = '';
-    if (!plan.is_premium && plan.role !== 'TRAINER') {
-      sqlLimitFilter = 'LIMIT 7';
-    }
+  // 2. 🔴 POPRAWKA: Wymuszamy twarde rzutowanie typu na VARCHAR(20) 
+  // Jeśli kolumna istniała jako ENUM, Postgres przekonwertuje obecne wartości (np. 'USER') na czysty string
+  await pool.query(`
+    ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20) USING role::varchar;
+  `);
 
-    const query = `
-      SELECT id, user_id, weight, date 
-      FROM weight_logs 
-      WHERE user_id = $1 
-      ORDER BY date DESC 
-      ${sqlLimitFilter}
-    `;
-    
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd pobierania wagi", details: error.message });
+  // 3. Czyszczenie ewentualnych wartości NULL przed nałożeniem restrykcji NOT NULL
+  await pool.query(`
+    UPDATE users SET role = 'USER' WHERE role IS NULL;
+  `);
+
+  // 4. 🔴 POPRAWKA: Wyrównanie restrykcji do produkcyjnego init.sql
+  await pool.query(`
+    ALTER TABLE users ALTER COLUMN role SET DEFAULT 'USER';
+    ALTER TABLE users ALTER COLUMN role SET NOT NULL;
+  `);
+}
+
+async function resetDatabase() {
+  await ensureTestSchema();
+  await pool.query('TRUNCATE users CASCADE');
+  await pool.query('TRUNCATE exercises CASCADE');
+}
+
+async function seedExercises() {
+  for (const [name, muscleGroup] of EXERCISE_SEED) {
+    await pool.query(
+      `INSERT INTO exercises (name, muscle_group) VALUES ($1, $2)`,
+      [name, muscleGroup]
+    );
   }
-});
+}
 
-module.exports = router;
+async function getExerciseIdByName(namePattern) {
+  const result = await pool.query(
+    `SELECT id FROM exercises WHERE name ILIKE $1 LIMIT 1`,
+    [namePattern]
+  );
+  return result.rows[0]?.id;
+}
+
+async function closePool() {
+  await pool.end();
+}
+
+module.exports = {
+  resetDatabase,
+  seedExercises,
+  getExerciseIdByName,
+  closePool,
+};
 </file>
 
 <file path="frontend/.gitignore">
@@ -1354,82 +1263,87 @@ dist-ssr
 </html>
 </file>
 
-<file path="frontend/src/hooks/useFriends.js">
-import { useState, useCallback } from 'react'; // <--- DODAJ useCallback DO IMPORTU
+<file path="frontend/src/hooks/useWeightLogs.js">
+// frontend/src/hooks/useWeightLogs.js
+import { useState, useCallback } from 'react';
 import { API_BASE_URL } from '../config/api';
 
-export function useFriends(token) {
-  const [friends, setFriends] = useState([]);
-  const [pendingRequests, setPendingRequests] = useState([]);
-  const [friendNickInput, setFriendNickInput] = useState('');
-  const [socialMessage, setSocialMessage] = useState('');
+export function useWeightLogs(token, showToast) {
+  const [weightLogs, setWeightLogs] = useState([]);
+  const [weightInput, setWeightInput] = useState('');
 
-  // Stabilizacja pobierania modułu społecznościowego
-  const fetchFriendsData = useCallback(async () => {
+  // 1. Pobieranie historii wagi 
+  const fetchWeightLogs = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/friends`, {
+      const res = await fetch(`${API_BASE_URL}/api/weight`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (!res.ok) throw new Error('Błąd pobierania gangu');
+      if (!res.ok) throw new Error('Błąd historii wagi');
       const data = await res.json();
-
-      // TWARDA NORMALIZACJA: Gwarantujemy frontowi jeden, pewny klucz camelCase
-      const normalizedFriends = data.map(friend => ({
-        ...friend,
-        isPremium: friend.is_premium === true || friend.isPremium === true
-      }));
-
-      setFriends(normalizedFriends);
+      setWeightLogs(data);
     } catch (err) {
-      console.error(err.message);
+      console.error("❌ Błąd pobierania historii wagi:", err.message);
     }
   }, [token]);
 
-  const handleSendFriendRequest = async (targetNick) => {
-    if (!targetNick) throw new Error('Wpisz nick znajomego!');
+  // 🔴 POPRAWKA: handleAddWeight jako funkcja async zwracająca Promise dla App.jsx
+  const handleAddWeight = useCallback(async (e) => {
+    if (e) e.preventDefault();
+    if (!weightInput) return;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/weight`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ weight: weightInput })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Nie udało się zapisać pomiaru wagi.');
+      
+      // Bezpieczna aktualizacja stanu
+      setWeightLogs(prev => [data.log, ...prev]);
+      setWeightInput('');
+      
+      if (showToast) showToast('Waga zapisana pomyślnie! 📉', 'success');
+      return data; // Zwracamy dane dla łańcucha obietnic w App.jsx
+    } catch (err) {
+      console.error("❌ Błąd zapisu wagi:", err.message);
+      if (showToast) showToast(err.message, 'error');
+      throw err; // Przekazujemy błąd wyżej do wrappera
+    }
+  }, [token, weightInput, showToast]);
 
-    const res = await fetch(`${API_BASE_URL}/api/friends/request`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ targetNick })
-    });
+  // 3. Usuwanie pomiaru wagi
+  const handleDeleteWeight = useCallback(async (logId) => {
+    if (!token) return;
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Nie udało się wysłać zaproszenia.');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/weight/${logId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć pomiaru wagi.');
 
-    // Czyszczenie inputu po pomyślnym wysłaniu (to należy do hooka)
-    setFriendNickInput('');
-    return data;
-  };
+      setWeightLogs(prev => prev.filter(log => log.id !== logId));
+      return data;
+    } catch (err) {
+      console.error("❌ Błąd usuwania wagi:", err.message);
+      if (showToast) showToast(err.message, 'error');
+    }
+  }, [token, showToast]);
 
-  const handleAcceptFriend = async (friendshipId) => {
-    const res = await fetch(`${API_BASE_URL}/api/friends/accept`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ friendshipId })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Nie udało się zaakceptować zaproszenia.');
-    return data;
-  };
-
-  const handleRejectFriend = async (friendshipId) => {
-    const res = await fetch(`${API_BASE_URL}/api/friends/requests/${friendshipId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Nie udało się odrzucić zaproszenia.');
-
-    return data;
-  };
-
-  return {
-    friends, setFriends, pendingRequests, setPendingRequests,
-    friendNickInput, setFriendNickInput, socialMessage, setSocialMessage,
-    handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend
+  return { 
+    weightLogs, 
+    setWeightLogs, 
+    weightInput, 
+    setWeightInput, 
+    handleAddWeight, 
+    fetchWeightLogs, 
+    handleDeleteWeight 
   };
 }
 </file>
@@ -1690,75 +1604,6 @@ const pool = new Pool(poolConfig);
 module.exports = pool;
 </file>
 
-<file path="backend/middleware/checkLimits.js">
-// backend/middleware/checkLimits.js
-const pool = require('../config/db');
-const { getUserPlan } = require('../utils/userHelpers');
-
-/**
- * Fabryka middleware do weryfikacji sztywnych limitów ilościowych zasobów planu FREE
- * @param {('templates'|'exercises'|'friends')} resourceType - Typ sprawdzanego zasobu
- */
-const checkLimits = (resourceType) => {
-  return async (req, res, next) => {
-    const userId = req.user.userId;
-
-    try {
-      const plan = await getUserPlan(userId);
-
-      if (!plan) {
-        return res.status(404).json({ error: "Użytkownik nie istnieje." });
-      }
-
-      // Konta Premium oraz TRAINER mają zniesione wszelkie limity ilościowe
-      if (plan.is_premium || plan.role === 'TRAINER') {
-        return next();
-      }
-
-      // A. Limit Szablonów (Max 3)
-      if (resourceType === 'templates') {
-        const countRes = await pool.query('SELECT COUNT(*) FROM workout_templates WHERE user_id = $1', [userId]);
-        if (parseInt(countRes.rows[0].count, 10) >= 3) {
-          return res.status(403).json({ 
-            error: "Osiągnięto limit planu darmowego (maksymalnie 3 szablony). Przejdź na wersję Premium 💾, aby tworzyć nieograniczone plany!" 
-          });
-        }
-      }
-
-      // B. Limit Własnych Ćwiczeń (Max 5)
-      if (resourceType === 'exercises') {
-        const countRes = await pool.query('SELECT COUNT(*) FROM exercises WHERE user_id = $1', [userId]);
-        if (parseInt(countRes.rows[0].count, 10) >= 5) {
-          return res.status(403).json({ 
-            error: "Osiągnięto limit planu darmowego (maksymalnie 5 własnych ćwiczeń). Przejdź na wersję Premium 📚, aby rozbudowywać atlas!" 
-          });
-        }
-      }
-
-      // C. Limit Znajomych (Max 5)
-      if (resourceType === 'friends') {
-        const countQuery = `
-          SELECT COUNT(*) FROM friendships 
-          WHERE status = 'ACCEPTED' AND (sender_id = $1 OR receiver_id = $1)
-        `;
-        const countRes = await pool.query(countQuery, [userId]);
-        if (parseInt(countRes.rows[0].count, 10) >= 5) {
-          return res.status(403).json({
-            error: "Osiągnięto limit planu darmowego (maksymalnie 5 znajomych w gangu). Odblokuj wersję Premium 👥, aby zapraszać kolejnych użytkowników!"
-          });
-        }
-      }
-
-      next();
-    } catch (error) {
-      res.status(500).json({ error: "Błąd serwera podczas weryfikacji limitów", details: error.message });
-    }
-  };
-};
-
-module.exports = checkLimits;
-</file>
-
 <file path="backend/package.json">
 {
   "name": "gympatico",
@@ -1789,6 +1634,98 @@ module.exports = checkLimits;
     "supertest": "^7.2.2"
   }
 }
+</file>
+
+<file path="backend/routes/weight.js">
+// backend/routes/weight.js
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+const { getUserPlan } = require('../utils/userHelpers');
+
+// 1. Pobieranie historii wagi (Z uwzględnieniem limitów planu darmowego)
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  
+  try {
+    const plan = await getUserPlan(userId);
+
+    if (!plan) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    // Twardy sufit dla planu darmowego (Max 7 pomiarów)
+    let sqlLimitFilter = '';
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
+      sqlLimitFilter = 'LIMIT 7';
+    }
+
+    const query = `
+      SELECT id, user_id, weight, date 
+      FROM weight_logs 
+      WHERE user_id = $1 
+      ORDER BY date DESC 
+      ${sqlLimitFilter}
+    `;
+    
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania wagi", details: error.message });
+  }
+});
+
+// 🔴 NOWOŚĆ: 2. Dodawanie nowego pomiaru wagi
+router.post('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { weight } = req.body;
+
+  // Defensywna walidacja danych wejściowych po stronie serwera
+  if (!weight || isNaN(parseFloat(weight)) || parseFloat(weight) <= 0) {
+    return res.status(400).json({ error: "Niepoprawna wartość wagi! Podaj liczbę dodatnią." });
+  }
+
+  try {
+    const insertQuery = `
+      INSERT INTO weight_logs (user_id, weight)
+      VALUES ($1, $2)
+      RETURNING id, user_id, weight, date
+    `;
+    const result = await pool.query(insertQuery, [userId, parseFloat(weight)]);
+    
+    // Klucz 'log' jest krytyczny — dokładnie pod destrukcję: setWeightLogs([data.log, ...weightLogs])
+    res.status(201).json({ log: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas zapisywania pomiaru wagi", details: error.message });
+  }
+});
+
+// 🔴 NOWOŚĆ: 3. Usuwanie pomiaru wagi z historii
+router.delete('/:logId', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { logId } = req.params;
+
+  try {
+    // Klauzula WHERE chroni przed usunięciem pomiaru należącego do innego użytkownika
+    const deleteQuery = `
+      DELETE FROM weight_logs 
+      WHERE id = $1 AND user_id = $2 
+      RETURNING *
+    `;
+    const result = await pool.query(deleteQuery, [logId, userId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Nie znaleziono pomiaru wagi lub brak uprawnień do jego usunięcia." });
+    }
+
+    res.json({ message: "Pomiar wagi został pomyślnie usunięty z profilu. ✕" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas usuwania pomiaru wagi", details: error.message });
+  }
+});
+
+module.exports = router;
 </file>
 
 <file path="frontend/package.json">
@@ -1833,6 +1770,94 @@ module.exports = checkLimits;
 }
 </file>
 
+<file path="frontend/src/hooks/useFriends.js">
+// frontend/src/hooks/useFriends.js
+import { useState, useCallback } from 'react';
+import { API_BASE_URL } from '../config/api';
+
+export function useFriends(token) {
+  const [friends, setFriends] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [friendNickInput, setFriendNickInput] = useState('');
+  const [socialMessage, setSocialMessage] = useState('');
+
+  // 🔴 POPRAWKA: Kompleksowe pobieranie modułu społecznościowego (Ranking + Skrzynka odbiorcza zaproszeń)
+  const fetchFriendsData = useCallback(async () => {
+    if (!token) return;
+    try {
+      // Pobieramy równolegle dane o znajomych oraz zaproszenia oczekujące na akceptację
+      const [friendsRes, requestsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/friends`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/friends/requests`, { headers: { 'Authorization': `Bearer ${token}` } })
+      ]);
+
+      if (!friendsRes.ok) throw new Error('Błąd pobierania rankingu gangu');
+      if (!requestsRes.ok) throw new Error('Błąd pobierania skrzynki odbiorczej zaproszeń');
+
+      const friendsData = await friendsRes.json();
+      const requestsData = await requestsRes.json();
+
+      // TWARDA NORMALIZACJA: Gwarantujemy frontowi jeden, pewny klucz camelCase
+      const normalizedFriends = friendsData.map(friend => ({
+        ...friend,
+        isPremium: friend.is_premium === true || friend.isPremium === true
+      }));
+
+      setFriends(normalizedFriends);
+      setPendingRequests(requestsData); // 🔴 POPRAWKA: Wstrzykujemy pobrane zaproszenia do stanu Reacta!
+    } catch (err) {
+      console.error("❌ Błąd synchronizacji modułu społecznościowego:", err.message);
+    }
+  }, [token]);
+
+  const handleSendFriendRequest = async (targetNick) => {
+    if (!targetNick) throw new Error('Wpisz nick znajomego!');
+
+    const res = await fetch(`${API_BASE_URL}/api/friends/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ targetNick })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Nie udało się wysłać zaproszenia.');
+
+    // Czyszczenie inputu po pomyślnym wysłaniu
+    setFriendNickInput('');
+    return data;
+  };
+
+  const handleAcceptFriend = async (friendshipId) => {
+    const res = await fetch(`${API_BASE_URL}/api/friends/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ friendshipId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Nie udało się zaakceptować zaproszenia.');
+    return data;
+  };
+
+  const handleRejectFriend = async (friendshipId) => {
+    const res = await fetch(`${API_BASE_URL}/api/friends/requests/${friendshipId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Nie udało się odrzucić zaproszenia.');
+
+    return data;
+  };
+
+  return {
+    friends, setFriends, pendingRequests, setPendingRequests,
+    friendNickInput, setFriendNickInput, socialMessage, setSocialMessage,
+    handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend
+  };
+}
+</file>
+
 <file path="frontend/src/index.css">
 @import "tailwindcss";
 
@@ -1868,147 +1893,6 @@ module.exports = checkLimits;
     -webkit-font-smoothing: antialiased;
     padding-bottom: env(safe-area-inset-bottom, 0); /* Bezpieczna strefa dla iPhone'ów */
   }
-}
-</file>
-
-<file path="frontend/src/views/RestTimer.jsx">
-// frontend/src/views/RestTimer.jsx
-import { useState, useEffect, useRef, useCallback } from 'react'
-
-const PRESETS = [60, 90, 120, 180]
-
-export default function RestTimer({ onFinish }) {
-  const [duration, setDuration] = useState(() => parseInt(localStorage.getItem('gp_rest_duration') || '90', 10))
-  const [remaining, setRemaining] = useState(null)
-  const [isRunning, setIsRunning] = useState(false)
-  const intervalRef = useRef(null)
-  const audioCtxRef = useRef(null)
-
-  const getAudioCtx = () => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
-    }
-    return audioCtxRef.current
-  }
-
-  const playDone = useCallback(() => {
-    try {
-      const ctx = getAudioCtx()
-      const notes = [523.25, 659.25, 783.99]
-      notes.forEach((freq, i) => {
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.connect(gain)
-        gain.connect(ctx.destination)
-        osc.frequency.value = freq
-        osc.type = 'sine'
-        const start = ctx.currentTime + i * 0.15
-        gain.gain.setValueAtTime(0.3, start)
-        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.4)
-        osc.start(start)
-        osc.stop(start + 0.4)
-      })
-    } catch (_) {}
-    try { navigator.vibrate?.([150, 80, 150, 80, 300]) } catch (_) {}
-  }, [])
-
-  const clearTimer = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
-    }
-  }, [])
-
-  const stop = useCallback(() => {
-    clearTimer()
-    setIsRunning(false)
-    setRemaining(null)
-  }, [clearTimer])
-
-  const start = useCallback((overrideDuration) => {
-    clearTimer()
-    const d = overrideDuration ?? duration
-    setRemaining(d)
-    setIsRunning(true)
-  }, [clearTimer, duration])
-
-  useEffect(() => {
-    if (!isRunning || remaining === null) return
-    
-    // 🛠️ [NOWOŚĆ] Haptyczne odliczanie: Krótkie wibracje-bzyknięcia ostrzegawcze od 5 do 1 sekundy przed końcem
-    if (remaining > 0 && remaining <= 5) {
-      try { navigator.vibrate?.(60) } catch (_) {}
-    }
-
-    if (remaining <= 0) {
-      clearTimer()
-      setIsRunning(false)
-      setRemaining(0)
-      playDone()
-      onFinish?.()
-      return
-    }
-    intervalRef.current = setInterval(() => {
-      setRemaining(prev => prev - 1)
-    }, 1000)
-    return clearTimer
-  }, [isRunning, remaining, clearTimer, playDone, onFinish])
-
-  const addTime = (secs) => {
-    setRemaining(prev => Math.max(0, (prev ?? 0) + secs))
-    if (!isRunning) setIsRunning(true)
-  }
-
-  const changeDuration = (d) => {
-    setDuration(d)
-    localStorage.setItem('gp_rest_duration', String(d))
-  }
-
-  const mins = Math.floor((remaining ?? duration) / 60)
-  const secs = (remaining ?? duration) % 60
-  const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`
-  const progress = remaining !== null ? remaining / duration : 1
-
-  return { start, stop, TimerUI: (
-    <div className={`rounded-gp-lg border overflow-hidden transition-all duration-300 shadow-md ${isRunning ? 'border-gymWarning/40 bg-gymWarning/5 shadow-[0_0_15px_rgba(245,158,11,0.02)]' : 'border-zinc-800/80 bg-gymCardSecondary/40'}`}>
-      
-      {/* Pasek Progresu */}
-      <div className="h-[3px] bg-zinc-800">
-        <div className={`h-full rounded-r transition-all duration-1000 linear ${isRunning ? 'bg-gymWarning' : 'bg-zinc-700'}`} style={{ width: `${progress * 100}%` }} />
-      </div>
-
-      <div className="p-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <i className={`ti ti-${isRunning ? 'player-pause' : 'clock'} text-lg ${isRunning ? 'text-gymWarning animate-pulse' : 'text-textSecondary'}`} />
-            <div>
-              <div className={`font-mono text-2xl font-bold tracking-wider leading-none ${isRunning ? (remaining <= 10 ? 'text-gymRed' : 'text-gymWarning') : 'text-textSecondary'}`}>{timeStr}</div>
-              <div className="text-[10px] text-textSecondary font-semibold uppercase tracking-wider mt-1">{isRunning ? 'Odliczanie przerwy' : 'Minutnik gotowy'}</div>
-            </div>
-          </div>
-
-          {/* Kontrolki */}
-          <div className="flex items-center gap-1.5">
-            {isRunning && (
-              <>
-                <button onClick={() => addTime(30)} className="text-xs px-2.5 py-1 rounded-gp-sm border border-zinc-800 hover:border-zinc-700 bg-gymCard text-textSecondary hover:text-white cursor-pointer transition-colors font-semibold font-mono">+30s</button>
-                <button onClick={stop} className="text-xs px-2.5 py-1 rounded-gp-sm border border-zinc-800 hover:border-gymRed bg-gymCard text-textSecondary hover:text-gymRed cursor-pointer transition-colors font-semibold">Pomiń ✕</button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Presety */}
-        {!isRunning && (
-          <div className="flex gap-1 mt-2.5">
-            {PRESETS.map(p => (
-              <button key={p} onClick={() => changeDuration(p)} className={`flex-1 py-1.5 rounded-gp-sm text-xs font-mono font-bold border transition-all cursor-pointer ${duration === p ? 'border-gymWarning text-gymWarning bg-gymWarning/5' : 'border-zinc-800 text-textSecondary bg-transparent hover:text-white'}`}>{p}s</button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )}
 }
 </file>
 
@@ -2117,6 +2001,86 @@ export default function StatsView({ stats, loading }) {
     </div>
   )
 }
+</file>
+
+<file path="backend/middleware/checkLimits.js">
+// backend/middleware/checkLimits.js
+const pool = require('../config/db');
+const { getUserPlan } = require('../utils/userHelpers');
+
+/**
+ * Fabryka middleware do weryfikacji sztywnych limitów ilościowych zasobów planu FREE.
+ * @param {('templates'|'exercises'|'friends'|'workouts')} resourceType - Typ sprawdzanego zasobu
+ */
+const checkLimits = (resourceType) => {
+  return async (req, res, next) => {
+    const userId = req.user.userId;
+
+    try {
+      // Pobranie planu i roli użytkownika z bazy danych
+      const plan = await getUserPlan(userId);
+
+      if (!plan) {
+        return res.status(404).json({ error: "Użytkownik nie istnieje." });
+      }
+
+      // Konta Premium oraz TRAINER mają całkowicie zniesione wszelkie limity ilościowe
+      if (plan.is_premium || plan.role === 'TRAINER') {
+        return next();
+      }
+
+      // A. Limit Szablonów (Max 3)
+      if (resourceType === 'templates') {
+        const countRes = await pool.query('SELECT COUNT(*) FROM workout_templates WHERE user_id = $1', [userId]);
+        if (parseInt(countRes.rows[0].count, 10) >= 3) {
+          return res.status(403).json({ 
+            error: "Osiągnięto limit planu darmowego (maksymalnie 3 szablony). Przejdź na wersję Premium 💾, aby tworzyć nieograniczone plany!" 
+          });
+        }
+      }
+
+      // B. Limit Własnych Ćwiczeń (Max 5)
+      if (resourceType === 'exercises') {
+        const countRes = await pool.query('SELECT COUNT(*) FROM exercises WHERE user_id = $1', [userId]);
+        if (parseInt(countRes.rows[0].count, 10) >= 5) {
+          return res.status(403).json({ 
+            error: "Osiągnięto limit planu darmowego (maksymalnie 5 własnych ćwiczeń). Przejdź na wersję Premium 📚, aby rozbudowywać atlas!" 
+          });
+        }
+      }
+
+      // C. Limit Znajomych (Max 5)
+      if (resourceType === 'friends') {
+        const countQuery = `
+          SELECT COUNT(*) FROM friendships 
+          WHERE status = 'ACCEPTED' AND (sender_id = $1 OR receiver_id = $1)
+        `;
+        const countRes = await pool.query(countQuery, [userId]);
+        if (parseInt(countRes.rows[0].count, 10) >= 5) {
+          return res.status(403).json({
+            error: "Osiągnięto limit planu darmowego (maksymalnie 5 znajomych w gangu). Odblokuj wersję Premium 👥, aby zapraszać kolejnych użytkowników!"
+          });
+        }
+      }
+
+      // 🔴 NOWOŚĆ: D. Zabezpieczenie limitu zapisanych treningów w historii (Max 10 dla planu darmowego)
+      if (resourceType === 'workouts') {
+        const countRes = await pool.query('SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1', [userId]);
+        if (parseInt(countRes.rows[0].count, 10) >= 10) {
+          return res.status(403).json({
+            error: "Osiągnięto limit planu darmowego (maksymalnie 10 zapisanych treningów). Przejdź na wersję Premium ⚡, aby rejestrować nielimitowane sesje w historii!"
+          });
+        }
+      }
+
+      next();
+    } catch (error) {
+      res.status(500).json({ error: "Błąd serwera podczas weryfikacji limitów", details: error.message });
+    }
+  };
+};
+
+module.exports = checkLimits;
 </file>
 
 <file path="backend/routes/auth.js">
@@ -2281,186 +2245,165 @@ router.put('/weekly-target', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="backend/routes/friends.js">
-const express = require('express');
-const router = express.Router();
-const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
-const checkLimits = require('../middleware/checkLimits');
+<file path="frontend/src/views/RestTimer.jsx">
+// frontend/src/views/RestTimer.jsx
+import { useState, useEffect, useRef, useCallback } from 'react'
 
-// Wysyłanie zaproszenia
-router.post('/request', authenticateToken, checkLimits('friends'), async (req, res) => {
-  const { targetNick } = req.body;
-  const senderId = req.user.userId;
+const PRESETS = [60, 90, 120, 180]
 
-  if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
+export default function RestTimer({ onFinish }) {
+  const [duration, setDuration] = useState(() => parseInt(localStorage.getItem('gp_rest_duration') || '90', 10))
+  const [remaining, setRemaining] = useState(null)
+  const [isRunning, setIsRunning] = useState(false)
+  const intervalRef = useRef(null)
+  const audioCtxRef = useRef(null)
 
-  try {
-    const userResult = await pool.query('SELECT id FROM users WHERE nick = $1', [targetNick]);
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
+  const getAudioCtx = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
+    }
+    return audioCtxRef.current
+  }
+
+  const playDone = useCallback(() => {
+    try {
+      const ctx = getAudioCtx()
+      const notes = [523.25, 659.25, 783.99]
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.frequency.value = freq
+        osc.type = 'sine'
+        const start = ctx.currentTime + i * 0.15
+        gain.gain.setValueAtTime(0.3, start)
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.4)
+        osc.start(start)
+        osc.stop(start + 0.4)
+      })
+    } catch (_) {}
+    try { navigator.vibrate?.([150, 80, 150, 80, 300]) } catch (_) {}
+  }, [])
+
+  const clearTimer = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+  }, [])
+
+  const stop = useCallback(() => {
+    clearTimer()
+    setIsRunning(false)
+    setRemaining(null)
+  }, [clearTimer])
+
+  const start = useCallback((overrideDuration) => {
+    clearTimer()
+    const d = overrideDuration ?? duration
+    setRemaining(d)
+    setIsRunning(true)
+  }, [clearTimer, duration])
+
+  // =========================================================================
+  // 🔴 POPRAWKA: 1. EFEKT ZARZĄDZANIA JEDYNYM INTERWAŁEM (BRAK RE-CREATION LOCKA)
+  // =========================================================================
+  useEffect(() => {
+    if (!isRunning) {
+      clearTimer()
+      return
     }
 
-    const receiverId = userResult.rows[0].id;
-    if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
+    // Interwał tworzy się TYLKO RAZ, gdy stoper rusza
+    intervalRef.current = setInterval(() => {
+      setRemaining(prev => {
+        if (prev !== null && prev <= 1) {
+          clearTimer() // Zatrzymujemy stoper z poziomu callbacku
+          return 0
+        }
+        return prev !== null ? prev - 1 : null
+      })
+    }, 1000)
 
-    const checkResult = await pool.query(
-      "SELECT * FROM friendships WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)",
-      [senderId, receiverId]
-    );
-    if (checkResult.rows.length > 0) {
-      return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
-    }
+    return clearTimer
+  }, [isRunning, clearTimer]) // remaining usunięte z zależności — koniec z resetowaniem zegara sieciowego!
 
-    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1, $2, \'PENDING\')', [senderId, receiverId]);
-    res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
-  }
-});
-
-// Pobranie rankingu znajomych
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    // Łączymy wyniki znajomych z danymi zalogowanego usera przez UNION
-    const query = `
-      SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
-        CASE 
-          WHEN u.last_workout_at < NOW() - INTERVAL '12 days' THEN 0
-          ELSE u.current_streak
-        END as "current_streak"
-      FROM friendships f
-      JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1) OR (f.receiver_id = u.id AND f.sender_id = $1)
-      WHERE f.status = 'ACCEPTED' AND u.id != $1
-
-      UNION
-
-      SELECT id, nick, last_workout_at, is_premium,
-        CASE 
-          WHEN last_workout_at < NOW() - INTERVAL '12 days' THEN 0
-          ELSE current_streak
-        END as "current_streak"
-      FROM users
-      WHERE id = $1
-
-      ORDER BY "current_streak" DESC, nick ASC
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd pobierania rankingu znajomych", details: error.message });
-  }
-});
-
-// Skrzynka odbiorcza zaproszeń
-router.get('/requests', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    const query = `
-      SELECT f.id as friendship_id, u.id as sender_id, u.nick 
-      FROM friendships f 
-      JOIN users u ON f.sender_id = u.id
-      WHERE f.receiver_id = $1 AND f.status = 'PENDING'
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd ładowania skrzynki", details: error.message });
-  }
-});
-
-// Akceptacja zaproszenia
-router.post('/accept', authenticateToken, async (req, res) => {
-  const { friendshipId } = req.body;
-  const userId = req.user.userId; // Wyciągamy ID zalogowanego użytkownika z tokenu
-
-  if (!friendshipId) {
-    return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
-  }
-
-  try {
-    // Dodajemy warunek: receiver_id = $2
-    const query = `
-      UPDATE friendships 
-      SET status = 'ACCEPTED' 
-      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING' 
-      RETURNING *
-    `;
+  // =========================================================================
+  // 🔴 POPRAWKA: 2. EFEKT OBSŁUGI ZDARZEŃ I REAKCJI HAPTYCZNYCH
+  // =========================================================================
+  useEffect(() => {
+    if (remaining === null) return
     
-    const result = await pool.query(query, [friendshipId, userId]);
-    
-    // Jeśli zaproszenie nie należało do usera, zapytanie nie zmodyfikuje żadnego wiersza
-    if (result.rows.length === 0) {
-      return res.status(404).json({ 
-        error: "Zaproszenie nie istnieje, zostało już przetworzone lub nie masz uprawnień do jego akceptacji." 
-      });
-    }
-    
-    res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
-  }
-});
-
-router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
-  const { friendshipId } = req.params;
-  const userId = req.user.userId;
-
-  try {
-    // Pancerne i szybkie zapytanie: kasujemy tylko, jeśli ID się zgadza, status to PENDING i zalogowany user jest ODBIORCĄ
-    const deleteQuery = `
-      DELETE FROM friendships 
-      WHERE id = $1 AND receiver_id = $2 AND status = 'PENDING'
-    `;
-    const result = await pool.query(deleteQuery, [friendshipId, userId]);
-
-    // Jeśli baza danych nie usunęła żadnego wiersza (rowCount === 0), zwracamy błąd uprawnień lub braku rekordu
-    if (result.rowCount === 0) {
-      return res.status(404).json({ 
-        error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." 
-      });
+    // Haptyczne wibracje ostrzegawcze (krótkie bzyknięcia) na 5, 4, 3, 2, 1 sekundy przed końcem
+    if (remaining > 0 && remaining <= 5) {
+      try { navigator.vibrate?.(60) } catch (_) {}
     }
 
-    res.json({ message: "Zaproszenie zostało odrzucone. ✕" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas odrzucania zaproszenia", details: error.message });
-  }
-});
-
-module.exports = router;
-</file>
-
-<file path="frontend/src/main.jsx">
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
-
-// --- GLOBALNY INTERCEPTOR SIECIOWY (FAIL-SAFE FOR JWT EXPIRATION) ---
-const { fetch: originalFetch } = window;
-window.fetch = async (...args) => {
-  const response = await originalFetch(...args);
-  
-  // Jeśli serwer odbił nas z powodu braku lub wygaśnięcia tokenu
-  if (response.status === 401 || response.status === 403) {
-    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
-    
-    // BEZPIECZNIK: Ignorujemy próby autoryzacji (złe hasło nie może triggerować globalnego wylogowania)
-    if (url && !url.includes('/api/auth/login') && !url.includes('/api/auth/register')) {
-      // Emitujemy globalne zdarzenie w oknie przeglądarki
-      window.dispatchEvent(new Event('gympatico-unauthorized'));
+    // Gdy licznik osiągnie stan terminalny (0), odpalamy akcje i powiadomienia
+    if (remaining === 0 && isRunning) {
+      setIsRunning(false)
+      playDone()
+      onFinish?.()
     }
-  }
-  
-  return response;
-};
+  }, [remaining, isRunning, playDone, onFinish])
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+  const addTime = (secs) => {
+    setRemaining(prev => Math.max(0, (prev ?? 0) + secs))
+    if (!isRunning) setIsRunning(true)
+  }
+
+  const changeDuration = (d) => {
+    setDuration(d)
+    localStorage.setItem('gp_rest_duration', String(d))
+  }
+
+  const mins = Math.floor((remaining ?? duration) / 60)
+  const secs = (remaining ?? duration) % 60
+  const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`
+  const progress = remaining !== null ? remaining / duration : 1
+
+  return { start, stop, TimerUI: (
+    <div className={`rounded-gp-lg border overflow-hidden transition-all duration-300 shadow-md ${isRunning ? 'border-gymWarning/40 bg-gymWarning/5 shadow-[0_0_15px_rgba(245,158,11,0.02)]' : 'border-zinc-800/80 bg-gymCardSecondary/40'}`}>
+      
+      {/* Pasek Progresu */}
+      <div className="h-[3px] bg-zinc-800">
+        <div className={`h-full rounded-r transition-all duration-1000 linear ${isRunning ? 'bg-gymWarning' : 'bg-zinc-700'}`} style={{ width: `${progress * 100}%` }} />
+      </div>
+
+      <div className="p-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <i className={`ti ti-${isRunning ? 'player-pause' : 'clock'} text-lg ${isRunning ? 'text-gymWarning animate-pulse' : 'text-textSecondary'}`} />
+            <div>
+              <div className={`font-mono text-2xl font-bold tracking-wider leading-none ${isRunning ? (remaining <= 10 ? 'text-gymRed' : 'text-gymWarning') : 'text-textSecondary'}`}>{timeStr}</div>
+              <div className="text-[10px] text-textSecondary font-semibold uppercase tracking-wider mt-1">{isRunning ? 'Odliczanie przerwy' : 'Minutnik gotowy'}</div>
+            </div>
+          </div>
+
+          {/* Kontrolki */}
+          <div className="flex items-center gap-1.5">
+            {isRunning && (
+              <>
+                <button onClick={() => addTime(30)} className="text-xs px-2.5 py-1 rounded-gp-sm border border-zinc-800 hover:border-zinc-700 bg-gymCard text-textSecondary hover:text-white cursor-pointer transition-colors font-semibold font-mono">+30s</button>
+                <button onClick={stop} className="text-xs px-2.5 py-1 rounded-gp-sm border border-zinc-800 hover:border-gymRed bg-gymCard text-textSecondary hover:text-gymRed cursor-pointer transition-colors font-semibold">Pomiń ✕</button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Presety */}
+        {!isRunning && (
+          <div className="flex gap-1 mt-2.5">
+            {PRESETS.map(p => (
+              <button key={p} onClick={() => changeDuration(p)} className={`flex-1 py-1.5 rounded-gp-sm text-xs font-mono font-bold border transition-all cursor-pointer ${duration === p ? 'border-gymWarning text-gymWarning bg-gymWarning/5' : 'border-zinc-800 text-textSecondary bg-transparent hover:text-white'}`}>{p}s</button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )}
+}
 </file>
 
 <file path="frontend/vite.config.js">
@@ -2677,155 +2620,53 @@ export function useWorkouts(token, exercises, showToast) {
 }
 </file>
 
-<file path="frontend/src/views/Social.jsx">
-import React from 'react'
+<file path="frontend/src/main.jsx">
+// frontend/src/main.jsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
 
-export default function Social({
-  friendNickInput, 
-  setFriendNickInput,
-  handleSendFriendRequest, 
-  pendingRequests, 
-  handleAcceptFriend, 
-  handleRejectFriend,
-  friends,
-  user
-}) {
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
+// --- GLOBALNY INTERCEPTOR SIECIOWY (FAIL-SAFE FOR JWT EXPIRATION) ---
+const { fetch: originalFetch } = window;
+window.fetch = async (...args) => {
+  const response = await originalFetch(...args);
+  
+  // Przechwytujemy potencjalne błędy uwierzytelnienia/autoryzacji
+  if (response.status === 401 || response.status === 403) {
+    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+    
+    // BEZPIECZNIK 1: Ignorujemy próby logowania/rejestracji
+    if (url && !url.includes('/api/auth/login') && !url.includes('/api/auth/register')) {
       
-      {/* LEWA STRONA: WYSZUKIWARKA + OCZEKUJĄCE */}
-      <div className="lg:col-span-1 flex flex-col gap-6">
+      // 🔴 POPRAWKA: Filtrowanie komunikatów o limitach planu FREE
+      try {
+        // Klonujemy odpowiedź, aby nie zablokować strumienia (body used) dla końcowych widoków/hooków
+        const responseClone = response.clone();
+        const data = await responseClone.json();
         
-        {/* SEKCJA 1: WYSZUKAJ ZNAJOMYCH */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">Szukaj znajomych 🔍</h2>
-          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangu.</p>
-          
-          <form onSubmit={handleSendFriendRequest} className="flex gap-2">
-            <input 
-              type="text" 
-              placeholder="np. MarekWorkout" 
-              value={friendNickInput} 
-              onChange={e => setFriendNickInput(e.target.value)} 
-              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-            />
-            <button 
-              type="submit" 
-              className="bg-gymRed hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
-            >
-              Zaproś
-            </button>
-          </form>
-        </section>
+        // Jeśli w body znajduje się słowo kluczowe powiązane z limitami, 
+        // przerywamy procedurę wylogowania i pozwalamy hookowi obsłużyć błąd (np. pokazać toast)
+        if (data && data.error && (data.error.includes('limit') || data.error.includes('Osiągnięto'))) {
+          return response;
+        }
+      } catch (jsonError) {
+        // Jeśli odpowiedź to nie JSON (np. surowy błąd serwera), pozwalamy na dalsze działanie interceptora
+      }
 
-        {/* SEKCJA 2: OCZEKUJĄCE ZAPROSZENIA */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-4">Oczekujące zaproszenia ✉️</h2>
-          
-          {pendingRequests.length === 0 ? (
-            <p className="text-zinc-500 italic text-sm text-center py-4">Brak nowych zaproszeń.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {pendingRequests.map(req => (
-                <div key={req.friendship_id} className="flex justify-between items-center bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800 shadow-sm">
-                  <span className="text-sm">Od: <strong className="text-zinc-200">{req.nick}</strong></span>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => handleAcceptFriend(req.friendship_id)} 
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
-                    >
-                      Akceptuj
-                    </button>
-                    <button 
-                      onClick={() => handleRejectFriend(req.friendship_id)} 
-                      className="border border-gymRed text-gymRed hover:bg-gymRed/10 font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
-                    >
-                      Odrzuć
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
+      // Jeśli test klona przeszedł pomyślnie i to nie był limit -> emitujemy zdarzenie wygaśnięcia sesji
+      window.dispatchEvent(new Event('gympatico-unauthorized'));
+    }
+  }
+  
+  return response;
+};
 
-      {/* PRAWA STRONA: RANKING STREAKÓW GANGU */}
-      <section className="lg:col-span-2 bg-gymCard p-4 md:p-6 rounded-xl shadow-lg border border-zinc-800/40">
-        <div className="border-b border-zinc-800 pb-4 mb-4">
-          <h2 className="text-xl md:text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-gymRed">
-            Ranking Streaków Gangu GymPatico 🔥
-          </h2>
-          <p className="text-zinc-400 text-xs md:text-sm mt-1">Utrzymuj cel tygodniowy, aby piąć się w górę tabeli!</p>
-        </div>
-
-        {friends.length === 0 ? (
-          <p className="text-zinc-500 italic text-center py-12">Brak znajomych w rankingu. Zaproś kogoś!</p>
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            {friends.map((f, idx) => {
-              const isFirst = idx === 0;
-              const isSecond = idx === 1;
-              const isThird = idx === 2;
-              const isMe = f.id === user?.id;
-              const isPremium = f.isPremium;
-
-              return (
-                <div 
-                  key={f.id} 
-                  className={`flex justify-between items-center p-3.5 rounded-lg shadow-sm transition-all duration-200 ${
-                    isMe
-                      ? 'bg-gymRed/10 border-2 border-gymRed/40 shadow-[0_0_15px_rgba(255,71,87,0.03)]' 
-                      : isFirst 
-                        ? 'bg-amber-500/5 border border-amber-500/20 shadow-[0_0_12px_rgba(245,158,11,0.02)]' 
-                        : 'bg-[#2d2d2d] border border-zinc-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className={`text-lg font-black w-8 text-center shrink-0 ${
-                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : isSecond ? 'text-zinc-300' : isThird ? 'text-amber-600' : 'text-zinc-500'
-                    }`}>
-                      #{idx + 1}
-                    </span>
-                    
-                    <div className="flex items-center gap-2 min-w-0 truncate">
-                      <strong className={`text-sm md:text-base truncate ${
-                        isMe ? 'text-gymRed font-black' : isFirst ? 'text-amber-200 font-bold' : 'text-zinc-100'
-                      }`}>
-                        {f.nick} {isMe ? '(Ty)' : ''}
-                      </strong>
-
-                      {/* WARUNKOWY BADGE PREMIUM DLA WYRÓŻNIONYCH KONT */}
-                      {isPremium && (
-                        <span 
-                          className="inline-flex items-center bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider uppercase shrink-0 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
-                          title="Użytkownik pakietu GymPatico Premium 🦾"
-                        >
-                          ⭐ PREMIUM
-                        </span>
-                      )}
-
-                      {isFirst && !isMe && <span className="text-base shrink-0">👑</span>}
-                    </div>
-                  </div>
-                  
-                  <div className="text-right shrink-0 ml-2">
-                    <span className={`font-black text-sm md:text-lg tracking-tight ${
-                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : 'text-zinc-300'
-                    }`}>
-                      🔥 {f.current_streak} tyg.
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-    </div>
-  )
-}
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
 </file>
 
 <file path="frontend/src/views/History.jsx">
@@ -3125,6 +2966,166 @@ export default function History({
 }
 </file>
 
+<file path="frontend/src/views/Social.jsx">
+// frontend/src/views/Social.jsx
+import React from 'react'
+
+export default function Social({
+  friendNickInput, 
+  setFriendNickInput,
+  onSendFriendRequest, // 🔴 POPRAWKA: Czytelna nazwa callbacku zamiast mylącego handleSendFriendRequest
+  pendingRequests, 
+  handleAcceptFriend, 
+  handleRejectFriend,
+  friends,
+  user
+}) {
+  
+  // 🔴 POPRAWKA: Lokalny handler izolujący zarządzanie zdarzeniami DOM (e.preventDefault)
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSendFriendRequest(); // Wywołujemy czystą akcję biznesową bez brudzenia jej obiektem eventu
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
+      
+      {/* LEWA STRONA: WYSZUKIWARKA + OCZEKUJĄCE */}
+      <div className="lg:col-span-1 flex flex-col gap-6">
+        
+        {/* SEKCJA 1: WYSZUKAJ ZNAJOMYCH */}
+        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
+          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">Szukaj znajomych 🔍</h2>
+          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangu.</p>
+          
+          {/* 🔴 POPRAWKA: Podpięcie dedykowanego, lokalnego handlera */}
+          <form onSubmit={handleSubmit} className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="np. MarekWorkout" 
+              value={friendNickInput} 
+              onChange={e => setFriendNickInput(e.target.value)} 
+              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
+            />
+            <button 
+              type="submit" 
+              className="bg-gymRed hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
+            >
+              Zaproś
+            </button>
+          </form>
+        </section>
+
+        {/* SEKCJA 2: OCZEKUJĄCE ZAPROSZENIA */}
+        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
+          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-4">Oczekujące zaproszenia ✉️</h2>
+          
+          {pendingRequests.length === 0 ? (
+            <p className="text-zinc-500 italic text-sm text-center py-4">Brak nowych zaproszeń.</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {pendingRequests.map(req => (
+                <div key={req.friendship_id} className="flex justify-between items-center bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800 shadow-sm">
+                  <span className="text-sm">Od: <strong className="text-zinc-200">{req.nick}</strong></span>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => handleAcceptFriend(req.friendship_id)} 
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
+                    >
+                      Akceptuj
+                    </button>
+                    <button 
+                      onClick={() => handleRejectFriend(req.friendship_id)} 
+                      className="border border-gymRed text-gymRed hover:bg-gymRed/10 font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
+                    >
+                      Odrzuć
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* PRAWA STRONA: RANKING STREAKÓW GANGU */}
+      <section className="lg:col-span-2 bg-gymCard p-4 md:p-6 rounded-xl shadow-lg border border-zinc-800/40">
+        <div className="border-b border-zinc-800 pb-4 mb-4">
+          <h2 className="text-xl md:text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-gymRed">
+            Ranking Streaków Gangu GymPatico 🔥
+          </h2>
+          <p className="text-zinc-400 text-xs md:text-sm mt-1">Utrzymuj cel tygodniowy, aby piąć się w górę tabeli!</p>
+        </div>
+
+        {friends.length === 0 ? (
+          <p className="text-zinc-500 italic text-center py-12">Brak znajomych w rankingu. Zaproś kogoś!</p>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {friends.map((f, idx) => {
+              const isFirst = idx === 0;
+              const isSecond = idx === 1;
+              const isThird = idx === 2;
+              const isMe = f.id === user?.id;
+              const isPremium = f.isPremium;
+
+              return (
+                <div 
+                  key={f.id} 
+                  className={`flex justify-between items-center p-3.5 rounded-lg shadow-sm transition-all duration-200 ${
+                    isMe
+                      ? 'bg-gymRed/10 border-2 border-gymRed/40 shadow-[0_0_15px_rgba(255,71,87,0.03)]' 
+                      : isFirst 
+                        ? 'bg-amber-500/5 border border-amber-500/20 shadow-[0_0_12px_rgba(245,158,11,0.02)]' 
+                        : 'bg-[#2d2d2d] border border-zinc-800/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`text-lg font-black w-8 text-center shrink-0 ${
+                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : isSecond ? 'text-zinc-300' : isThird ? 'text-amber-600' : 'text-zinc-500'
+                    }`}>
+                      #{idx + 1}
+                    </span>
+                    
+                    <div className="flex items-center gap-2 min-w-0 truncate">
+                      <strong className={`text-sm md:text-base truncate ${
+                        isMe ? 'text-gymRed font-black' : isFirst ? 'text-amber-200 font-bold' : 'text-zinc-100'
+                      }`}>
+                        {f.nick} {isMe ? '(Ty)' : ''}
+                      </strong>
+
+                      {/* WARUNKOWY BADGE PREMIUM DLA WYRÓŻNIONYCH KONT */}
+                      {isPremium && (
+                        <span 
+                          className="inline-flex items-center bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider uppercase shrink-0 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
+                          title="Użytkownik pakietu GymPatico Premium 🦾"
+                        >
+                          ⭐ PREMIUM
+                        </span>
+                      )}
+
+                      {isFirst && !isMe && <span className="text-base shrink-0">👑</span>}
+                    </div>
+                  </div>
+                  
+                  <div className="text-right shrink-0 ml-2">
+                    <span className={`font-black text-sm md:text-lg tracking-tight ${
+                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : 'text-zinc-300'
+                    }`}>
+                      🔥 {f.current_streak} tyg.
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+    </div>
+  )
+}
+</file>
+
 <file path="init.sql">
 -- init.sql - Zunifikowana struktura bazy danych GymPatico z obsługą stref czasowych (TIMESTAMPTZ)
 
@@ -3336,6 +3337,222 @@ if (require.main === module) {
 module.exports = app;
 </file>
 
+<file path="backend/routes/friends.js">
+// backend/routes/friends.js
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+const checkLimits = require('../middleware/checkLimits');
+const { getUserPlan } = require('../utils/userHelpers'); 
+
+// =========================================================================
+// 1. WYSŁANIE ZAPROSZENIA DO ZNAJOMYCH
+// =========================================================================
+router.post('/request', authenticateToken, checkLimits('friends'), async (req, res) => {
+  const { targetNick } = req.body;
+  const senderId = req.user.userId;
+
+  if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
+
+  try {
+    const userResult = await pool.query('SELECT id FROM users WHERE nick = $1', [targetNick]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
+    }
+
+    const receiverId = userResult.rows[0].id;
+    if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
+
+    const checkResult = await pool.query(
+      `SELECT * FROM friendships 
+       WHERE (sender_id = $1::uuid AND receiver_id = $2::uuid) 
+          OR (sender_id = $2::uuid AND receiver_id = $1::uuid)`,
+      [senderId, receiverId]
+    );
+    if (checkResult.rows.length > 0) {
+      return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
+    }
+
+    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1, $2, \'PENDING\')', [senderId, receiverId]);
+    res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
+  }
+});
+
+// =========================================================================
+// 2. POBRANIE RANKINGU ZNAJOMYCH (Zgłoszenie ciągłości streaków)
+// =========================================================================
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const query = `
+      SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
+        CASE 
+          WHEN u.last_workout_at < NOW() - INTERVAL '12 days' THEN 0
+          ELSE u.current_streak
+        END as "current_streak"
+      FROM friendships f
+      JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1::uuid) OR (f.receiver_id = u.id AND f.sender_id = $1::uuid)
+      WHERE f.status = 'ACCEPTED' AND u.id != $1::uuid
+
+      UNION
+
+      SELECT id, nick, last_workout_at, is_premium,
+        CASE 
+          WHEN last_workout_at < NOW() - INTERVAL '12 days' THEN 0
+          ELSE current_streak
+        END as "current_streak"
+      FROM users
+      WHERE id = $1::uuid
+
+      ORDER BY "current_streak" DESC, nick ASC
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania rankingu znajomych", details: error.message });
+  }
+});
+
+// =========================================================================
+// 3. SKRZYNKA ODBIORCZA ZAPROSZEŃ
+// =========================================================================
+router.get('/requests', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const query = `
+      SELECT f.id as friendship_id, u.id as sender_id, u.nick 
+      FROM friendships f 
+      JOIN users u ON f.sender_id = u.id
+      WHERE f.receiver_id = $1::uuid AND f.status = 'PENDING'
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd ładowania skrzynki", details: error.message });
+  }
+});
+
+// =========================================================================
+// 4. AKCEPTACJA ZAPROSZENIA (W pełni załatana faza błędu parametrów)
+// =========================================================================
+router.post('/accept', authenticateToken, async (req, res) => {
+  const { friendshipId } = req.body;
+  const userId = req.user.userId; 
+
+  if (!friendshipId) {
+    return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // KROK A: Pobieramy rekord zaproszenia z blokadą wiersza relacji
+    const friendshipRes = await client.query(
+      `SELECT sender_id, receiver_id FROM friendships 
+       WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING' FOR UPDATE`,
+      [friendshipId, userId]
+    );
+
+    if (friendshipRes.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ 
+        error: "Zaproszenie nie istnieje, zostało już przetworzone lub nie masz uprawnień do jego akceptacji." 
+      });
+    }
+
+    const senderId = friendshipRes.rows[0].sender_id;
+
+    // KROK B: Defensywne sortowanie ID w celu uniknięcia zakleszczeń (Deadlocks) bazy danych
+    const firstId = userId < senderId ? userId : senderId;
+    const secondId = userId < senderId ? senderId : userId;
+
+    // 🔴 POPRAWKA: Oba zapytania używają teraz niezależnego $1::uuid, ponieważ to dwa odrębne wywołania funkcji!
+    await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [firstId]);
+    await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [secondId]);
+
+    // KROK C: Weryfikacja limitu gangu po stronie ODBIORCY
+    const receiverPlan = await getUserPlan(userId, client);
+    if (receiverPlan && !receiverPlan.is_premium && receiverPlan.role !== 'TRAINER') {
+      const countRes = await client.query(
+        `SELECT COUNT(*) FROM friendships 
+         WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`,
+        [userId]
+      );
+      if (parseInt(countRes.rows[0].count, 10) >= 5) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ 
+          error: "Nie możesz zaakceptować zaproszenia. Osiągnięto limit planu darmowego (maksymalnie 5 znajomych w gangu). Odblokuj Premium 👥!" 
+        });
+      }
+    }
+
+    // KROK D: Weryfikacja limitu po stronie NADAWCY
+    const senderPlan = await getUserPlan(senderId, client);
+    if (senderPlan && !senderPlan.is_premium && senderPlan.role !== 'TRAINER') {
+      const countRes = await client.query(
+        `SELECT COUNT(*) FROM friendships 
+         WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`,
+        [senderId]
+      );
+      if (parseInt(countRes.rows[0].count, 10) >= 5) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ 
+          error: "Nie można zaakceptować zaproszenia. Nadawca osiągnął już maksymalny limit 5 znajomych w swoim darmowym gangu!" 
+        });
+      }
+    }
+
+    // KROK E: Zmiana statusu znajomości na aktywną
+    await client.query(
+      "UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1::uuid",
+      [friendshipId]
+    );
+
+    await client.query('COMMIT');
+    res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error("❌ CRITICAL BACKEND ERROR IN POST /accept:", error);
+    res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// =========================================================================
+// 5. ODRZUCENIE / USUNIĘCIE ZAPROSZENIA
+// =========================================================================
+router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
+  const { friendshipId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    const deleteQuery = `
+      DELETE FROM friendships 
+      WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING'
+    `;
+    const result = await pool.query(deleteQuery, [friendshipId, userId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ 
+        error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." 
+      });
+    }
+
+    res.json({ message: "Zaproszenie zostało odrzucone. ✕" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas odrzucania zaproszenia", details: error.message });
+  }
+});
+
+module.exports = router;
+</file>
+
 <file path="backend/routes/workouts.js">
 // backend/routes/workouts.js
 const express = require('express');
@@ -3345,8 +3562,10 @@ const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
 const { getUserPlan } = require('../utils/userHelpers');
 
-// 1. ZAPISANIE TRENINGU (Zoptymalizowany UNNEST Batch Insert z obsługą serii W, D, F)
-router.post('/', authenticateToken, async (req, res) => {
+// =========================================================================
+// 1. ZAPISANIE TRENINGU (Zabezpieczone transakcyjnie + Blokada FOR UPDATE + Progi Streaka)
+// =========================================================================
+router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) => {
   const { name, comment, series } = req.body;
   const userId = req.user.userId;
 
@@ -3359,12 +3578,43 @@ router.post('/', authenticateToken, async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    // Blokada pesymistyczna (Pessimistic Locking) na wierszu użytkownika.
+    // Zapobiega wyścigom żądań (Race Conditions) przy jednoczesnych requestach sieciowych.
+    const userResult = await client.query(
+      'SELECT current_streak, weekly_target_workouts, last_workout_at FROM users WHERE id = $1 FOR UPDATE', 
+      [userId]
+    );
+    
+    if (userResult.rowCount === 0) {
+      throw new Error("Użytkownik nie istnieje w systemie.");
+    }
+
+    const { current_streak, weekly_target_workouts, last_workout_at } = userResult.rows[0];
+    const target = weekly_target_workouts ?? 3;
+
+    // Symetryczne pobieranie stanu licznika tygodniowego PRZED zapisem nowej sesji
+    const lastWeekResult = await client.query(
+      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
+      AND started_at >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw' 
+      AND started_at < date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
+    );
+    const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count, 10);
+
+    const thisWeekResult = await client.query(
+      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
+      AND started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
+    );
+    // Liczba sesji przed wstawieniem aktualnej
+    const workoutsBeforeThisOne = parseInt(thisWeekResult.rows[0].count, 10);
+
+    // --- BEZPIECZNE WSTAWIENIE NAGŁÓWKA SESJI ---
     const sessionResult = await client.query(
       "INSERT INTO workout_sessions (user_id, name, comment, started_at, ended_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id",
-      [userId, name, comment || null]
+      [userId, name.trim(), comment || null]
     );
     const sessionId = sessionResult.rows[0].id;
 
+    // Przygotowanie płaskich tablic dla optymalizacji sieciowej UNNEST Batch Insert
     const exerciseIds = [];
     const weights = [];
     const reps = [];
@@ -3372,11 +3622,13 @@ router.post('/', authenticateToken, async (req, res) => {
     const estimatedOneRMs = [];
     const isAlternatives = [];
     const seriesComments = [];
-    const seriesTypes = []; // 🛠️ [NOWOŚĆ] Tablica na typy serii
+    const seriesTypes = [];
 
     for (let i = 0; i < series.length; i++) {
       const s = series[i];
       let estimatedOneRM = null;
+      
+      // Wyliczenie 1RM wg sprawdzonego wzoru Epleya (dla serii od 1 do 12 powtórzeń)
       if (s.reps >= 1 && s.reps <= 12) {
         estimatedOneRM = s.weight * (1 + s.reps / 30);
       }
@@ -3388,10 +3640,10 @@ router.post('/', authenticateToken, async (req, res) => {
       estimatedOneRMs.push(estimatedOneRM);
       isAlternatives.push(s.isAlternative || false);
       seriesComments.push(s.comment || null);
-      seriesTypes.push(s.seriesType || 'NORMAL'); // 🛠️ [NOWOŚĆ] Wstrzyknięcie typu serii (NORMAL/WARMUP/DROP_SET/FAILURE)
+      seriesTypes.push(s.seriesType || 'NORMAL');
     }
 
-    // 🛠️ [NOWOŚĆ] Rozbudowane zapytanie o kolumnę series_type i rzutowanie typu varchar[]
+    // Błyskawiczny zapis wielowierszowy (0 marnowania round-tripów sieciowych do bazy)
     const bulkInsertSeriesQuery = `
       INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment, series_type)
       SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::numeric[], $7::boolean[], $8::text[], $9::varchar[])
@@ -3401,19 +3653,7 @@ router.post('/', authenticateToken, async (req, res) => {
       sessionId, exerciseIds, weights, reps, orders, estimatedOneRMs, isAlternatives, seriesComments, seriesTypes
     ]);
 
-    // Pobranie parametrów użytkownika do wyliczenia streaka
-    const userResult = await client.query('SELECT current_streak, weekly_target_workouts, last_workout_at FROM users WHERE id = $1', [userId]);
-    const { current_streak, weekly_target_workouts, last_workout_at } = userResult.rows[0];
-
-    const target = weekly_target_workouts ?? 3;
-
-    const lastWeekResult = await client.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
-      AND started_at >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw' 
-      AND started_at < date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
-    );
-    const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count);
-
+    // --- ANALIZA I AKTUALIZACJA CIĄGŁOŚCI TRENINGOWEJ (STREAK) ---
     let effectiveStreak = current_streak;
 
     if (last_workout_at) {
@@ -3423,24 +3663,25 @@ router.post('/', authenticateToken, async (req, res) => {
       const startOfThisWeek = new Date(startOfThisWeekResult.rows[0].start_of_week);
       const lastWorkoutDate = new Date(last_workout_at);
 
+      // Jeśli ostatni trening odbył się przed bieżącym tygodniem, weryfikujemy czy cel został domknięty
       if (lastWorkoutDate < startOfThisWeek) {
         if (workoutsLastWeek < target) {
-          effectiveStreak = 0; 
+          effectiveStreak = 0; // Przerwana ciągłość -> reset streaka
         }
       }
     }
 
-    const thisWeekResult = await client.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
-      AND started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
-    );
-    const workoutsThisWeek = parseInt(thisWeekResult.rows[0].count);
-
+    // Dodając ten trening, łączna suma w tym tygodniu wyniesie:
+    const workoutsWithThisOne = workoutsBeforeThisOne + 1;
     let newStreak = effectiveStreak;
-    if (workoutsThisWeek === target) {
+
+    // Próg bezpieczeństwa (Threshold Guard). Streak rośnie tylko wtedy,
+    // gdy ten konkretny trening przebija barierę celu, chroniąc przed "farmowaniem" streaka.
+    if (workoutsWithThisOne >= target && workoutsBeforeThisOne < target) {
       newStreak = effectiveStreak + 1;
     }
 
+    // Aktualizacja rekordu użytkownika przy użyciu GREATEST dla bezpiecznego max_streak
     await client.query(
       'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
       [newStreak, userId]
@@ -3450,13 +3691,15 @@ router.post('/', authenticateToken, async (req, res) => {
     res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
   } catch (error) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: "Błąd transakcji", details: error.message });
+    res.status(500).json({ error: "Błąd transakcji podczas zapisywania treningu", details: error.message });
   } finally {
     client.release();
   }
 });
 
-// 2. POBRANIE HISTORII TRENINGÓW (Zwracanie kolumny series_type dla frontendu)
+// =========================================================================
+// 2. POBRANIE HISTORII TRENINGÓW (Z paginacją i twardym limitem 10 sesji dla FREE)
+// =========================================================================
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   
@@ -3474,6 +3717,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const countResult = await pool.query(countQuery, [userId]);
     let totalCount = parseInt(countResult.rows[0].count, 10);
 
+    // Wymuszanie twardego sufitu biznesowego dla kont bez subskrypcji Premium / Roli Trenera
     if (!plan.is_premium && plan.role !== 'TRAINER') {
       totalCount = Math.min(totalCount, 10);
       if (offset >= 10) {
@@ -3498,7 +3742,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const sessionIds = sessions.map(s => s.id);
 
-    // 🛠️ [NOWOŚĆ] Pobieramy ls.series_type AS "seriesType"
+    // Pobranie powiązanych serii z uwzględnieniem mapowania camelCase klucza seriesType
     const seriesQuery = `
       SELECT 
         ls.id, 
@@ -3531,7 +3775,9 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// 3. EKSPORT HISTORII DO PLIKU CSV
+// =========================================================================
+// 3. EKSPORT HISTORII DO PLIKU CSV (Tylko dla Premium / Trainer)
+// =========================================================================
 router.get('/export', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
@@ -3571,6 +3817,7 @@ router.get('/export', authenticateToken, async (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename=gympatico_historia_treningow.csv');
     
+    // Wstrzyknięcie znacznika BOM dla prawidłowego kodowania polskich znaków w MS Excel
     res.write('\uFEFF');
 
     const headers = ["Data", "Nazwa treningu", "Komentarz do treningu", "Ćwiczenie", "Grupa mięśniowa", "Numer serii", "Typ serii", "Ciężar (kg)", "Powtórzenia", "Estymowane 1RM"];
@@ -3593,7 +3840,9 @@ router.get('/export', authenticateToken, async (req, res) => {
   }
 });
 
-// 4. POBRANIE PROGRESJI 1RM ĆWICZENIA
+// =========================================================================
+// 4. POBRANIE PROGRESJI 1RM ĆWICZENIA (Z ograniczeniem czasowym 30 dni dla FREE)
+// =========================================================================
 router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
   const { exerciseId } = req.params;
   const userId = req.user.userId;
@@ -3637,13 +3886,15 @@ router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
   }
 });
 
-// 5. USUNIĘCIE TRENINGU
+// =========================================================================
+// 5. USUNIĘCIE TRENINGU (Z weryfikacją uprawnień właściciela)
+// =========================================================================
 router.delete('/:sessionId', authenticateToken, async (req, res) => {
   const { sessionId } = req.params;
   const userId = req.user.userId;
 
   try {
-    const checkQuery = 'SELECT * FROM workout_sessions WHERE id = $1 AND user_id = $2';
+    const checkQuery = 'SELECT id FROM workout_sessions WHERE id = $1 AND user_id = $2';
     const checkResult = await pool.query(checkQuery, [sessionId, userId]);
 
     if (checkResult.rows.length === 0) {
@@ -3653,11 +3904,13 @@ router.delete('/:sessionId', authenticateToken, async (req, res) => {
     await pool.query('DELETE FROM workout_sessions WHERE id = $1', [sessionId]);
     res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
   } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas Screen usunięcia treningu", details: error.message });
+    res.status(500).json({ error: "Błąd serwera podczas usunięcia treningu", details: error.message });
   }
 });
 
-// 6. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz)
+// =========================================================================
+// 6. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz z walidacją długości znaków)
+// =========================================================================
 router.patch('/:sessionId', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   const { sessionId } = req.params;
@@ -3685,7 +3938,8 @@ router.patch('/:sessionId', authenticateToken, async (req, res) => {
       WHERE id = $3 AND user_id = $4 
       RETURNING id, name, comment
     `;
-    const result = await pool.query(updateQuery, [name.trim(), comment ? comment.trim() : null, sessionId, userId]);
+    // 🔴 POPRAWKA: Usunięto nadmiarowe wywołania .trim() z parametrów tablicy SQL
+    const result = await pool.query(updateQuery, [name, comment, sessionId, userId]);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ error: "Nie znaleziono sesji treningowej lub brak uprawnień." });
@@ -4033,7 +4287,6 @@ function AppContent() {
   const [stats, setStats] = useState(null)
   const [loadingData, setLoadingData] = useState(false)
 
-  // Stan obsługi dolnego menu "Więcej..." (Bottom Sheet Drawer)
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
 
   const navigate = useNavigate()
@@ -4060,11 +4313,10 @@ function AppContent() {
     seriesReps, setSeriesReps, localSeriesList, setLocalSeriesList, addSeriesToLocalList, 
     handleSaveWorkout, fetchWorkoutsData, removeSeriesFromLocalList, progressionData, 
     fetchProgression, handleDeleteWorkout, hasMoreWorkouts, handleUpdateWorkout,
-    totalWorkoutsCount // <--- [FIXED] DODANO DO DESTRUKCJI Z HOOKA
+    totalWorkoutsCount 
   } = useWorkouts(token, exercises, showToast)
 
   const handleLoginSuccess = (userToken, userData) => {
-    // 🛠️ [NOWOŚĆ] Pancerne ujednolicenie obu formatów zapisu dla pełnego bezpieczeństwa widoków
     const isPremiumVal = userData.isPremium || userData.is_premium || false;
     const normalizedLoginUser = {
       ...userData,
@@ -4126,7 +4378,6 @@ function AppContent() {
       })
         .then(res => { if (!res.ok) throw new Error('Błąd profilu'); return res.json(); })
         .then(data => {
-          // 🛠️ [NOWOŚĆ] Zapisujemy do stanu i localStorage oba warianty klucza
           const isPremiumVal = data.is_premium || false;
           const normalizedUser = {
             ...data,
@@ -4152,7 +4403,7 @@ function AppContent() {
     } finally {
       setLoadingData(false);
     }
-  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates, fetchProgression]);
+  }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates]);
 
   useEffect(() => {
     fetchAllData()
@@ -4191,10 +4442,22 @@ function AppContent() {
     }
   };
 
+  // 🔴 NOWOŚĆ: Dedykowany wrapper dla zapisu wagi synchronizujący całą aplikację w tle
+  const onAddWeight = async (e) => {
+    if (e) e.preventDefault();
+    try {
+      await handleAddWeight(e);
+      await fetchAllData(); // Błyskawiczne odświeżenie wykresów, trendów i KPI
+    } catch (err) {
+      // Błąd został obsłużony wewnątrz hooka
+    }
+  };
+
   const onDeleteWeightLog = async (logId) => {
     try {
       await handleDeleteWeight(logId);
       showToast('Pomiar wagi został usunięty ⚖️', 'success');
+      await fetchAllData();
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -4211,8 +4474,7 @@ function AppContent() {
     }
   };
 
-  const onSendFriendRequest = async (e) => {
-    e.preventDefault();
+  const onSendFriendRequest = async () => {
     try {
       await handleSendFriendRequest(friendNickInput);
       showToast('Zaproszenie wysłane pomyślnie! ✉️', 'success');
@@ -4252,7 +4514,7 @@ function AppContent() {
     }
   };
 
-  const onLoadMoreWorkouts = async () => {
+  const mtLoadMoreWorkouts = async () => {
     await fetchWorkoutsData(workoutsHistory.length, true);
   };
 
@@ -4330,7 +4592,7 @@ function AppContent() {
             </button>
           </header>
 
-          {/* DOLNA BELKA MOBILNA (5 POZYCJI) */}
+          {/* DOLNA BELKA MOBILNA */}
           <nav className="grid grid-cols-5 md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#181a20] border-t border-zinc-800/60 shadow-2xl z-[999] py-1 px-1 items-center">
             <button onClick={() => { navigate('/'); setIsMoreMenuOpen(false); }} className={`flex flex-col items-center justify-center bg-transparent border-none cursor-pointer text-[10px] font-bold gap-0.5 transition-colors ${location.pathname === '/' ? 'text-gymRed' : 'text-zinc-500'}`}>
               <span className="text-lg">📊</span><span>Panel</span>
@@ -4386,7 +4648,10 @@ function AppContent() {
       <main className="pb-24 md:pb-0">
         <Routes>
           <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
-          <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={handleAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} workoutsHistory={workoutsHistory} templates={templates} /> : <Navigate to="/login" />} />
+          
+          {/* 🔴 POPRAWKA: Przekazujemy onAddWeight jako handleAddWeight do Dashboardu */}
+          <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={onAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} workoutsHistory={workoutsHistory} templates={templates} /> : <Navigate to="/login" />} />
+          
           <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} onDeleteExercise={onDeleteCustomExercise} /> : <Navigate to="/login" />} />
           
           <Route path="/new-workout" element={token ? (
@@ -4410,7 +4675,7 @@ function AppContent() {
             <History 
               workoutsHistory={workoutsHistory} 
               onDeleteWorkout={onDeleteWorkout} 
-              onLoadMoreWorkouts={onLoadMoreWorkouts} 
+              onLoadMoreWorkouts={mtLoadMoreWorkouts} 
               hasMoreWorkouts={hasMoreWorkouts} 
               onUpdateWorkout={onUpdateWorkoutMetadata} 
               user={user} 
@@ -4420,7 +4685,7 @@ function AppContent() {
             />
           ) : <Navigate to="/login" />} />
           
-          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} handleSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} /> : <Navigate to="/login" />} />
+          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} /> : <Navigate to="/login" />} />
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>

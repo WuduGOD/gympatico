@@ -12,28 +12,31 @@ export function useFriends(token) {
   const fetchFriendsData = useCallback(async () => {
     if (!token) return;
     try {
-      // Pobieramy równolegle dane o znajomych oraz zaproszenia oczekujące na akceptację
       const [friendsRes, requestsRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/friends`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_BASE_URL}/api/friends/requests`, { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
       if (!friendsRes.ok) throw new Error('Błąd pobierania rankingu gangu');
-      if (!requestsRes.ok) throw new Error('Błąd pobierania skrzynki odbiorczej zaproszeń');
+      if (!requestsRes.ok) throw new Error('Błąd pobierania skrzynki odbiorczej');
 
       const friendsData = await friendsRes.json();
       const requestsData = await requestsRes.json();
 
-      // TWARDA NORMALIZACJA: Gwarantujemy frontowi jeden, pewny klucz camelCase
-      const normalizedFriends = friendsData.map(friend => ({
+      // 🔴 POPRAWKA (ANTI-CRASH): Upewniamy się, że to na pewno są tablice.
+      // Jeśli serwer zwymiotuje kodem HTML (np. przez router Vercel/Render), React nie wywali się na metodzie .map()!
+      const safeFriends = Array.isArray(friendsData) ? friendsData : [];
+      const safeRequests = Array.isArray(requestsData) ? requestsData : [];
+
+      const normalizedFriends = safeFriends.map(friend => ({
         ...friend,
         isPremium: friend.is_premium === true || friend.isPremium === true
       }));
 
       setFriends(normalizedFriends);
-      setPendingRequests(requestsData); // 🔴 POPRAWKA: Wstrzykujemy pobrane zaproszenia do stanu Reacta!
+      setPendingRequests(safeRequests); 
     } catch (err) {
-      console.error("❌ Błąd synchronizacji modułu społecznościowego:", err.message);
+      console.error("❌ Błąd synchronizacji społecznościowej:", err.message);
     }
   }, [token]);
 

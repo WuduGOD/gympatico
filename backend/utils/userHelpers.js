@@ -3,13 +3,12 @@ const pool = require('../config/db');
 
 /**
  * Pobiera aktualny plan oraz rolę użytkownika bezpośrednio z bazy danych.
- * @param {string} userId - UUID użytkownika.
- * @param {object} [dbClient=pool] - Opcjonalny klient bazy danych (przydatne podczas transakcji).
- * @returns {Promise<{is_premium: boolean, role: string}|null>}
  */
 const getUserPlan = async (userId, dbClient = pool) => {
+  // 🔴 POPRAWKA: Jawne rzutowanie $1::uuid. Brak tego elementu powodował błąd 500
+  // podczas wywoływania tej funkcji wewnątrz aktywnych transakcji (np. w friends.js)
   const result = await dbClient.query(
-    'SELECT is_premium, role FROM users WHERE id = $1',
+    'SELECT is_premium, role FROM users WHERE id = $1::uuid',
     [userId]
   );
   
