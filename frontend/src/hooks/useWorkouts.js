@@ -17,9 +17,11 @@ export function useWorkouts(token, exercises, showToast) {
 
   const [progressionData, setProgressionData] = useState([])
 
+  const isFetchingRef = useRef(false);
+
   const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
-    if (!token) return
-    const limit = 20
+    if (!token || isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       const res = await fetch(`${API_BASE_URL}/api/workouts?limit=${limit}&offset=${currentLength}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -37,7 +39,9 @@ export function useWorkouts(token, exercises, showToast) {
       setTotalWorkoutsCount(data.totalCount)
     } catch (err) {
       console.error('Błąd pobierania historii:', err.message)
-    }
+    } finally {
+     isFetchingRef.current = false;
+  }
   }, [token])
 
   const addSeriesToLocalList = useCallback((e) => {

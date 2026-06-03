@@ -74,7 +74,7 @@ router.post('/login', authLimiter, async (req, res) => {
   }
 
   try {
-    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const userResult = await pool.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [email]);
     if (userResult.rows.length === 0) {
       return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
     }

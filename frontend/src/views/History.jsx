@@ -103,10 +103,12 @@ export default function History({
     setEditComment('')
   }
 
-  const saveEditing = (id) => {
-    if (!editName.trim()) return
-    onUpdateWorkout(id, editName.trim(), editComment.trim())
-    setEditingSessionId(null)
+  const saveEditing = async (id) => {
+    if (!editName.trim()) return;
+    const isSuccess = await onUpdateWorkout(id, editName.trim(), editComment.trim());
+    if (isSuccess) {
+      setEditingSessionId(null);
+    }
   }
 
   return (

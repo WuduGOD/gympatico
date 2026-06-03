@@ -19,8 +19,13 @@ import StatsView from './views/StatsView'
 function AppContent() {
   const [token, setToken] = useState(() => localStorage.getItem('gp_token') || null);
   const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('gp_user');
-    return savedUser ? JSON.parse(savedUser) : null;
+    try {
+      const savedUser = localStorage.getItem('gp_user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch (error) {
+      localStorage.removeItem('gp_user');
+      return null;
+    }
   });
   const [exercises, setExercises] = useState([])
   const [stats, setStats] = useState(null)
@@ -297,8 +302,10 @@ function AppContent() {
     try {
       await handleUpdateWorkout(sessionId, name, comment);
       showToast('Trening został zaktualizowany! ✏️', 'success');
+      return true; // Sukces
     } catch (err) {
       showToast(err.message, 'error');
+      return false; // Porażka
     }
   };
 
