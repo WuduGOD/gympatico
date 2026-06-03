@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react'; // <--- DODAJ useCallback DO IMPORTU
+// frontend/src/hooks/useFriends.js
+import { useState, useCallback } from 'react';
 import { API_BASE_URL } from '../config/api';
 
 export function useFriends(token) {
@@ -7,25 +8,32 @@ export function useFriends(token) {
   const [friendNickInput, setFriendNickInput] = useState('');
   const [socialMessage, setSocialMessage] = useState('');
 
-  // Stabilizacja pobierania modułu społecznościowego
+  // 🔴 POPRAWKA: Kompleksowe pobieranie modułu społecznościowego (Ranking + Skrzynka odbiorcza zaproszeń)
   const fetchFriendsData = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/friends`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!res.ok) throw new Error('Błąd pobierania gangu');
-      const data = await res.json();
+      // Pobieramy równolegle dane o znajomych oraz zaproszenia oczekujące na akceptację
+      const [friendsRes, requestsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/friends`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/friends/requests`, { headers: { 'Authorization': `Bearer ${token}` } })
+      ]);
+
+      if (!friendsRes.ok) throw new Error('Błąd pobierania rankingu gangu');
+      if (!requestsRes.ok) throw new Error('Błąd pobierania skrzynki odbiorczej zaproszeń');
+
+      const friendsData = await friendsRes.json();
+      const requestsData = await requestsRes.json();
 
       // TWARDA NORMALIZACJA: Gwarantujemy frontowi jeden, pewny klucz camelCase
-      const normalizedFriends = data.map(friend => ({
+      const normalizedFriends = friendsData.map(friend => ({
         ...friend,
         isPremium: friend.is_premium === true || friend.isPremium === true
       }));
 
       setFriends(normalizedFriends);
+      setPendingRequests(requestsData); // 🔴 POPRAWKA: Wstrzykujemy pobrane zaproszenia do stanu Reacta!
     } catch (err) {
-      console.error(err.message);
+      console.error("❌ Błąd synchronizacji modułu społecznościowego:", err.message);
     }
   }, [token]);
 
@@ -41,7 +49,7 @@ export function useFriends(token) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Nie udało się wysłać zaproszenia.');
 
-    // Czyszczenie inputu po pomyślnym wysłaniu (to należy do hooka)
+    // Czyszczenie inputu po pomyślnym wysłaniu
     setFriendNickInput('');
     return data;
   };
