@@ -18,7 +18,8 @@ router.get('/', authenticateToken, async (req, res) => {
                    'weight', ts.weight,
                    'reps', ts.reps,
                    'order', ts.series_order,
-                   'seriesType', ts.series_type -- 🔴 POPRAWKA: Zwracanie typu serii
+                   'seriesType', ts.series_type,
+                   'restSeconds', ts.rest_seconds -- 🔴 POPRAWKA: Przekazanie czasu przerwy
                  ) ORDER BY ts.series_order ASC
                ) FILTER (WHERE ts.id IS NOT NULL), '[]'
              ) as series
@@ -58,7 +59,8 @@ router.post('/', authenticateToken, checkLimits('templates'), async (req, res) =
     const weights = [];
     const reps = [];
     const orders = [];
-    const seriesTypes = []; // 🔴 POPRAWKA: Inicjalizacja tablicy dla typów
+    const seriesTypes = [];
+    const restSeconds = []; // 🔴 INICJALIZACJA
 
     for (let i = 0; i < series.length; i++) {
       const s = series[i];
@@ -66,16 +68,18 @@ router.post('/', authenticateToken, checkLimits('templates'), async (req, res) =
       weights.push(s.weight);
       reps.push(s.reps);
       orders.push(s.order || (i + 1));
-      seriesTypes.push(s.seriesType || 'NORMAL'); // 🔴 Wychwycenie z frontu
+      seriesTypes.push(s.seriesType || 'NORMAL');
+      // Pobranie czasu przerwy i konwersja (lub null)
+      restSeconds.push(s.restSeconds ? parseInt(s.restSeconds, 10) : null); 
     }
 
-    // 🔴 Zapis do bazy 
     const bulkInsertQuery = `
-      INSERT INTO template_series (template_id, exercise_id, weight, reps, series_order, series_type)
-      SELECT $1::uuid, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::varchar[])
+      INSERT INTO template_series (template_id, exercise_id, weight, reps, series_order, series_type, rest_seconds)
+      SELECT $1::uuid, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::varchar[], $7::int[])
     `;
     
-    await client.query(bulkInsertQuery, [templateId, exerciseIds, weights, reps, orders, seriesTypes]);
+    // Przekazanie tablicy $7 jako restSeconds do zapytania SQL
+    await client.query(bulkInsertQuery, [templateId, exerciseIds, weights, reps, orders, seriesTypes, restSeconds]);
     await client.query('COMMIT');
     
     res.status(201).json({ message: "Szablon treningowy został zapisany! 💾", templateId });
@@ -87,7 +91,7 @@ router.post('/', authenticateToken, checkLimits('templates'), async (req, res) =
   }
 });
 
-// 3. USUNIĘCIE SZABLONU (Odporne na 500)
+// 3. USUNIĘCIE SZABLONU
 router.delete('/:id', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   const { id } = req.params;

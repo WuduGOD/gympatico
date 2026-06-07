@@ -2,7 +2,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import RestTimer from './RestTimer'
 
-// Definicja dostępnych typów serii, ich etykiet i klas kolorystycznych Tailwind
 const SERIES_TYPES = {
   NORMAL: { label: (idx) => idx + 1, bg: 'bg-zinc-800/40 text-textSecondary border-zinc-700/50' },
   WARMUP: { label: () => 'W', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
@@ -11,22 +10,10 @@ const SERIES_TYPES = {
 }
 
 export default function NewWorkout({
-  exercises,
-  templates,
-  onSaveTemplate,
-  onDeleteTemplate,
-  workoutName,
-  setWorkoutName,
-  workoutComment,
-  setWorkoutComment,
-  localSeriesList,
-  setLocalSeriesList,
-  handleSaveWorkout,
-  showToast
+  exercises, templates, onSaveTemplate, onDeleteTemplate,
+  workoutName, setWorkoutName, workoutComment, setWorkoutComment,
+  localSeriesList, setLocalSeriesList, handleSaveWorkout, showToast
 }) {
-  // =========================================================================
-  // 1. REJESTRACJA HOOKÓW STANÓW (USTATE / USEREF)
-  // =========================================================================
   const [activeMode, setActiveMode] = useState(() => {
     if (localSeriesList.length > 0) return 'active_workout'
     return 'selection'
@@ -41,25 +28,18 @@ export default function NewWorkout({
   const [infoExercise, setInfoExercise] = useState(null)
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
   
-  // Stany zarządzające In-App Numpadem
-  const [activeInput, setActiveInput] = useState(null) // { globalIdx, field: 'weight' | 'reps' }
+  // Numpad Support (wzbogacony o applyToAllExId dla globalnego narzucania czasu przerwy)
+  const [activeInput, setActiveInput] = useState(null) 
   const [showPlateCalc, setShowPlateCalc] = useState(false)
   const [barbellBaseWeight, setBarbellBaseWeight] = useState(20)
 
-  // Stany i referencje dla automatycznego scrollowania i pulsowania wiersza
   const [highlightedGlobalIdx, setHighlightedGlobalIdx] = useState(null)
   const seriesRefs = useRef({})
   const timerRef = useRef(null)
 
-  // =========================================================================
-  // 2. GWARANTOWANE STANOWE ZMIENNE POCHODNE
-  // =========================================================================
   const isCreatorMode = activeMode === 'template_creator'
   const currentGlobalList = isCreatorMode ? templateSeriesList : localSeriesList
 
-  // =========================================================================
-  // 3. EFEKTY I REAKTYWNE KALKULATORY (USEEFFECT / USEMEMO)
-  // =========================================================================
   useEffect(() => {
     if (localSeriesList.length === 0 && sessionExercises.length === 0 && !workoutName && activeMode === 'active_workout') {
       setActiveMode('selection')
@@ -72,10 +52,9 @@ export default function NewWorkout({
   }, [exercises])
 
   const platesConfig = React.useMemo(() => {
-    if (!activeInput) return []
+    if (!activeInput || activeInput.field !== 'weight') return []
     const list = currentGlobalList
     const targetWeight = parseFloat(list[activeInput.globalIdx]?.weight || 0)
-    
     const weightOnOneSide = (targetWeight - barbellBaseWeight) / 2
     if (weightOnOneSide <= 0 || isNaN(weightOnOneSide)) return []
 
@@ -92,33 +71,23 @@ export default function NewWorkout({
     return result
   }, [activeInput, currentGlobalList, barbellBaseWeight])
 
-  // FUNKCJA INTELIGENTNEGO AUTO-SCROLLA I AUTO-FOKUSU PO PRZERWIE
   const handleScrollToNextActiveSeries = () => {
     if (isCreatorMode) return
-
     const nextActiveIndex = localSeriesList.findIndex(s => !s.completed)
     
     if (nextActiveIndex !== -1) {
       const targetElement = seriesRefs.current[nextActiveIndex]
       if (targetElement) {
-        // Przewijanie ustawione na 'start' dla maksymalnej widoczności nad klawiaturą
         targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
-
         setHighlightedGlobalIdx(nextActiveIndex)
         setTimeout(() => setHighlightedGlobalIdx(null), 2500)
-
         setActiveInput({ globalIdx: nextActiveIndex, field: 'weight' })
       }
     } else {
-      if (showToast) {
-        showToast('Wszystkie zaplanowane serie na dziś zostały ukończone! Kapitalna robota! 🦾🔥', 'success')
-      }
+      if (showToast) showToast('Wszystkie zaplanowane serie na dziś zostały ukończone! Kapitalna robota! 🦾🔥', 'success')
     }
   }
 
-  // =========================================================================
-  // 4. LOGIKA OPERACYJNA INTERFEJSU
-  // =========================================================================
   const handleAddExerciseToSession = (exId) => {
     if (sessionExercises.includes(exId)) {
       setIsAtlasOpen(false)
@@ -132,16 +101,16 @@ export default function NewWorkout({
 
     if (isCreatorMode) {
       const defaultRows = [
-        { exerciseId: exId, weight: '', reps: '10', order: 1, seriesType: 'NORMAL' },
-        { exerciseId: exId, weight: '', reps: '10', order: 2, seriesType: 'NORMAL' },
-        { exerciseId: exId, weight: '', reps: '10', order: 3, seriesType: 'NORMAL' }
+        { exerciseId: exId, weight: '', reps: '10', restSeconds: '', order: 1, seriesType: 'NORMAL' },
+        { exerciseId: exId, weight: '', reps: '10', restSeconds: '', order: 2, seriesType: 'NORMAL' },
+        { exerciseId: exId, weight: '', reps: '10', restSeconds: '', order: 3, seriesType: 'NORMAL' }
       ]
       setTemplateSeriesList(prev => [...prev, ...defaultRows])
     } else {
       const defaultRows = [
-        { exerciseId: exId, weight: '', reps: '', order: 1, completed: false, estimatedOneRm: null, seriesType: 'NORMAL' },
-        { exerciseId: exId, weight: '', reps: '', order: 2, completed: false, estimatedOneRm: null, seriesType: 'NORMAL' },
-        { exerciseId: exId, weight: '', reps: '', order: 3, completed: false, estimatedOneRm: null, seriesType: 'NORMAL' }
+        { exerciseId: exId, weight: '', reps: '', restSeconds: '', order: 1, completed: false, estimatedOneRm: null, seriesType: 'NORMAL' },
+        { exerciseId: exId, weight: '', reps: '', restSeconds: '', order: 2, completed: false, estimatedOneRm: null, seriesType: 'NORMAL' },
+        { exerciseId: exId, weight: '', reps: '', restSeconds: '', order: 3, completed: false, estimatedOneRm: null, seriesType: 'NORMAL' }
       ]
       setLocalSeriesList(prev => [...prev, ...defaultRows])
     }
@@ -159,12 +128,14 @@ export default function NewWorkout({
 
   const handleAddRowToExercise = (exId) => {
     if (isCreatorMode) {
-      const currentCount = templateSeriesList.filter(s => s.exerciseId === exId).length
-      const newRow = { exerciseId: exId, weight: '', reps: '10', order: currentCount + 1, seriesType: 'NORMAL' }
+      const currentRows = templateSeriesList.filter(s => s.exerciseId === exId)
+      const cachedRest = currentRows.length > 0 ? currentRows[0].restSeconds : ''
+      const newRow = { exerciseId: exId, weight: '', reps: '10', restSeconds: cachedRest, order: currentRows.length + 1, seriesType: 'NORMAL' }
       setTemplateSeriesList(prev => [...prev, newRow])
     } else {
-      const currentCount = localSeriesList.filter(s => s.exerciseId === exId).length
-      const newRow = { exerciseId: exId, weight: '', reps: '', order: currentCount + 1, completed: false, estimatedOneRm: null, seriesType: 'NORMAL' }
+      const currentRows = localSeriesList.filter(s => s.exerciseId === exId)
+      const cachedRest = currentRows.length > 0 ? currentRows[0].restSeconds : ''
+      const newRow = { exerciseId: exId, weight: '', reps: '', restSeconds: cachedRest, order: currentRows.length + 1, completed: false, estimatedOneRm: null, seriesType: 'NORMAL' }
       setLocalSeriesList(prev => [...prev, newRow])
     }
   }
@@ -177,11 +148,6 @@ export default function NewWorkout({
     const realIndex = list.length - 1 - targetIdx
     setter(prev => prev.filter((_, i) => i !== realIndex))
     setActiveInput(null)
-  }
-
-  const handleUpdateInlineValue = (globalIdx, field, val, modeStr) => {
-    const setter = modeStr === 'creator' ? setTemplateSeriesList : setLocalSeriesList
-    setter(prev => prev.map((item, i) => i === globalIdx ? { ...item, [field]: val } : item))
   }
 
   const handleCycleSeriesType = (globalIdx, modeStr) => {
@@ -197,19 +163,28 @@ export default function NewWorkout({
     setter(prev => prev.map((item, i) => i === globalIdx ? { ...item, seriesType: nextType } : item))
   }
 
+  // 🔴 CENTRALNY UPDATE KLAWIATURY (Inteligentnie mapuje wartości wg. applyToAll)
   const handleNumpadPress = (key) => {
     if (!activeInput) return
-    const modeStr = isCreatorMode ? 'creator' : 'workout'
     const list = isCreatorMode ? templateSeriesList : localSeriesList
     const currentVal = String(list[activeInput.globalIdx]?.[activeInput.field] || '')
 
+    const updateVal = (val) => {
+      const setter = isCreatorMode ? setTemplateSeriesList : setLocalSeriesList;
+      if (activeInput.applyToAllExId) {
+        // Zastosuj czas przerwy dla WSZYSTKICH serii tego konkretnego ćwiczenia
+        setter(prev => prev.map(s => s.exerciseId === activeInput.applyToAllExId ? { ...s, [activeInput.field]: val } : s));
+      } else {
+        setter(prev => prev.map((item, i) => i === activeInput.globalIdx ? { ...item, [activeInput.field]: val } : item));
+      }
+    }
+
     if (key === 'BACKSPACE') {
-      const newVal = currentVal.slice(0, -1)
-      handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, newVal, modeStr)
+      updateVal(currentVal.slice(0, -1))
     } else if (key === '.') {
-      if (activeInput.field === 'reps') return
+      if (activeInput.field === 'reps' || activeInput.field === 'restSeconds') return
       if (currentVal.includes('.')) return
-      handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, currentVal + '.', modeStr)
+      updateVal(currentVal + '.')
     } else if (key === 'DALEJ') {
       if (activeInput.field === 'weight') {
         setActiveInput({ globalIdx: activeInput.globalIdx, field: 'reps' })
@@ -220,20 +195,21 @@ export default function NewWorkout({
     } else if (key.startsWith('+') || key.startsWith('-')) {
       if (activeInput.field === 'weight') {
         const inc = parseFloat(key.replace(' kg', ''))
-        const currentNum = parseFloat(currentVal) || 0
+        const MathResult = (parseFloat(currentVal) || 0) + inc
+        updateVal(MathResult <= 0 ? '' : String(Number(MathResult.toFixed(2))))
+      } else if (activeInput.field === 'restSeconds') {
+        const inc = parseInt(key, 10)
+        // Pobierz domyślną z localStorage jeśli nie ma wpisanej na start
+        const currentNum = parseInt(currentVal, 10) || parseInt(localStorage.getItem('gp_rest_duration') || '90', 10)
         const MathResult = currentNum + inc
-        const newVal = MathResult <= 0 ? '' : String(Number(MathResult.toFixed(2)))
-        handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, newVal, modeStr)
+        updateVal(MathResult <= 0 ? '' : String(MathResult))
       } else {
         const inc = parseInt(key, 10)
-        const currentNum = parseInt(currentVal, 10) || 0
-        const MathResult = currentNum + inc
-        const newVal = MathResult <= 0 ? '' : String(MathResult)
-        handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, newVal, modeStr)
+        const MathResult = (parseInt(currentVal, 10) || 0) + inc
+        updateVal(MathResult <= 0 ? '' : String(MathResult))
       }
     } else {
-      const newVal = currentVal === '0' ? key : currentVal + key
-      handleUpdateInlineValue(activeInput.globalIdx, activeInput.field, newVal, modeStr)
+      updateVal(currentVal === '0' ? key : currentVal + key)
     }
   }
 
@@ -247,7 +223,6 @@ export default function NewWorkout({
 
       if (isTurningOn && (!finalWeight || !finalReps)) {
         const previousSetsSameExercise = prev.slice(0, i).filter(s => s.exerciseId === item.exerciseId)
-        
         if (previousSetsSameExercise.length > 0) {
           const upperSet = previousSetsSameExercise[previousSetsSameExercise.length - 1]
           if (!finalWeight) finalWeight = upperSet.weight
@@ -263,16 +238,18 @@ export default function NewWorkout({
         return item
       }
 
-      const oneRm = isTurningOn && r >= 1 && r <= 12 ? w * (1 + r / 30) : null
+      // 🔴 KASKADA CZASU: Przekaż zdefiniowany w szablonie czas restSeconds lub puść null (Timer sam weźmie default 90s)
       if (isTurningOn && timerRef.current?.start) {
-        timerRef.current.start()
+        const customRest = item.restSeconds ? parseInt(item.restSeconds, 10) : null;
+        timerRef.current.start(customRest); 
       }
+      
       return { 
         ...item, 
         weight: finalWeight, 
         reps: finalReps, 
         completed: isTurningOn, 
-        estimatedOneRm: oneRm 
+        estimatedOneRm: (isTurningOn && r >= 1 && r <= 12) ? w * (1 + r / 30) : null 
       }
     }))
   }
@@ -287,6 +264,7 @@ export default function NewWorkout({
       exerciseId: s.exerciseId,
       weight: parseFloat(s.weight) || 0,
       reps: parseInt(s.reps) || 10,
+      restSeconds: s.restSeconds ? parseInt(s.restSeconds, 10) : null, // 🔴 Czas przerwy idzie do bazy!
       order: i + 1,
       seriesType: s.seriesType || 'NORMAL'
     }))
@@ -309,6 +287,7 @@ export default function NewWorkout({
         exerciseName: ex?.name ?? 'Ćwiczenie',
         weight: '', 
         reps: s.reps ? String(s.reps) : '', 
+        restSeconds: s.restSeconds ? String(s.restSeconds) : '', // 🔴 Zaciągnięcie czasu
         completed: false,
         estimatedOneRm: null,
         seriesType: s.seriesType || 'NORMAL'
@@ -370,9 +349,6 @@ export default function NewWorkout({
     return acc
   }, {})
 
-  // =========================================================================
-  // RENDER: 1. HOME SELECTION (COUCH MODE)
-  // =========================================================================
   if (activeMode === 'selection') {
     return (
       <div className="max-w-[640px] mx-auto flex flex-col gap-6 text-left animate-in fade-in duration-200">
@@ -428,9 +404,6 @@ export default function NewWorkout({
     )
   }
 
-  // =========================================================================
-  // RENDER: 2. ACTIVE LOGGER / TEMPLATE CREATOR
-  // =========================================================================
   return (
     <div className="max-w-[640px] mx-auto flex flex-col gap-4 text-left animate-in fade-in duration-200 pb-20">
       
@@ -440,7 +413,7 @@ export default function NewWorkout({
             {isCreatorMode ? 'Projektowanie szablonu 📋' : 'Aktywny trening ⚡'}
           </h2>
           <p className="text-xs text-textSecondary mt-0.5">
-            {isCreatorMode ? 'Definiujesz szkielet serii i powtórzeń.' : 'Wprowadź ciężary i odznaczaj ukończone serie.'}
+            {isCreatorMode ? 'Definiujesz szkielet serii i czasy przerw.' : 'Wprowadź ciężary i odznaczaj ukończone serie.'}
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -481,6 +454,9 @@ export default function NewWorkout({
               .map((s, globalIndex) => ({ ...s, globalIndex }))
               .filter(s => s.exerciseId === exId)
 
+            const firstSeries = exerciseRows[0];
+            const customRest = firstSeries?.restSeconds;
+
             if (isCreatorMode) {
               return (
                 <div key={exId} className="bg-gymCard border border-zinc-800/40 rounded-gp-lg p-3 flex items-center justify-between gap-4 shadow-md animate-in fade-in duration-150">
@@ -488,44 +464,43 @@ export default function NewWorkout({
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-bold text-textPrimary truncate">{exerciseObj.name}</h3>
                       <button
-                        type="button"
-                        onClick={() => setInfoExercise(exerciseObj)}
+                        type="button" onClick={() => setInfoExercise(exerciseObj)}
                         className="p-1 text-textMuted hover:text-white transition-colors cursor-pointer text-[11px] bg-zinc-800/40 hover:bg-zinc-800 rounded-md font-bold"
+                      >ⓘ</button>
+                    </div>
+                    
+                    {/* 🔴 INTERFEJS PRZERWY W SZABLONIE */}
+                    <div className="flex items-center gap-3 mt-1.5">
+                      <span className="text-[10px] font-bold text-textMuted uppercase tracking-wider">{exerciseObj.muscle_group || 'Inne'}</span>
+                      <button 
+                        type="button"
+                        onClick={() => setActiveInput({ globalIdx: firstSeries.globalIndex, field: 'restSeconds', applyToAllExId: exId })}
+                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-colors border cursor-pointer ${
+                          activeInput?.applyToAllExId === exId && activeInput?.field === 'restSeconds' 
+                          ? 'bg-gymWarning/20 text-gymWarning border-gymWarning/50' 
+                          : customRest ? 'bg-zinc-800 text-zinc-300 border-zinc-700' : 'bg-transparent text-zinc-500 border-zinc-800 hover:text-white'
+                        }`}
                       >
-                        ⓘ
+                        ⏱️ {customRest ? `${customRest}s` : 'Domyślna przerwa'}
                       </button>
                     </div>
-                    <span className="text-[10px] font-bold text-textMuted uppercase tracking-wider mt-0.5 block">{exerciseObj.muscle_group || 'Inne'}</span>
                   </div>
                   
                   <div className="flex items-center gap-2 bg-gymCardSecondary/60 border border-zinc-800/60 p-1 rounded-gp-md shrink-0 select-none">
                     <button
-                      type="button"
-                      onClick={() => handleRemoveRowFromExercise(exId)}
-                      disabled={exerciseRows.length <= 1}
+                      type="button" onClick={() => handleRemoveRowFromExercise(exId)} disabled={exerciseRows.length <= 1}
                       className="w-7 h-7 rounded bg-zinc-800 border border-zinc-700/60 hover:text-gymDanger text-textSecondary disabled:opacity-20 flex items-center justify-center font-bold text-sm cursor-pointer transition-colors"
-                    >
-                      －
-                    </button>
+                    >－</button>
                     <span className="text-xs font-mono font-black text-white min-w-[55px] text-center">
                       {exerciseRows.length} {exerciseRows.length === 1 ? 'seria' : exerciseRows.length < 5 ? 'serie' : 'serii'}
                     </span>
                     <button
-                      type="button"
-                      onClick={() => handleAddRowToExercise(exId)}
+                      type="button" onClick={() => handleAddRowToExercise(exId)}
                       className="w-7 h-7 rounded bg-zinc-800 border border-zinc-700/60 hover:text-white text-textSecondary flex items-center justify-center font-bold text-sm cursor-pointer transition-colors"
-                    >
-                      ＋
-                    </button>
+                    >＋</button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveExerciseFromSession(exId)}
-                    className="p-1.5 text-textMuted hover:text-gymDanger transition-colors cursor-pointer text-sm shrink-0"
-                  >
-                    ✕
-                  </button>
+                  <button type="button" onClick={() => handleRemoveExerciseFromSession(exId)} className="p-1.5 text-textMuted hover:text-gymDanger transition-colors cursor-pointer text-sm shrink-0">✕</button>
                 </div>
               )
             }
@@ -535,23 +510,23 @@ export default function NewWorkout({
                 <div className="px-4 py-3 bg-gymCardSecondary/40 border-b border-zinc-800/60 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 min-w-0">
                     <div>
-                      <h3 className="text-sm font-bold text-textPrimary leading-tight truncate">{exerciseObj.name}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-bold text-textPrimary leading-tight truncate">{exerciseObj.name}</h3>
+                        {/* 🔴 WSKAŹNIK CZASU Z SZABLONU PODCZAS TRENINGU */}
+                        {customRest && (
+                          <span className="bg-gymWarning/10 text-gymWarning border border-gymWarning/20 text-[9px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm shrink-0">
+                            ⏱️ {customRest}s
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] font-bold text-textMuted uppercase tracking-wider">{exerciseObj.muscle_group || 'Inne'}</span>
                     </div>
                     <button
-                      type="button"
-                      onClick={() => setInfoExercise(exerciseObj)}
+                      type="button" onClick={() => setInfoExercise(exerciseObj)}
                       className="p-1 text-textMuted hover:text-white transition-colors cursor-pointer text-xs bg-zinc-800/40 hover:bg-zinc-800/80 rounded-md shrink-0 font-bold"
-                    >
-                      ⓘ
-                    </button>
+                    >ⓘ</button>
                   </div>
-                  <button 
-                    onClick={() => handleRemoveExerciseFromSession(exId)}
-                    className="p-1 text-textMuted hover:text-gymDanger transition-colors cursor-pointer text-sm shrink-0"
-                  >
-                    ✕
-                  </button>
+                  <button onClick={() => handleRemoveExerciseFromSession(exId)} className="p-1 text-textMuted hover:text-gymDanger transition-colors cursor-pointer text-sm shrink-0">✕</button>
                 </div>
 
                 <div className="p-3">
@@ -567,7 +542,6 @@ export default function NewWorkout({
                     {exerciseRows.map((s, localIdx) => {
                       const currentCfg = SERIES_TYPES[s.seriesType || 'NORMAL']
                       const renderedLabel = currentCfg.label(localIdx)
-
                       const isWeightActive = activeInput?.globalIdx === s.globalIndex && activeInput?.field === 'weight'
                       const isRepsActive = activeInput?.globalIdx === s.globalIndex && activeInput?.field === 'reps'
 
@@ -593,61 +567,34 @@ export default function NewWorkout({
                         >
                           <div className="col-span-2 text-left px-0.5">
                             <button
-                              type="button"
-                              disabled={s.completed}
-                              onClick={() => handleCycleSeriesType(s.globalIndex, 'workout')}
+                              type="button" disabled={s.completed} onClick={() => handleCycleSeriesType(s.globalIndex, 'workout')}
                               className={`w-7 h-7 rounded-md border text-center font-mono text-xs font-black transition-all cursor-pointer flex items-center justify-center active:scale-90 ${currentCfg.bg} disabled:opacity-100 disabled:cursor-default`}
-                            >
-                              {renderedLabel}
-                            </button>
+                            >{renderedLabel}</button>
                           </div>
 
-                          <div className="col-span-3 text-[11px] text-textMuted font-medium truncate font-mono">
-                            —
-                          </div>
+                          <div className="col-span-3 text-[11px] text-textMuted font-medium truncate font-mono">—</div>
 
                           <div className="col-span-3">
                             <input 
-                              type="text"
-                              inputMode="none"
-                              readOnly={true}
-                              placeholder={placeholderWeight}
-                              disabled={s.completed}
-                              value={s.weight}
+                              type="text" inputMode="none" readOnly={true} placeholder={placeholderWeight} disabled={s.completed} value={s.weight}
                               onClick={() => !s.completed && setActiveInput({ globalIdx: s.globalIndex, field: 'weight' })}
-                              className={`w-full p-1.5 rounded bg-gymCardSecondary border text-center font-mono text-xs font-bold text-white outline-none cursor-pointer disabled:opacity-40 transition-all ${
-                                isWeightActive ? 'border-gymRed ring-1 ring-gymRed shadow-[0_0_8px_rgba(239,68,68,0.2)]' : 'border-zinc-800'
-                              }`}
+                              className={`w-full p-1.5 rounded bg-gymCardSecondary border text-center font-mono text-xs font-bold text-white outline-none cursor-pointer disabled:opacity-40 transition-all ${isWeightActive ? 'border-gymRed ring-1 ring-gymRed shadow-[0_0_8px_rgba(239,68,68,0.2)]' : 'border-zinc-800'}`}
                             />
                           </div>
 
                           <div className="col-span-2">
                             <input 
-                              type="text"
-                              inputMode="none"
-                              readOnly={true}
-                              placeholder={placeholderReps}
-                              disabled={s.completed}
-                              value={s.reps}
+                              type="text" inputMode="none" readOnly={true} placeholder={placeholderReps} disabled={s.completed} value={s.reps}
                               onClick={() => !s.completed && setActiveInput({ globalIdx: s.globalIndex, field: 'reps' })}
-                              className={`w-full p-1.5 rounded bg-gymCardSecondary border text-center font-mono text-xs font-bold text-white outline-none cursor-pointer disabled:opacity-40 transition-all ${
-                                isRepsActive ? 'border-gymRed ring-1 ring-gymRed shadow-[0_0_8px_rgba(239,68,68,0.2)]' : 'border-zinc-800'
-                              }`}
+                              className={`w-full p-1.5 rounded bg-gymCardSecondary border text-center font-mono text-xs font-bold text-white outline-none cursor-pointer disabled:opacity-40 transition-all ${isRepsActive ? 'border-gymRed ring-1 ring-gymRed shadow-[0_0_8px_rgba(239,68,68,0.2)]' : 'border-zinc-800'}`}
                             />
                           </div>
 
                           <div className="col-span-2 flex justify-center">
                             <button
-                              type="button"
-                              onClick={() => handleToggleCompleteSeries(s.globalIndex)}
-                              className={`w-7 h-7 rounded-md flex items-center justify-center font-black text-xs transition-all cursor-pointer border ${
-                                s.completed 
-                                  ? 'bg-gymSuccess text-gymDark border-emerald-500' 
-                                  : 'bg-transparent text-textMuted border-zinc-800 hover:border-zinc-700 hover:text-white'
-                              }`}
-                            >
-                              ✓
-                            </button>
+                              type="button" onClick={() => handleToggleCompleteSeries(s.globalIndex)}
+                              className={`w-7 h-7 rounded-md flex items-center justify-center font-black text-xs transition-all cursor-pointer border ${s.completed ? 'bg-gymSuccess text-gymDark border-emerald-500' : 'bg-transparent text-textMuted border-zinc-800 hover:border-zinc-700 hover:text-white'}`}
+                            >✓</button>
                           </div>
 
                         </div>
@@ -656,23 +603,11 @@ export default function NewWorkout({
                   </div>
 
                   <div className="flex gap-2 justify-end mt-3 pt-2 border-t border-zinc-800/40 text-[11px]">
-                    <button 
-                      onClick={() => handleRemoveRowFromExercise(exId)} 
-                      disabled={exerciseRows.length === 0}
-                      className="px-2.5 py-1 rounded bg-zinc-800/60 border border-zinc-800 text-textSecondary hover:text-gymDanger disabled:opacity-30 transition-colors cursor-pointer font-bold"
-                    >
-                      － Seria
-                    </button>
-                    <button 
-                      onClick={() => handleAddRowToExercise(exId)}
-                      className="px-2.5 py-1 rounded bg-zinc-800/60 border border-zinc-800 text-textSecondary hover:text-white transition-colors cursor-pointer font-bold"
-                    >
-                      ＋ Seria
-                    </button>
+                    <button onClick={() => handleRemoveRowFromExercise(exId)} disabled={exerciseRows.length === 0} className="px-2.5 py-1 rounded bg-zinc-800/60 border border-zinc-800 text-textSecondary hover:text-gymDanger disabled:opacity-30 transition-colors cursor-pointer font-bold">－ Seria</button>
+                    <button onClick={() => handleAddRowToExercise(exId)} className="px-2.5 py-1 rounded bg-zinc-800/60 border border-zinc-800 text-textSecondary hover:text-white transition-colors cursor-pointer font-bold">＋ Seria</button>
                   </div>
 
                 </div>
-
               </div>
             )
           })}
@@ -689,7 +624,7 @@ export default function NewWorkout({
         </button>
       </div>
 
-      {/* INTERAKTYWNY IN-APP NUMPAD */}
+      {/* 🔴 INTERAKTYWNY IN-APP NUMPAD */}
       {activeInput && (
         <div className="fixed bottom-0 left-0 right-0 max-w-[640px] mx-auto bg-[#15181f] border-t-2 border-zinc-800 z-[9999] p-3 animate-in slide-in-from-bottom duration-200 select-none pb-safe">
           
@@ -697,49 +632,34 @@ export default function NewWorkout({
             <div className="flex items-center gap-2">
               <span className="font-bold text-zinc-400">Pole:</span>
               <span className="font-black uppercase text-gymRed bg-gymRed/10 px-2 py-0.5 rounded-md tracking-wider text-[10px]">
-                {activeInput.field === 'weight' ? 'Ciężar (kg) ⚖️' : 'Powtórzenia 🔁'}
+                {activeInput.field === 'weight' ? 'Ciężar (kg) ⚖️' : activeInput.field === 'restSeconds' ? 'Czas przerwy (s) ⏱️' : 'Powtórzenia 🔁'}
               </span>
             </div>
 
             <div className="flex items-center gap-1.5 text-zinc-400">
               {activeInput.field === 'weight' && (
                 <button
-                  type="button"
-                  onClick={() => setShowPlateCalc(!showPlateCalc)}
+                  type="button" onClick={() => setShowPlateCalc(!showPlateCalc)}
                   className={`p-1 rounded font-bold text-xs cursor-pointer transition-colors ${showPlateCalc ? 'bg-gymPremium text-gymDark' : 'bg-zinc-800 text-textSecondary hover:text-white'}`}
-                >
-                  🛠️ Talerze
-                </button>
+                >🛠️ Talerze</button>
               )}
               <button 
-                type="button" 
-                onClick={() => { setActiveInput(null); setShowPlateCalc(false); }} 
+                type="button" onClick={() => { setActiveInput(null); setShowPlateCalc(false); }} 
                 className="text-textMuted hover:text-white font-bold px-2 py-1 bg-zinc-900 rounded border border-zinc-800 cursor-pointer ml-1"
-              >
-                Zamknij
-              </button>
+              >Zamknij</button>
             </div>
           </div>
 
-          {/* PANEL PRZELICZANIA TALERZY */}
           {activeInput.field === 'weight' && showPlateCalc && (
             <div className="flex flex-col gap-2 bg-zinc-900/90 border border-zinc-800/80 p-2.5 rounded-gp-md mb-2 animate-in zoom-in-95">
               <div className="flex items-center justify-between text-[10px] text-textSecondary font-bold border-b border-zinc-800/50 pb-2">
                 <span>TYP PRZYRZĄDU (WAGA BAZOWA):</span>
                 <div className="flex gap-1.5">
-                  {[
-                    { label: 'Sztanga 20kg 🏋️‍♂️', val: 20 },
-                    { label: 'Sztanga 15kg 🏋️‍♀️', val: 15 },
-                    { label: 'Maszyna (0kg) 🤖', val: 0 }
-                  ].map(b => (
+                  {[{ label: 'Sztanga 20kg 🏋️‍♂️', val: 20 }, { label: 'Sztanga 15kg 🏋️‍♀️', val: 15 }, { label: 'Maszyna (0kg) 🤖', val: 0 }].map(b => (
                     <button
-                      key={b.val}
-                      type="button"
-                      onClick={() => setBarbellBaseWeight(b.val)}
+                      key={b.val} type="button" onClick={() => setBarbellBaseWeight(b.val)}
                       className={`px-2 py-1 rounded text-[9px] font-black tracking-tight transition-colors cursor-pointer ${barbellBaseWeight === b.val ? 'bg-gymRed text-white' : 'bg-zinc-800 text-textMuted hover:text-white'}`}
-                    >
-                      {b.label}
-                    </button>
+                    >{b.label}</button>
                   ))}
                 </div>
               </div>
@@ -749,85 +669,57 @@ export default function NewWorkout({
                   <div className="flex items-center gap-1 bg-gymPremium/10 text-gymPremium font-mono font-black text-[11px] px-2 py-0.5 rounded border border-gymPremium/20">
                     {platesConfig.join(' + ')} kg
                   </div>
-                ) : (
-                  <span className="text-textMuted text-[10px] italic">Waga mniejsza lub równa masie bazy</span>
-                )}
+                ) : <span className="text-textMuted text-[10px] italic">Waga mniejsza lub równa masie bazy</span>}
               </div>
             </div>
           )}
 
-          {/* PRZYCISKI KROKOWE */}
+          {/* PRZYCISKI KROKOWE (Inteligentnie mapowane na typ Inputu) */}
           {activeInput.field === 'weight' ? (
             <div className="flex flex-col gap-1 mb-2">
               <div className="grid grid-cols-3 gap-1.5 font-mono">
                 {['+1.25 kg', '+2.5 kg', '+5 kg'].map(inc => (
-                  <button
-                    key={inc} type="button" onClick={() => handleNumpadPress(inc)}
-                    className="py-1.5 bg-zinc-800/30 hover:bg-zinc-800 text-emerald-400 border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm"
-                  >
-                    {inc}
-                  </button>
+                  <button key={inc} type="button" onClick={() => handleNumpadPress(inc)} className="py-1.5 bg-zinc-800/30 hover:bg-zinc-800 text-emerald-400 border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm">{inc}</button>
                 ))}
               </div>
               <div className="grid grid-cols-3 gap-1.5 font-mono">
                 {['-1.25 kg', '-2.5 kg', '-5 kg'].map(inc => (
-                  <button
-                    key={inc} type="button" onClick={() => handleNumpadPress(inc)}
-                    className="py-1.5 bg-zinc-800/30 hover:bg-zinc-800 text-rose-400 border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm"
-                  >
-                    {inc}
-                  </button>
+                  <button key={inc} type="button" onClick={() => handleNumpadPress(inc)} className="py-1.5 bg-zinc-800/30 hover:bg-zinc-800 text-rose-400 border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm">{inc}</button>
                 ))}
               </div>
+            </div>
+          ) : activeInput.field === 'restSeconds' ? (
+            <div className="grid grid-cols-2 gap-1.5 mb-2 font-mono">
+              {['+15', '-15'].map(inc => (
+                <button key={inc} type="button" onClick={() => handleNumpadPress(inc)} className={`py-1.5 bg-zinc-800/30 hover:bg-zinc-800 border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm ${inc.startsWith('+') ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {inc === '+15' ? '＋15 Sekund' : '－15 Sekund'}
+                </button>
+              ))}
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-1.5 mb-2 font-mono">
               {['+1', '-1'].map(inc => (
-                <button
-                  key={inc} type="button" onClick={() => handleNumpadPress(inc)}
-                  className={`py-1.5 bg-zinc-800/30 hover:bg-zinc-800 border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm ${inc.startsWith('+') ? 'text-emerald-400' : 'text-rose-400'}`}
-                >
+                <button key={inc} type="button" onClick={() => handleNumpadPress(inc)} className={`py-1.5 bg-zinc-800/30 hover:bg-zinc-800 border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm ${inc.startsWith('+') ? 'text-emerald-400' : 'text-rose-400'}`}>
                   {inc === '+1' ? '＋1 Powtórzenie' : '－1 Powtórzenie'}
                 </button>
               ))}
             </div>
           )}
 
-          {/* KLAWIATURA CYFROWA */}
           <div className="grid grid-cols-3 gap-1.5 font-mono">
             {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
-              <button
-                key={num} type="button" onClick={() => handleNumpadPress(num)}
-                className="py-3 bg-zinc-800/50 hover:bg-zinc-800 active:bg-zinc-700 text-white font-black text-lg rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/40"
-              >
-                {num}
-              </button>
+              <button key={num} type="button" onClick={() => handleNumpadPress(num)} className="py-3 bg-zinc-800/50 hover:bg-zinc-800 active:bg-zinc-700 text-white font-black text-lg rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/40">{num}</button>
             ))}
             <button
               type="button" onClick={() => handleNumpadPress('.')}
-              className={`py-3 text-center font-black text-lg rounded-gp-md cursor-pointer border shadow-md transition-colors ${
-                activeInput.field === 'reps' ? 'opacity-20 bg-zinc-900 border-zinc-900 text-zinc-700 cursor-not-allowed' : 'bg-zinc-800/50 hover:bg-zinc-800 text-white border-zinc-800/40'
-              }`}
-            >
-              .
-            </button>
-            <button
-              type="button" onClick={() => handleNumpadPress('0')}
-              className="py-3 bg-zinc-800/50 hover:bg-zinc-800 active:bg-zinc-700 text-white font-black text-lg rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/40"
-            >
-              0
-            </button>
-            <button
-              type="button" onClick={() => handleNumpadPress('BACKSPACE')}
-              className="py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-black text-sm rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/60 flex items-center justify-center"
-            >
-              ⌫
-            </button>
+              className={`py-3 text-center font-black text-lg rounded-gp-md cursor-pointer border shadow-md transition-colors ${activeInput.field === 'reps' || activeInput.field === 'restSeconds' ? 'opacity-20 bg-zinc-900 border-zinc-900 text-zinc-700 cursor-not-allowed' : 'bg-zinc-800/50 hover:bg-zinc-800 text-white border-zinc-800/40'}`}
+            >.</button>
+            <button key="0" type="button" onClick={() => handleNumpadPress('0')} className="py-3 bg-zinc-800/50 hover:bg-zinc-800 active:bg-zinc-700 text-white font-black text-lg rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/40">0</button>
+            <button type="button" onClick={() => handleNumpadPress('BACKSPACE')} className="py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-black text-sm rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/60 flex items-center justify-center">⌫</button>
           </div>
 
           <button
-            type="button"
-            onClick={() => handleNumpadPress('DALEJ')}
+            type="button" onClick={() => handleNumpadPress('DALEJ')}
             className="w-full mt-2 py-3 bg-gymRed hover:bg-red-600 text-white font-black text-sm uppercase tracking-wider rounded-gp-md cursor-pointer transition-all active:scale-[0.99] shadow-lg text-center"
           >
             {activeInput.field === 'weight' ? 'Dalej ➔ (Wpisz powtórzenia)' : 'Zatwierdź pole ✓'}
@@ -836,7 +728,7 @@ export default function NewWorkout({
         </div>
       )}
 
-      {/* ATLAS DRAWER */}
+      {/* ATLAS DRAWER & MODALS */}
       {isAtlasOpen && (
         <div className="fixed inset-0 z-[1000] md:z-[998] animate-in fade-in duration-150">
           <div onClick={() => setIsAtlasOpen(false)} className="absolute inset-0 bg-black/75 backdrop-blur-xs" />
@@ -844,58 +736,28 @@ export default function NewWorkout({
             <div className="w-12 h-1 bg-zinc-800 rounded-full mx-auto my-2.5 shrink-0" />
             <div className="px-4 pb-3 pt-1 border-b border-zinc-800/80 flex flex-col gap-3 shrink-0">
               <div className="flex items-center justify-between gap-3">
-                <input 
-                  type="search" 
-                  placeholder="Wyszukaj ćwiczenie..." 
-                  value={searchQuery} 
-                  onChange={e => setSearchQuery(e.target.value)} 
-                  className="flex-1 p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-base md:text-sm outline-none focus:border-gymRed font-medium" 
-                />
-                <button onClick={() => setIsAtlasOpen(false)} className="text-textSecondary hover:text-white font-bold text-xs px-3 py-2 bg-gymCardSecondary border border-zinc-800 rounded-gp-md cursor-pointer shrink-0 transition-colors">
-                  Anuluj
-                </button>
+                <input type="search" placeholder="Wyszukaj ćwiczenie..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="flex-1 p-2.5 rounded-gp-md border border-zinc-800 bg-gymCard text-white text-base md:text-sm outline-none focus:border-gymRed font-medium" />
+                <button onClick={() => setIsAtlasOpen(false)} className="text-textSecondary hover:text-white font-bold text-xs px-3 py-2 bg-gymCardSecondary border border-zinc-800 rounded-gp-md cursor-pointer shrink-0 transition-colors">Anuluj</button>
               </div>
               <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-2 px-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden select-none">
-                {uniqueMuscleGroups.map(group => {
-                  return (
-                    <button
-                      key={group}
-                      type="button"
-                      onClick={() => setSelectedMuscleFilter(group)}
-                      className="px-3 py-1.5 rounded-full text-xs font-bold tracking-tight whitespace-nowrap transition-all border cursor-pointer bg-gymCard border-zinc-800 text-textSecondary hover:text-white"
-                    >
-                      {group}
-                    </button>
-                  )
-                })}
+                {uniqueMuscleGroups.map(group => (
+                  <button key={group} type="button" onClick={() => setSelectedMuscleFilter(group)} className="px-3 py-1.5 rounded-full text-xs font-bold tracking-tight whitespace-nowrap transition-all border cursor-pointer bg-gymCard border-zinc-800 text-textSecondary hover:text-white">{group}</button>
+                ))}
               </div>
             </div>
             <div className="overflow-y-auto divide-y divide-zinc-800/40 flex-1 pb-6">
-              {/* 🛠️ [NAPRAWIONO SYNTAL_TYPO] Nawias zamieniający pętlę na bezpieczny kod JSX ())} */}
               {Object.entries(groupedExercises).map(([group, exList]) => (
                 <div key={group} className="text-left">
                   <div className="px-4 py-1.5 text-[10px] font-bold text-textSecondary uppercase tracking-wider bg-gymCardSecondary/40 border-b border-zinc-800/20">{group}</div>
                   {exList.map(ex => {
                     const isAlreadyAdded = sessionExercises.includes(ex.id)
                     return (
-                      <div 
-                        key={ex.id} 
-                        onClick={() => handleAddExerciseToSession(ex.id)} 
-                        className={`px-4 py-3 text-sm text-textPrimary hover:bg-gymRed/5 cursor-pointer flex items-center justify-between transition-colors border-b border-zinc-900/40 ${isAlreadyAdded ? 'opacity-40 pointer-events-none bg-zinc-900/20' : ''}`}
-                      >
+                      <div key={ex.id} onClick={() => handleAddExerciseToSession(ex.id)} className={`px-4 py-3 text-sm text-textPrimary hover:bg-gymRed/5 cursor-pointer flex items-center justify-between transition-colors border-b border-zinc-900/40 ${isAlreadyAdded ? 'opacity-40 pointer-events-none bg-zinc-900/20' : ''}`}>
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           <span className="font-medium truncate">{ex.name}</span>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setInfoExercise(ex); }}
-                            className="p-1 text-textMuted hover:text-white transition-colors cursor-pointer text-[11px] bg-zinc-800/50 hover:bg-zinc-700 rounded-md font-bold shrink-0"
-                          >
-                            ⓘ
-                          </button>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); setInfoExercise(ex); }} className="p-1 text-textMuted hover:text-white transition-colors cursor-pointer text-[11px] bg-zinc-800/50 hover:bg-zinc-700 rounded-md font-bold shrink-0">ⓘ</button>
                         </div>
-                        <span className="text-gymRed font-bold text-base bg-gymRed/5 w-6 h-6 rounded-full flex items-center justify-center border border-red-500/10 ml-2 shrink-0">
-                          {isAlreadyAdded ? '✓' : '＋'}
-                        </span>
+                        <span className="text-gymRed font-bold text-base bg-gymRed/5 w-6 h-6 rounded-full flex items-center justify-center border border-red-500/10 ml-2 shrink-0">{isAlreadyAdded ? '✓' : '＋'}</span>
                       </div>
                     )
                   })}
@@ -906,7 +768,7 @@ export default function NewWorkout({
         </div>
       )}
 
-      {/* DETAILS MODAL */}
+      {/* INFO DETAILS MODAL */}
       {infoExercise && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div onClick={() => setInfoExercise(null)} className="absolute inset-0 bg-black/80 backdrop-blur-xs" />
@@ -915,23 +777,20 @@ export default function NewWorkout({
               <video src={infoExercise.video_url} autoPlay muted loop playsInline className="w-full h-44 object-cover bg-black border-b border-zinc-800" />
             ) : (
               <div className="w-full h-44 bg-zinc-900/60 border-b border-zinc-800 flex flex-col items-center justify-center text-center p-4 text-textMuted">
-                <span className="text-2xl mb-1">🏋️‍♂️</span>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Pętla ruchu 3D / Video</span>
+                <span className="text-2xl mb-1">🏋️‍♂️</span><span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Pętla ruchu 3D / Video</span>
               </div>
             )}
             <div className="p-5">
               <span className="text-[10px] font-black text-gymRed uppercase tracking-wider block mb-0.5">{infoExercise.muscle_group}</span>
               <h3 className="text-base font-black text-white tracking-tight mb-3">{infoExercise.name}</h3>
-              <div className="text-xs text-zinc-400 leading-relaxed bg-zinc-900/40 border border-zinc-800/60 p-3 rounded-xl max-h-36 overflow-y-auto">
-                {infoExercise.description || <span className="italic text-zinc-600">Brak opisu technicznego.</span>}
-              </div>
+              <div className="text-xs text-zinc-400 leading-relaxed bg-zinc-900/40 border border-zinc-800/60 p-3 rounded-xl max-h-36 overflow-y-auto">{infoExercise.description || <span className="italic text-zinc-600">Brak opisu technicznego.</span>}</div>
               <button type="button" onClick={() => setInfoExercise(null)} className="w-full mt-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer text-center">Zamknij podgląd</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* CANCEL MODAL */}
+      {/* EXIT CANCEL MODAL */}
       {isCancelModalOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div onClick={() => setIsCancelModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
