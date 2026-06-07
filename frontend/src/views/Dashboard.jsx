@@ -15,6 +15,9 @@ export default function Dashboard({
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [logToDelete, setLogToDelete] = useState(null)
 
+  // 🔴 NOWOŚĆ: Stan kontrolujący widoczność klawiatury in-app
+  const [isWeightNumpadOpen, setIsWeightNumpadOpen] = useState(false)
+
   useEffect(() => {
     if (selectedExercise) {
       fetchProgression(selectedExercise)
@@ -50,7 +53,6 @@ export default function Dashboard({
     setLogToDelete(null)
   }
 
-  // --- POPRAWKA 2: DYNAMICZNE OBLICZANIE TRENDU WAGI (DELTA-BADGE) ---
   const getWeightTrend = () => {
     if (!weightLogs || weightLogs.length < 2) return null
     const latest = parseFloat(weightLogs[0].weight)
@@ -64,8 +66,38 @@ export default function Dashboard({
   }
   const trend = getWeightTrend()
 
-  // --- POPRAWKA 3: DEFENSYWNA WALIDACJA INPUTU WAGI ---
-  const isWeightInputInvalid = !weightInput || !weightInput.trim() || isNaN(parseFloat(weightInput)) || parseFloat(weightInput) <= 0
+  const isWeightInputInvalid = !weightInput || String(weightInput).trim() === '' || isNaN(parseFloat(weightInput)) || parseFloat(weightInput) <= 0
+
+  // 🔴 NOWOŚĆ: Obsługa kliknięć customowego Numpada
+  const handleWeightNumpadPress = (key) => {
+    const currentVal = String(weightInput || '');
+    if (key === 'BACKSPACE') {
+      setWeightInput(currentVal.slice(0, -1));
+    } else if (key === '.') {
+      if (currentVal.includes('.')) return;
+      setWeightInput(currentVal + '.');
+    } else {
+      const newVal = currentVal === '0' ? key : currentVal + key;
+      setWeightInput(newVal);
+    }
+  }
+
+  // 🔴 NOWOŚĆ: Szybkie dodawanie/odejmowanie ułamków wagi
+  const handleWeightQuickInc = (incStr) => {
+    const baseWeight = weightInput ? parseFloat(weightInput) : (weightLogs.length > 0 ? parseFloat(weightLogs[0].weight) : 80);
+    const inc = parseFloat(incStr);
+    let newVal = baseWeight + inc;
+    if (newVal <= 0) newVal = 0;
+    setWeightInput(newVal.toFixed(1));
+  }
+
+  // 🔴 NOWOŚĆ: Wrapper zapisywania wagi (chowa klawiaturę)
+  const onConfirmWeight = (e) => {
+    if (e) e.preventDefault();
+    if (isWeightInputInvalid) return;
+    handleAddWeight(e);
+    setIsWeightNumpadOpen(false);
+  }
 
   const svgWidth = 500
   const svgHeight = 160
@@ -104,7 +136,7 @@ export default function Dashboard({
   }
 
   return (
-    <div className="flex flex-col gap-5 text-left relative">
+    <div className="flex flex-col gap-5 text-left relative pb-16">
       
       {/* SEKCJA 1: HERO STRIP */}
       <section className="w-full bg-gymCard border border-zinc-800/40 rounded-gp-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
@@ -119,7 +151,6 @@ export default function Dashboard({
           </div>
         </div>
 
-        {/* --- POPRAWKA 1: SUWAK Z ETYKIETAMI WARTOŚCI SKRAJNYCH --- */}
         <div className="flex items-center gap-3 w-full sm:w-72 bg-gymCardSecondary/40 border border-zinc-800/30 p-2.5 rounded-gp-md">
           <span className="text-xs font-bold text-textSecondary shrink-0 uppercase tracking-tight">Cel: {localTarget} dni</span>
           <div className="flex-1 flex flex-col justify-center">
@@ -191,7 +222,6 @@ export default function Dashboard({
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-bold uppercase tracking-wider text-textSecondary">Monitor masy ciała (Trendy) ⚖️</div>
               
-              {/* --- INTEGRACJA POPRAWKI 2: DELTA TREND BADGE --- */}
               {trend && (
                 <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${trend.isUp ? 'bg-gymWarning/10 text-gymWarning' : trend.isDown ? 'bg-gymSuccess/10 text-gymSuccess' : 'bg-zinc-800 text-textSecondary'}`}>
                   {trend.isUp ? `▲ +${trend.diff}` : trend.isDown ? `▼ -${trend.diff}` : '• Bez zmian'} kg
@@ -214,14 +244,23 @@ export default function Dashboard({
             )}
           </div>
 
-          <div className="flex gap-2 mt-4 pt-3 border-t border-zinc-800/40 items-center justify-between">
+          <div className="flex gap-2 mt-4 pt-3 border-t border-zinc-800/40 items-center justify-between relative">
             <span className="text-[11px] text-textMuted font-medium">Zapisz wagę poranną:</span>
             <div className="flex gap-2 w-48">
-              <input type="number" step="0.1" placeholder="84.5" value={weightInput} onChange={(e) => setWeightInput(e.target.value)} className="w-full p-2 rounded-gp-md border border-zinc-800 bg-gymCardSecondary text-white text-xs text-center font-mono outline-none focus:border-gymRed" />
               
-              {/* --- INTEGRACJA POPRAWKI 3: DISABLED GUARD DLA INPUTU --- */}
+              {/* 🔴 ZMODYFIKOWANY INPUT: Zablokowana domyślna klawiatura, aktywuje Numpad */}
+              <input 
+                type="text" 
+                inputMode="none"
+                readOnly={true}
+                placeholder="84.5" 
+                value={weightInput} 
+                onClick={(e) => { e.preventDefault(); setIsWeightNumpadOpen(true); }}
+                className={`w-full p-2 rounded-gp-md border bg-gymCardSecondary text-white text-xs text-center font-mono outline-none cursor-pointer transition-all ${isWeightNumpadOpen ? 'border-gymRed ring-1 ring-gymRed shadow-[0_0_8px_rgba(239,68,68,0.2)]' : 'border-zinc-800 hover:border-zinc-700'}`} 
+              />
+              
               <button 
-                onClick={handleAddWeight} 
+                onClick={onConfirmWeight} 
                 disabled={isWeightInputInvalid}
                 className="bg-gymRed hover:bg-gymRedHover disabled:opacity-20 disabled:hover:bg-gymRed text-white text-xs font-bold px-4 py-2 rounded-gp-md cursor-pointer disabled:cursor-not-allowed transition-colors shrink-0"
               >
@@ -249,7 +288,7 @@ export default function Dashboard({
 
             <div className="w-full overflow-hidden bg-gymCardSecondary/20 rounded-gp-md p-1 border border-zinc-800/30 flex justify-center items-center min-h-[160px]">
               {validData.length < 2 ? (
-                <div className="text-center text-textMuted text-xs italic py-12">Zaloguj minimum 2 różne dni treningowe dla tego ćwiczenia, aby wygenerować linię progresu.</div>
+                <div className="text-center text-textMuted text-xs italic py-12 px-4">Zaloguj minimum 2 różne dni treningowe dla tego ćwiczenia, aby wygenerować linię progresu.</div>
               ) : (
                 <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-auto">
                   <defs>
@@ -275,8 +314,8 @@ export default function Dashboard({
               )}
             </div>
           </div>
-        <div className="text-[10px] text-textMuted font-medium mt-3 text-right">Dane synchronizowane w czasie rzeczywistym (Europe/Warsaw).</div>
-      </section>
+          <div className="text-[10px] text-textMuted font-medium mt-3 text-right">Dane synchronizowane w czasie rzeczywistym (Europe/Warsaw).</div>
+        </section>
 
       </div>
 
@@ -293,6 +332,81 @@ export default function Dashboard({
               <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-gymRedHover text-white font-bold rounded-gp-md text-sm cursor-pointer shadow-lg shadow-red-950/20">Tak, usuń</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 🔴 INTERAKTYWNY IN-APP NUMPAD DLA WAGI (Zastępuje klawiaturę systemową) */}
+      {isWeightNumpadOpen && (
+        <div className="fixed bottom-0 left-0 right-0 max-w-[640px] mx-auto bg-[#15181f] border-t-2 border-zinc-800 z-[9999] p-3 animate-in slide-in-from-bottom duration-200 select-none pb-safe">
+          
+          <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2 mb-3 px-1 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-zinc-400">Pole:</span>
+              <span className="font-black uppercase text-gymRed bg-gymRed/10 px-2 py-0.5 rounded-md tracking-wider text-[10px]">
+                Masa Ciała (kg) ⚖️
+              </span>
+            </div>
+
+            <button 
+              type="button" 
+              onClick={() => setIsWeightNumpadOpen(false)} 
+              className="text-textMuted hover:text-white font-bold px-2 py-1 bg-zinc-900 rounded border border-zinc-800 cursor-pointer ml-1 transition-colors"
+            >
+              Zamknij
+            </button>
+          </div>
+
+          {/* 🔴 PRZYCISKI KROKOWE (SZYBKIE DODAWANIE WAGI) */}
+          <div className="grid grid-cols-4 gap-1.5 font-mono mb-3">
+            {['-1.0', '-0.1', '+0.1', '+1.0'].map(inc => (
+              <button
+                key={inc} type="button" onClick={() => handleWeightQuickInc(inc)}
+                className={`py-2 bg-zinc-800/30 hover:bg-zinc-800 border border-zinc-800/80 font-black text-xs rounded-gp-md cursor-pointer transition-colors text-center shadow-sm ${inc.startsWith('+') ? 'text-emerald-400' : 'text-rose-400'}`}
+              >
+                {inc}
+              </button>
+            ))}
+          </div>
+
+          {/* KLAWIATURA CYFROWA */}
+          <div className="grid grid-cols-3 gap-1.5 font-mono">
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
+              <button
+                key={num} type="button" onClick={() => handleWeightNumpadPress(num)}
+                className="py-3 bg-zinc-800/50 hover:bg-zinc-800 active:bg-zinc-700 text-white font-black text-lg rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/40"
+              >
+                {num}
+              </button>
+            ))}
+            <button
+              type="button" onClick={() => handleWeightNumpadPress('.')}
+              className="py-3 bg-zinc-800/50 hover:bg-zinc-800 active:bg-zinc-700 text-white font-black text-lg rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/40"
+            >
+              .
+            </button>
+            <button
+              type="button" onClick={() => handleWeightNumpadPress('0')}
+              className="py-3 bg-zinc-800/50 hover:bg-zinc-800 active:bg-zinc-700 text-white font-black text-lg rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/40"
+            >
+              0
+            </button>
+            <button
+              type="button" onClick={() => handleWeightNumpadPress('BACKSPACE')}
+              className="py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-black text-sm rounded-gp-md cursor-pointer transition-colors text-center shadow-md border border-zinc-800/60 flex items-center justify-center"
+            >
+              ⌫
+            </button>
+          </div>
+
+          <button
+            type="button"
+            disabled={isWeightInputInvalid}
+            onClick={onConfirmWeight}
+            className="w-full mt-3 py-3 bg-gymRed hover:bg-red-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-black text-sm uppercase tracking-wider rounded-gp-md cursor-pointer disabled:cursor-not-allowed transition-all active:scale-[0.99] shadow-lg text-center"
+          >
+            Zatwierdź i zapisz wagę ✓
+          </button>
+
         </div>
       )}
 
