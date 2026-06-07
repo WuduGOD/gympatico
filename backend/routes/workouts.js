@@ -338,14 +338,14 @@ router.delete('/:sessionId', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    const checkQuery = 'SELECT id FROM workout_sessions WHERE id = $1 AND user_id = $2';
+    const checkQuery = 'SELECT id FROM workout_sessions WHERE id = $1::uuid AND user_id = $2::uuid';
     const checkResult = await pool.query(checkQuery, [sessionId, userId]);
 
     if (checkResult.rows.length === 0) {
       return res.status(404).json({ error: "Nie znaleziono treningu lub nie masz uprawnień do jego usunięcia." });
     }
 
-    await pool.query('DELETE FROM workout_sessions WHERE id = $1', [sessionId]);
+    await pool.query('DELETE FROM workout_sessions WHERE id = $1::uuid', [sessionId]);
     res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
   } catch (error) {
     res.status(500).json({ error: "Błąd serwera podczas usunięcia treningu", details: error.message });
@@ -379,7 +379,7 @@ router.patch('/:sessionId', authenticateToken, async (req, res) => {
     const updateQuery = `
       UPDATE workout_sessions 
       SET name = $1, comment = $2 
-      WHERE id = $3 AND user_id = $4 
+      WHERE id = $3::uuid AND user_id = $4::uuid 
       RETURNING id, name, comment
     `;
     // 🔴 POPRAWKA: Usunięto nadmiarowe wywołania .trim() z parametrów tablicy SQL

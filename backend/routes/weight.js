@@ -71,7 +71,7 @@ router.delete('/:logId', authenticateToken, async (req, res) => {
     // Klauzula WHERE chroni przed usunięciem pomiaru należącego do innego użytkownika
     const deleteQuery = `
       DELETE FROM weight_logs 
-      WHERE id = $1 AND user_id = $2 
+      WHERE id = $1::uuid AND user_id = $2::uuid 
       RETURNING *
     `;
     const result = await pool.query(deleteQuery, [logId, userId]);

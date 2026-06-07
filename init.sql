@@ -64,7 +64,7 @@ CREATE TABLE workout_sessions (
 CREATE TABLE log_series (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
-    exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE,
+    exercise_id UUID REFERENCES exercises(id) ON DELETE RESTRICT,
     weight NUMERIC NOT NULL,
     reps INT NOT NULL,
     series_order INT NOT NULL,
@@ -90,6 +90,7 @@ CREATE TABLE template_series (
     weight NUMERIC(6,2) NOT NULL,
     reps INT NOT NULL,
     series_order INT NOT NULL
+    series_type VARCHAR(20) DEFAULT 'NORMAL' NOT NULL
 );
 
 -- Indeksy wydajnościowe dla klastrowania szablonów

@@ -143,29 +143,6 @@ module.exports = authenticateToken;
 -- Ten plik pozostaje tylko jako wskaźnik dla starszych skryptów.
 </file>
 
-<file path="backend/utils/userHelpers.js">
-// backend/utils/userHelpers.js
-const pool = require('../config/db');
-
-/**
- * Pobiera aktualny plan oraz rolę użytkownika bezpośrednio z bazy danych.
- * @param {string} userId - UUID użytkownika.
- * @param {object} [dbClient=pool] - Opcjonalny klient bazy danych (przydatne podczas transakcji).
- * @returns {Promise<{is_premium: boolean, role: string}|null>}
- */
-const getUserPlan = async (userId, dbClient = pool) => {
-  const result = await dbClient.query(
-    'SELECT is_premium, role FROM users WHERE id = $1',
-    [userId]
-  );
-  
-  if (result.rowCount === 0) return null;
-  return result.rows[0];
-};
-
-module.exports = { getUserPlan };
-</file>
-
 <file path="docker-compose.yml">
 services:
   postgres:
@@ -1019,10 +996,9 @@ const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
 
-// 1. POBRANIE WSZYSTKICH SZABLONÓW UŻYTKOWNIKA
+// 1. POBRANIE WSZYSTKICH SZABLONÓW
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
-
   try {
     const query = `
       SELECT wt.id, wt.name, wt.created_at,
@@ -1032,13 +1008,14 @@ router.get('/', authenticateToken, async (req, res) => {
                    'exerciseId', ts.exercise_id,
                    'weight', ts.weight,
                    'reps', ts.reps,
-                   'order', ts.series_order
+                   'order', ts.series_order,
+                   'seriesType', ts.series_type -- 🔴 POPRAWKA: Zwracanie typu serii
                  ) ORDER BY ts.series_order ASC
                ) FILTER (WHERE ts.id IS NOT NULL), '[]'
              ) as series
       FROM workout_templates wt
       LEFT JOIN template_series ts ON wt.id = ts.template_id
-      WHERE wt.user_id = $1
+      WHERE wt.user_id = $1::uuid
       GROUP BY wt.id
       ORDER BY wt.name ASC
     `;
@@ -1049,7 +1026,7 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// 2. TWORZENIE NOWEGO SZABLONU (TRANSAKCYJNE + BŁYSKAWICZNY UNNEST)
+// 2. TWORZENIE NOWEGO SZABLONU
 router.post('/', authenticateToken, checkLimits('templates'), async (req, res) => {
   const userId = req.user.userId;
   let { name, series } = req.body;
@@ -1058,74 +1035,60 @@ router.post('/', authenticateToken, checkLimits('templates'), async (req, res) =
     return res.status(400).json({ error: "Nazwa szablonu oraz zestaw serii są wymagane!" });
   }
 
-  name = name.trim();
-  if (name.length < 3 || name.length > 100) {
-    return res.status(400).json({ error: "Nazwa szablonu musi mieć od 3 do 100 znaków!" });
-  }
-
-  // Pobieramy dedykowanego klienta z puli dla bezpiecznej transakcji
   const client = await pool.connect();
-
   try {
     await client.query('BEGIN');
 
-    // Wstawienie nagłówka szablonu
     const templateResult = await client.query(
-      "INSERT INTO workout_templates (user_id, name) VALUES ($1, $2) RETURNING id, name",
-      [userId, name]
+      "INSERT INTO workout_templates (user_id, name) VALUES ($1::uuid, $2) RETURNING id",
+      [userId, name.trim()]
     );
     const templateId = templateResult.rows[0].id;
 
-    // Przygotowanie płaskich tablic kolumn pod mechanizm UNNEST
     const exerciseIds = [];
     const weights = [];
     const reps = [];
     const orders = [];
+    const seriesTypes = []; // 🔴 POPRAWKA: Inicjalizacja tablicy dla typów
 
     for (let i = 0; i < series.length; i++) {
       const s = series[i];
-      if (!s.exerciseId || s.weight === undefined || !s.reps) {
-        throw new Error("Niekompletne dane serii w szablonie.");
-      }
       exerciseIds.push(s.exerciseId);
       weights.push(s.weight);
       reps.push(s.reps);
       orders.push(s.order || (i + 1));
+      seriesTypes.push(s.seriesType || 'NORMAL'); // 🔴 Wychwycenie z frontu
     }
 
-    // Wykonujemy JEDNO zapytanie dla wszystkich wierszy (0 marnowania round-tripów)
+    // 🔴 Zapis do bazy 
     const bulkInsertQuery = `
-      INSERT INTO template_series (template_id, exercise_id, weight, reps, series_order)
-      SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[])
+      INSERT INTO template_series (template_id, exercise_id, weight, reps, series_order, series_type)
+      SELECT $1::uuid, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::varchar[])
     `;
     
-    await client.query(bulkInsertQuery, [templateId, exerciseIds, weights, reps, orders]);
-
+    await client.query(bulkInsertQuery, [templateId, exerciseIds, weights, reps, orders, seriesTypes]);
     await client.query('COMMIT');
+    
     res.status(201).json({ message: "Szablon treningowy został zapisany! 💾", templateId });
   } catch (error) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: "Błąd podczas zapisu szablonu", details: error.message });
   } finally {
-    client.release(); // Bezwzględne zwolnienie klienta do puli
+    client.release();
   }
 });
 
-// 3. USUNIĘCIE SZABLONU (KASKADOWE PRZEZ BAZĘ)
+// 3. USUNIĘCIE SZABLONU (Odporne na 500)
 router.delete('/:id', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   const { id } = req.params;
 
   try {
     const result = await pool.query(
-      "DELETE FROM workout_templates WHERE id = $1 AND user_id = $2",
+      "DELETE FROM workout_templates WHERE id = $1::uuid AND user_id = $2::uuid",
       [id, userId]
     );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Nie znaleziono szablonu lub brak uprawnień." });
-    }
-
+    if (result.rowCount === 0) return res.status(404).json({ error: "Nie znaleziono szablonu." });
     res.json({ message: "Szablon usunięty pomyślnie. ✕" });
   } catch (error) {
     res.status(500).json({ error: "Błąd usuwania szablonu", details: error.message });
@@ -1201,6 +1164,28 @@ module.exports = {
   getExerciseIdByName,
   closePool,
 };
+</file>
+
+<file path="backend/utils/userHelpers.js">
+// backend/utils/userHelpers.js
+const pool = require('../config/db');
+
+/**
+ * Pobiera aktualny plan oraz rolę użytkownika bezpośrednio z bazy danych.
+ */
+const getUserPlan = async (userId, dbClient = pool) => {
+  // 🔴 POPRAWKA: Jawne rzutowanie $1::uuid. Brak tego elementu powodował błąd 500
+  // podczas wywoływania tej funkcji wewnątrz aktywnych transakcji (np. w friends.js)
+  const result = await dbClient.query(
+    'SELECT is_premium, role FROM users WHERE id = $1::uuid',
+    [userId]
+  );
+  
+  if (result.rowCount === 0) return null;
+  return result.rows[0];
+};
+
+module.exports = { getUserPlan };
 </file>
 
 <file path="frontend/.gitignore">
@@ -1710,7 +1695,7 @@ router.delete('/:logId', authenticateToken, async (req, res) => {
     // Klauzula WHERE chroni przed usunięciem pomiaru należącego do innego użytkownika
     const deleteQuery = `
       DELETE FROM weight_logs 
-      WHERE id = $1 AND user_id = $2 
+      WHERE id = $1::uuid AND user_id = $2::uuid 
       RETURNING *
     `;
     const result = await pool.query(deleteQuery, [logId, userId]);
@@ -1767,94 +1752,6 @@ module.exports = router;
     "vite": "^8.0.12",
     "vite-plugin-pwa": "^1.3.0"
   }
-}
-</file>
-
-<file path="frontend/src/hooks/useFriends.js">
-// frontend/src/hooks/useFriends.js
-import { useState, useCallback } from 'react';
-import { API_BASE_URL } from '../config/api';
-
-export function useFriends(token) {
-  const [friends, setFriends] = useState([]);
-  const [pendingRequests, setPendingRequests] = useState([]);
-  const [friendNickInput, setFriendNickInput] = useState('');
-  const [socialMessage, setSocialMessage] = useState('');
-
-  // 🔴 POPRAWKA: Kompleksowe pobieranie modułu społecznościowego (Ranking + Skrzynka odbiorcza zaproszeń)
-  const fetchFriendsData = useCallback(async () => {
-    if (!token) return;
-    try {
-      // Pobieramy równolegle dane o znajomych oraz zaproszenia oczekujące na akceptację
-      const [friendsRes, requestsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/friends`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`${API_BASE_URL}/api/friends/requests`, { headers: { 'Authorization': `Bearer ${token}` } })
-      ]);
-
-      if (!friendsRes.ok) throw new Error('Błąd pobierania rankingu gangu');
-      if (!requestsRes.ok) throw new Error('Błąd pobierania skrzynki odbiorczej zaproszeń');
-
-      const friendsData = await friendsRes.json();
-      const requestsData = await requestsRes.json();
-
-      // TWARDA NORMALIZACJA: Gwarantujemy frontowi jeden, pewny klucz camelCase
-      const normalizedFriends = friendsData.map(friend => ({
-        ...friend,
-        isPremium: friend.is_premium === true || friend.isPremium === true
-      }));
-
-      setFriends(normalizedFriends);
-      setPendingRequests(requestsData); // 🔴 POPRAWKA: Wstrzykujemy pobrane zaproszenia do stanu Reacta!
-    } catch (err) {
-      console.error("❌ Błąd synchronizacji modułu społecznościowego:", err.message);
-    }
-  }, [token]);
-
-  const handleSendFriendRequest = async (targetNick) => {
-    if (!targetNick) throw new Error('Wpisz nick znajomego!');
-
-    const res = await fetch(`${API_BASE_URL}/api/friends/request`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ targetNick })
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Nie udało się wysłać zaproszenia.');
-
-    // Czyszczenie inputu po pomyślnym wysłaniu
-    setFriendNickInput('');
-    return data;
-  };
-
-  const handleAcceptFriend = async (friendshipId) => {
-    const res = await fetch(`${API_BASE_URL}/api/friends/accept`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ friendshipId })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Nie udało się zaakceptować zaproszenia.');
-    return data;
-  };
-
-  const handleRejectFriend = async (friendshipId) => {
-    const res = await fetch(`${API_BASE_URL}/api/friends/requests/${friendshipId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Nie udało się odrzucić zaproszenia.');
-
-    return data;
-  };
-
-  return {
-    friends, setFriends, pendingRequests, setPendingRequests,
-    friendNickInput, setFriendNickInput, socialMessage, setSocialMessage,
-    handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend
-  };
 }
 </file>
 
@@ -2003,246 +1900,95 @@ export default function StatsView({ stats, loading }) {
 }
 </file>
 
-<file path="backend/middleware/checkLimits.js">
-// backend/middleware/checkLimits.js
-const pool = require('../config/db');
-const { getUserPlan } = require('../utils/userHelpers');
+<file path="frontend/src/hooks/useFriends.js">
+// frontend/src/hooks/useFriends.js
+import { useState, useCallback } from 'react';
+import { API_BASE_URL } from '../config/api';
 
-/**
- * Fabryka middleware do weryfikacji sztywnych limitów ilościowych zasobów planu FREE.
- * @param {('templates'|'exercises'|'friends'|'workouts')} resourceType - Typ sprawdzanego zasobu
- */
-const checkLimits = (resourceType) => {
-  return async (req, res, next) => {
-    const userId = req.user.userId;
+export function useFriends(token) {
+  const [friends, setFriends] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [friendNickInput, setFriendNickInput] = useState('');
+  const [socialMessage, setSocialMessage] = useState('');
 
+  // 🔴 POPRAWKA: Kompleksowe pobieranie modułu społecznościowego (Ranking + Skrzynka odbiorcza zaproszeń)
+  const fetchFriendsData = useCallback(async () => {
+    if (!token) return;
     try {
-      // Pobranie planu i roli użytkownika z bazy danych
-      const plan = await getUserPlan(userId);
+      const [friendsRes, requestsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/friends`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/friends/requests`, { headers: { 'Authorization': `Bearer ${token}` } })
+      ]);
 
-      if (!plan) {
-        return res.status(404).json({ error: "Użytkownik nie istnieje." });
-      }
+      if (!friendsRes.ok) throw new Error('Błąd pobierania rankingu gangu');
+      if (!requestsRes.ok) throw new Error('Błąd pobierania skrzynki odbiorczej');
 
-      // Konta Premium oraz TRAINER mają całkowicie zniesione wszelkie limity ilościowe
-      if (plan.is_premium || plan.role === 'TRAINER') {
-        return next();
-      }
+      const friendsData = await friendsRes.json();
+      const requestsData = await requestsRes.json();
 
-      // A. Limit Szablonów (Max 3)
-      if (resourceType === 'templates') {
-        const countRes = await pool.query('SELECT COUNT(*) FROM workout_templates WHERE user_id = $1', [userId]);
-        if (parseInt(countRes.rows[0].count, 10) >= 3) {
-          return res.status(403).json({ 
-            error: "Osiągnięto limit planu darmowego (maksymalnie 3 szablony). Przejdź na wersję Premium 💾, aby tworzyć nieograniczone plany!" 
-          });
-        }
-      }
+      // 🔴 POPRAWKA (ANTI-CRASH): Upewniamy się, że to na pewno są tablice.
+      // Jeśli serwer zwymiotuje kodem HTML (np. przez router Vercel/Render), React nie wywali się na metodzie .map()!
+      const safeFriends = Array.isArray(friendsData) ? friendsData : [];
+      const safeRequests = Array.isArray(requestsData) ? requestsData : [];
 
-      // B. Limit Własnych Ćwiczeń (Max 5)
-      if (resourceType === 'exercises') {
-        const countRes = await pool.query('SELECT COUNT(*) FROM exercises WHERE user_id = $1', [userId]);
-        if (parseInt(countRes.rows[0].count, 10) >= 5) {
-          return res.status(403).json({ 
-            error: "Osiągnięto limit planu darmowego (maksymalnie 5 własnych ćwiczeń). Przejdź na wersję Premium 📚, aby rozbudowywać atlas!" 
-          });
-        }
-      }
+      const normalizedFriends = safeFriends.map(friend => ({
+        ...friend,
+        isPremium: friend.is_premium === true || friend.isPremium === true
+      }));
 
-      // C. Limit Znajomych (Max 5)
-      if (resourceType === 'friends') {
-        const countQuery = `
-          SELECT COUNT(*) FROM friendships 
-          WHERE status = 'ACCEPTED' AND (sender_id = $1 OR receiver_id = $1)
-        `;
-        const countRes = await pool.query(countQuery, [userId]);
-        if (parseInt(countRes.rows[0].count, 10) >= 5) {
-          return res.status(403).json({
-            error: "Osiągnięto limit planu darmowego (maksymalnie 5 znajomych w gangu). Odblokuj wersję Premium 👥, aby zapraszać kolejnych użytkowników!"
-          });
-        }
-      }
-
-      // 🔴 NOWOŚĆ: D. Zabezpieczenie limitu zapisanych treningów w historii (Max 10 dla planu darmowego)
-      if (resourceType === 'workouts') {
-        const countRes = await pool.query('SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1', [userId]);
-        if (parseInt(countRes.rows[0].count, 10) >= 10) {
-          return res.status(403).json({
-            error: "Osiągnięto limit planu darmowego (maksymalnie 10 zapisanych treningów). Przejdź na wersję Premium ⚡, aby rejestrować nielimitowane sesje w historii!"
-          });
-        }
-      }
-
-      next();
-    } catch (error) {
-      res.status(500).json({ error: "Błąd serwera podczas weryfikacji limitów", details: error.message });
+      setFriends(normalizedFriends);
+      setPendingRequests(safeRequests); 
+    } catch (err) {
+      console.error("❌ Błąd synchronizacji społecznościowej:", err.message);
     }
+  }, [token]);
+
+  const handleSendFriendRequest = async (targetNick) => {
+    if (!targetNick) throw new Error('Wpisz nick znajomego!');
+
+    const res = await fetch(`${API_BASE_URL}/api/friends/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ targetNick })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Nie udało się wysłać zaproszenia.');
+
+    // Czyszczenie inputu po pomyślnym wysłaniu
+    setFriendNickInput('');
+    return data;
   };
-};
 
-module.exports = checkLimits;
-</file>
+  const handleAcceptFriend = async (friendshipId) => {
+    const res = await fetch(`${API_BASE_URL}/api/friends/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ friendshipId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Nie udało się zaakceptować zaproszenia.');
+    return data;
+  };
 
-<file path="backend/routes/auth.js">
-const express = require('express');
-const router = express.Router();
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
-const rateLimit = require('express-rate-limit');
-
-// KONFIGURACJA RATE LIMITERA DLA STRONY AUTH (wyłączony w testach API/E2E)
-const authLimiter = process.env.NODE_ENV === 'test'
-  ? (_req, _res, next) => next()
-  : rateLimit({
-      windowMs: 15 * 60 * 1000,
-      max: 10,
-      message: {
-        error: "Zbyt wiele nieudanych prób! Twój adres IP został tymczasowo zablokowany. Spróbuj ponownie za 15 minut."
-      },
-      standardHeaders: true,
-      legacyHeaders: false,
+  const handleRejectFriend = async (friendshipId) => {
+    const res = await fetch(`${API_BASE_URL}/api/friends/requests/${friendshipId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
     });
 
-// Rejestracja nowego użytkownika
-router.post('/register', authLimiter, async (req, res) => {
-  let { email, password, nick } = req.body;
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Nie udało się odrzucić zaproszenia.');
 
-  // 1. Wstępna walidacja obecności pól
-  if (!email || !password || !nick) {
-    return res.status(400).json({ error: "Wszystkie pola (email, password, nick) są wymagane!" });
-  }
+    return data;
+  };
 
-  // 2. Sanitization & Trim (oczyszczanie ze skrajnych spacji)
-  email = email.trim();
-  nick = nick.trim();
-
-  // 3. Twarda walidacja długości (Input Length Validation)
-  if (nick.length < 2 || nick.length > 50) {
-    return res.status(400).json({ error: "Nick musi mieć od 2 do 50 znaków!" });
-  }
-
-  if (email.length > 254) {
-    return res.status(400).json({ error: "Adres e-mail jest zbyt długi!" });
-  }
-
-  if (password.length < 8 || password.length > 100) {
-    return res.status(400).json({ error: "Hasło musi mieć od 8 do 100 znaków!" });
-  }
-
-  try {
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(password, saltRounds);
-
-    const query = `
-      INSERT INTO users (email, password_hash, nick) 
-      VALUES ($1, $2, $3) 
-      RETURNING id, email, nick, role, created_at
-    `;
-    const result = await pool.query(query, [email, passwordHash, nick]);
-
-    res.status(201).json({ message: "Użytkownik zarejestrowany! 🏋️‍♂️", user: result.rows[0] });
-  } catch (error) {
-    if (error.code === '23505') {
-      return res.status(400).json({ error: "Ten adres e-mail lub nick jest już zajęty!" });
-    }
-    res.status(500).json({ error: "Błąd serwera podczas rejestracji", details: error.message });
-  }
-});
-
-// Logowanie użytkownika
-router.post('/login', authLimiter, async (req, res) => {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email i hasło są wymagane!" });
-  }
-
-  try {
-    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (userResult.rows.length === 0) {
-      return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
-    }
-
-    const user = userResult.rows[0];
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-
-    if (!isPasswordValid) {
-      return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
-    }
-
-    // FIX SECURE: Dodajemy jawnie "role: user.role" do tokenu, oszczędzając zapytania SQL w middleware
-    const token = jwt.sign(
-      { userId: user.id, nick: user.nick, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    res.json({
-      message: "Zalogowano pomyślnie! 🦾",
-      token,
-      user: { 
-        id: user.id, 
-        email: user.email, 
-        nick: user.nick, 
-        isPremium: user.is_premium,
-        role: user.role // Przekazujemy również do stanu aplikacji na frontendzie
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas logowania", details: error.message });
-  }
-});
-
-// Pobranie aktualnych danych profilu użytkownika (w tym świeżego streaka)
-router.get('/me', authenticateToken, async (req, res) => {
-  try {
-    // Uzupełniamy zapytanie o kolumnę "role" dla synchronizacji twardej w App.jsx
-    const result = await pool.query(
-      'SELECT id, email, nick, current_streak, is_premium, weekly_target_workouts, role FROM users WHERE id = $1',
-      [req.user.userId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Użytkownik nie istnieje." });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas pobierania profilu", details: error.message });
-  }
-});
-
-// Aktualizacja celu tygodniowego
-router.put('/weekly-target', authenticateToken, async (req, res) => {
-  const { weeklyTarget } = req.body;
-  const userId = req.user.userId;
-
-  const targetNum = parseInt(weeklyTarget);
-  if (isNaN(targetNum) || targetNum < 1 || targetNum > 7) {
-    return res.status(400).json({ error: "Cel tygodniowy musi być liczbą od 1 do 7!" });
-  }
-
-  try {
-    const query = `
-      UPDATE users 
-      SET weekly_target_workouts = $1 
-      WHERE id = $2 
-      RETURNING weekly_target_workouts
-    `;
-    const result = await pool.query(query, [targetNum, userId]);
-    
-    res.json({ 
-      message: "Cel zaktualizowany! 🎯", 
-      weekly_target_workouts: result.rows[0].weekly_target_workouts 
-    });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas aktualizacji celu", details: error.message });
-  }
-});
-
-module.exports = router;
+  return {
+    friends, setFriends, pendingRequests, setPendingRequests,
+    friendNickInput, setFriendNickInput, socialMessage, setSocialMessage,
+    handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend
+  };
+}
 </file>
 
 <file path="frontend/src/views/RestTimer.jsx">
@@ -2453,171 +2199,221 @@ export default defineConfig({
 })
 </file>
 
-<file path="frontend/src/hooks/useWorkouts.js">
-// frontend/src/hooks/useWorkouts.js
-import { useState, useCallback } from 'react'
-import { API_BASE_URL } from '../config/api'
+<file path="backend/middleware/checkLimits.js">
+// backend/middleware/checkLimits.js
+const pool = require('../config/db');
+const { getUserPlan } = require('../utils/userHelpers');
 
-export function useWorkouts(token, exercises, showToast) {
-  const [workoutsHistory, setWorkoutsHistory] = useState([])
-  const [totalWorkoutsCount, setTotalWorkoutsCount] = useState(0) // <--- NOWY STAN LICZNIKA
-  const [hasMoreWorkouts, setHasMoreWorkouts] = useState(true)
+const checkLimits = (resourceType) => {
+  return async (req, res, next) => {
+    const userId = req.user.userId;
 
-  const [workoutName, setWorkoutName] = useState('')
-  const [workoutComment, setWorkoutComment] = useState('')
-  const [localSeriesList, setLocalSeriesList] = useState([])
-
-  const [currentSelectedExercise, setCurrentSelectedExercise] = useState('')
-  const [seriesWeight, setSeriesWeight] = useState('')
-  const [seriesReps, setSeriesReps] = useState('')
-
-  const [progressionData, setProgressionData] = useState([])
-
-  const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
-    if (!token) return
-    const limit = 20
     try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts?limit=${limit}&offset=${currentLength}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Błąd historii treningów')
-      const data = await res.json() // Oczekujemy { workouts, totalCount }
+      const plan = await getUserPlan(userId);
+      if (!plan) return res.status(404).json({ error: "Użytkownik nie istnieje." });
+      if (plan.is_premium || plan.role === 'TRAINER') return next();
 
-      if (isAppend) {
-        setWorkoutsHistory(prev => [...prev, ...data.workouts])
-        setHasMoreWorkouts(currentLength + data.workouts.length < data.totalCount)
-      } else {
-        setWorkoutsHistory(data.workouts)
-        setHasMoreWorkouts(data.workouts.length < data.totalCount)
+      if (resourceType === 'templates') {
+        const countRes = await pool.query('SELECT COUNT(*) FROM workout_templates WHERE user_id = $1::uuid', [userId]);
+        if (parseInt(countRes.rows[0].count, 10) >= 3) {
+          return res.status(403).json({ error: "Osiągnięto limit (max 3 szablony). Przejdź na Premium 💾!" });
+        }
       }
-      setTotalWorkoutsCount(data.totalCount)
-    } catch (err) {
-      console.error('Błąd pobierania historii:', err.message)
+
+      if (resourceType === 'exercises') {
+        const countRes = await pool.query('SELECT COUNT(*) FROM exercises WHERE user_id = $1::uuid', [userId]);
+        if (parseInt(countRes.rows[0].count, 10) >= 5) {
+          return res.status(403).json({ error: "Osiągnięto limit (max 5 własnych ćwiczeń). Przejdź na Premium 📚!" });
+        }
+      }
+
+      if (resourceType === 'friends') {
+        const countRes = await pool.query(
+          "SELECT COUNT(*) FROM friendships WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)", 
+          [userId]
+        );
+        if (parseInt(countRes.rows[0].count, 10) >= 5) {
+          return res.status(403).json({ error: "Osiągnięto limit gangu (max 5 znajomych). Odblokuj Premium 👥!" });
+        }
+      }
+
+      if (resourceType === 'workouts') {
+        const countRes = await pool.query('SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1::uuid', [userId]);
+        if (parseInt(countRes.rows[0].count, 10) >= 10) {
+          return res.status(403).json({ error: "Osiągnięto limit historii (max 10 treningów). Przejdź na Premium ⚡!" });
+        }
+      }
+
+      next();
+    } catch (error) {
+      res.status(500).json({ error: "Błąd weryfikacji limitów", details: error.message });
     }
-  }, [token])
+  };
+};
 
-  const addSeriesToLocalList = useCallback((e) => {
-    e?.preventDefault()
-    if (!seriesWeight || !seriesReps || !currentSelectedExercise) {
-      if (showToast) showToast('Wpisz wagę i powtórzenia! ⚠️', 'error')
-      return
-    }
-    const ex = exercises.find(item => item.id === currentSelectedExercise)
-    if (!ex) return
+module.exports = checkLimits;
+</file>
 
-    const weight = parseFloat(seriesWeight)
-    const reps = parseInt(seriesReps)
-    const estimatedOneRm = reps >= 1 && reps <= 12 ? weight * (1 + reps / 30) : null
+<file path="backend/routes/auth.js">
+const express = require('express');
+const router = express.Router();
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+const rateLimit = require('express-rate-limit');
 
-    const newSeries = {
-      exerciseId: currentSelectedExercise,
-      exerciseName: ex.name,
-      weight,
-      reps,
-      order: localSeriesList.filter(s => s.exerciseId === currentSelectedExercise).length + 1,
-      estimatedOneRm
-    }
-
-    setLocalSeriesList(prev => [...prev, newSeries])
-    setSeriesWeight('')
-    setSeriesReps('')
-  }, [currentSelectedExercise, seriesWeight, seriesReps, localSeriesList, exercises, showToast])
-
-  const removeSeriesFromLocalList = useCallback((index) => {
-    setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
-  }, [])
-
-  const handleSaveWorkout = useCallback(async (seriesOverride) => {
-    const seriesToSave = seriesOverride ?? localSeriesList
-
-    if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
-    if (seriesToSave.length === 0) throw new Error('Nie można zapisać pustego treningu!')
-
-    const res = await fetch(`${API_BASE_URL}/api/workouts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+// KONFIGURACJA RATE LIMITERA DLA STRONY AUTH (wyłączony w testach API/E2E)
+const authLimiter = process.env.NODE_ENV === 'test'
+  ? (_req, _res, next) => next()
+  : rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 10,
+      message: {
+        error: "Zbyt wiele nieudanych prób! Twój adres IP został tymczasowo zablokowany. Spróbuj ponownie za 15 minut."
       },
-      body: JSON.stringify({
-        name: workoutName,
-        comment: workoutComment,
-        series: seriesToSave.map(s => ({
-          exerciseId: s.exerciseId,
-          weight: s.weight,
-          reps: s.reps,
-          order: s.order,
-          estimatedOneRm: s.estimatedOneRm
-        }))
-      })
-    })
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
 
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Błąd zapisu treningu')
+// Rejestracja nowego użytkownika
+router.post('/register', authLimiter, async (req, res) => {
+  let { email, password, nick } = req.body;
 
-    setWorkoutName('')
-    setWorkoutComment('')
-    setLocalSeriesList([])
-    return data
-  }, [token, workoutName, workoutComment, localSeriesList])
-
-  const handleDeleteWorkout = useCallback(async (sessionId) => {
-    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć treningu.')
-    return data
-  }, [token])
-
-  const fetchProgression = useCallback(async (exerciseId) => {
-    if (!token || !exerciseId) return
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts/progression/${exerciseId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Błąd pobierania danych progresji')
-      const data = await res.json()
-      setProgressionData(data)
-    } catch (err) {
-      console.error('Błąd pobierania progresu siłowego:', err.message)
-    }
-  }, [token])
-
-  const handleUpdateWorkout = useCallback(async (sessionId, newName, newComment) => {
-    if (!token) return
-    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ name: newName, comment: newComment })
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować treningu.')
-
-    setWorkoutsHistory(prev =>
-      prev.map(w => w.id === sessionId ? { ...w, name: newName, comment: newComment } : w)
-    )
-    return data
-  }, [token])
-
-  return {
-    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, totalWorkoutsCount, fetchWorkoutsData, // <--- EKSPORT LICZNIKA
-    workoutName, setWorkoutName,
-    workoutComment, setWorkoutComment,
-    currentSelectedExercise, setCurrentSelectedExercise,
-    seriesWeight, setSeriesWeight,
-    seriesReps, setSeriesReps,
-    localSeriesList, setLocalSeriesList,
-    addSeriesToLocalList, removeSeriesFromLocalList,
-    handleSaveWorkout, handleDeleteWorkout,
-    progressionData, fetchProgression,
-    handleUpdateWorkout
+  // 1. Wstępna walidacja obecności pól
+  if (!email || !password || !nick) {
+    return res.status(400).json({ error: "Wszystkie pola (email, password, nick) są wymagane!" });
   }
-}
+
+  // 2. Sanitization & Trim (oczyszczanie ze skrajnych spacji)
+  email = email.trim();
+  nick = nick.trim();
+
+  // 3. Twarda walidacja długości (Input Length Validation)
+  if (nick.length < 2 || nick.length > 50) {
+    return res.status(400).json({ error: "Nick musi mieć od 2 do 50 znaków!" });
+  }
+
+  if (email.length > 254) {
+    return res.status(400).json({ error: "Adres e-mail jest zbyt długi!" });
+  }
+
+  if (password.length < 8 || password.length > 100) {
+    return res.status(400).json({ error: "Hasło musi mieć od 8 do 100 znaków!" });
+  }
+
+  try {
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    const query = `
+      INSERT INTO users (email, password_hash, nick) 
+      VALUES ($1, $2, $3) 
+      RETURNING id, email, nick, role, created_at
+    `;
+    const result = await pool.query(query, [email, passwordHash, nick]);
+
+    res.status(201).json({ message: "Użytkownik zarejestrowany! 🏋️‍♂️", user: result.rows[0] });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(400).json({ error: "Ten adres e-mail lub nick jest już zajęty!" });
+    }
+    res.status(500).json({ error: "Błąd serwera podczas rejestracji", details: error.message });
+  }
+});
+
+// Logowanie użytkownika
+router.post('/login', authLimiter, async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email i hasło są wymagane!" });
+  }
+
+  try {
+    const userResult = await pool.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [email]);
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
+    }
+
+    const user = userResult.rows[0];
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: "Nieprawidłowy e-mail lub hasło!" });
+    }
+
+    // FIX SECURE: Dodajemy jawnie "role: user.role" do tokenu, oszczędzając zapytania SQL w middleware
+    const token = jwt.sign(
+      { userId: user.id, nick: user.nick, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      message: "Zalogowano pomyślnie! 🦾",
+      token,
+      user: { 
+        id: user.id, 
+        email: user.email, 
+        nick: user.nick, 
+        isPremium: user.is_premium,
+        role: user.role // Przekazujemy również do stanu aplikacji na frontendzie
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas logowania", details: error.message });
+  }
+});
+
+// Pobranie aktualnych danych profilu użytkownika (w tym świeżego streaka)
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    // Uzupełniamy zapytanie o kolumnę "role" dla synchronizacji twardej w App.jsx
+    const result = await pool.query(
+      'SELECT id, email, nick, current_streak, is_premium, weekly_target_workouts, role FROM users WHERE id = $1',
+      [req.user.userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas pobierania profilu", details: error.message });
+  }
+});
+
+// Aktualizacja celu tygodniowego
+router.put('/weekly-target', authenticateToken, async (req, res) => {
+  const { weeklyTarget } = req.body;
+  const userId = req.user.userId;
+
+  const targetNum = parseInt(weeklyTarget);
+  if (isNaN(targetNum) || targetNum < 1 || targetNum > 7) {
+    return res.status(400).json({ error: "Cel tygodniowy musi być liczbą od 1 do 7!" });
+  }
+
+  try {
+    const query = `
+      UPDATE users 
+      SET weekly_target_workouts = $1 
+      WHERE id = $2 
+      RETURNING weekly_target_workouts
+    `;
+    const result = await pool.query(query, [targetNum, userId]);
+    
+    res.json({ 
+      message: "Cel zaktualizowany! 🎯", 
+      weekly_target_workouts: result.rows[0].weekly_target_workouts 
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas aktualizacji celu", details: error.message });
+  }
+});
+
+module.exports = router;
 </file>
 
 <file path="frontend/src/main.jsx">
@@ -2667,303 +2463,6 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>,
 )
-</file>
-
-<file path="frontend/src/views/History.jsx">
-// frontend/src/views/History.jsx
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { API_BASE_URL } from '../config/api'
-import WorkoutCalendar from '../components/WorkoutCalendar' // 🛠️ Zaimportowanie modułu kalendarza
-
-// 🛠️ Słownik stylizacji wizualnej typów serii w historii (spójny z NewWorkout)
-const SERIES_TYPES = {
-  NORMAL: { label: (order) => order, bg: 'bg-zinc-800/20 text-textSecondary border-zinc-800' },
-  WARMUP: { label: () => 'W', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/20 shadow-[0_0_8px_rgba(245,158,11,0.05)]' },
-  DROP_SET: { label: () => 'D', bg: 'bg-purple-500/10 text-purple-400 border-purple-500/20 shadow-[0_0_8px_rgba(168,85,247,0.05)]' },
-  FAILURE: { label: () => 'F', bg: 'bg-red-500/10 text-red-400 border-red-500/20 shadow-[0_0_8px_rgba(239,68,68,0.05)]' }
-}
-
-export default function History({ 
-  workoutsHistory, 
-  onDeleteWorkout, 
-  onLoadMoreWorkouts, 
-  hasMoreWorkouts, 
-  onUpdateWorkout,
-  user,  
-  token,
-  showToast,
-  totalWorkoutsCount
-}) {
-  const navigate = useNavigate()
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false)
-  const [workoutToDelete, setWorkoutToDelete] = useState(null)
-  const [isExporting, setIsExporting] = useState(false)
-
-  const [editingSessionId, setEditingSessionId] = useState(null)
-  const [editName, setEditName] = useState('')
-  const [editComment, setEditComment] = useState('')
-
-  const isPremiumUser = user?.is_premium || user?.isPremium || user?.role === 'TRAINER';
-  const remaining = Math.max(0, totalWorkoutsCount - workoutsHistory.length);
-
-  const handleExportCSV = async () => {
-    if (!isPremiumUser) {
-      setIsPremiumModalOpen(true);
-      return;
-    }
-
-    setIsExporting(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts/export`, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Nie udało się pobrać pliku.');
-      }
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `gympatico_export_${new Date().toISOString().slice(0,10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      
-      window.URL.revokeObjectURL(url);
-      a.remove();
-    } catch (err) {
-      if (showToast) {
-        showToast(`❌ Błąd eksportu: ${err.message}`, "error")
-      }
-    } finally {
-      setIsExporting(false);
-    }
-  }
-
-  const initiateDelete = (id) => {
-    setWorkoutToDelete(id)
-    setIsModalOpen(true)
-  }
-
-  const confirmDelete = () => {
-    if (workoutToDelete) {
-      onDeleteWorkout(workoutToDelete)
-    }
-    closeModal()
-  }
-
-  const closeModal = () => {
-    setIsModalOpen(false)
-    setWorkoutToDelete(null)
-  }
-
-  const startEditing = (w) => {
-    setEditingSessionId(w.id)
-    setEditName(w.name)
-    setEditComment(w.comment || '')
-  }
-
-  const cancelEditing = () => {
-    setEditingSessionId(null)
-    setEditName('')
-    setEditComment('')
-  }
-
-  const saveEditing = (id) => {
-    if (!editName.trim()) return
-    onUpdateWorkout(id, editName.trim(), editComment.trim())
-    setEditingSessionId(null)
-  }
-
-  return (
-    <section className="bg-gymCard border border-zinc-800/40 p-4 md:p-6 rounded-xl text-left shadow-lg relative">
-      
-      {/* NAGŁÓWEK HISTORII TRENINGÓW */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-zinc-800 pb-4 mb-4 gap-4">
-        <div>
-          <h2 className="text-xl md:text-2xl font-bold tracking-tight">Twoja historia aktywności 📅</h2>
-          <p className="text-zinc-400 text-xs mt-0.5">Wszystkie zarejestrowane sesje robocze w laboratoriach GymPatico.</p>
-        </div>
-
-        <button
-          onClick={handleExportCSV}
-          disabled={isExporting || workoutsHistory.length === 0}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all active:scale-95 cursor-pointer shadow-md border ${
-            isPremiumUser
-              ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white'
-              : 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
-          } disabled:opacity-40`}
-        >
-          {isExporting ? '🔄 Generowanie...' : isPremiumUser ? '📊 Eksportuj do CSV' : '🔒 Eksportuj do CSV (PREMIUM)'}
-        </button>
-      </div>
-
-      {/* 🛠️ [INTEGRACJA] Miesięczny kalendarz regularności treningowej z kropkami sesji */}
-      <WorkoutCalendar workoutsHistory={workoutsHistory} />
-      
-      {workoutsHistory.length === 0 ? (
-        <p className="text-zinc-500 italic mt-4 text-center py-6">Brak wpisów w historii.</p>
-      ) : (
-        <div className="flex flex-col gap-4 mt-4">
-          {workoutsHistory.map(w => {
-            const isEditing = w.id === editingSessionId
-
-            return (
-              <div key={w.id} className="bg-[#2d2d2d] p-4 md:p-5 rounded-lg border-l-4 border-gymRed shadow-md transition-all hover:border-l-6">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 sm:gap-4">
-                  <div className="flex-1 flex flex-col gap-2">
-                    {isEditing ? (
-                      <div className="flex flex-col gap-2 max-w-md w-full">
-                        <input
-                          type="text"
-                          value={editName}
-                          onChange={e => setEditName(e.target.value)}
-                          className="p-2 text-sm font-bold text-white bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
-                          placeholder="Nazwa treningu"
-                          required
-                        />
-                        <input
-                          type="text"
-                          value={editComment}
-                          onChange={e => setEditComment(e.target.value)}
-                          className="p-2 text-xs text-zinc-300 bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
-                          placeholder="Dodaj komentarz (opcjonalnie)..."
-                        />
-                      </div>
-                    ) : (
-                      <>
-                        <h3 className="text-base md:text-lg font-bold text-gymRed leading-tight">{w.name}</h3>
-                        <span className="text-zinc-400 text-xs">{new Date(w.startedAt).toLocaleString()}</span>
-                      </>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    {isEditing ? (
-                      <>
-                        <button onClick={cancelEditing} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white cursor-pointer">Anuluj</button>
-                        <button onClick={() => saveEditing(w.id)} className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-bold transition-all hover:bg-emerald-500 active:scale-95 cursor-pointer shadow-md">Zapisz ✓</button>
-                      </>
-                    ) : (
-                      <>
-                        <button onClick={() => startEditing(w)} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white active:scale-95 cursor-pointer">Edytuj ✏️</button>
-                        <button onClick={() => initiateDelete(w.id)} className="px-3 py-1.5 rounded border border-gymRed text-gymRed text-xs font-bold bg-transparent transition-all hover:bg-gymRed hover:text-white active:scale-95 cursor-pointer">Usuń ✕</button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {!isEditing && w.comment && (
-                  <p className="text-zinc-400 italic mt-3 text-xs md:text-sm bg-zinc-800/40 p-2 rounded border-l border-zinc-700">
-                    &quot;{w.comment}&quot;
-                  </p>
-                )}
-                
-                {/* COMFORT SCROLL NA MOBILE */}
-                <div className="overflow-x-auto mt-4 -mx-4 px-4 sm:mx-0 sm:px-0 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)] sm:[mask-image:none]">
-                  <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
-                    <thead>
-                      <tr className="text-left border-b border-zinc-700 text-zinc-400 text-xs font-semibold uppercase tracking-wider">
-                        <th className="pb-2">Ćwiczenie</th>
-                        <th className="pb-2 text-center w-16">Seria</th>
-                        <th className="pb-2 text-center">Obciążenie</th>
-                        <th className="pb-2 text-center">Reps</th>
-                        <th className="pb-2 text-right">Est. 1RM</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-800 text-xs md:text-sm">
-                      {w.series.map(s => {
-                        // Pobieramy konfigurację dla określonego typu serii z bazy
-                        const currentCfg = SERIES_TYPES[s.seriesType || 'NORMAL']
-                        const renderedLabel = currentCfg.label(s.order)
-
-                        return (
-                          <tr 
-                            key={s.id} 
-                            className={`transition-colors ${
-                              s.seriesType === 'WARMUP' ? 'bg-amber-500/[0.01] hover:bg-amber-500/[0.03]'
-                              : s.seriesType === 'DROP_SET' ? 'bg-purple-500/[0.01] hover:bg-purple-500/[0.03]'
-                              : s.seriesType === 'FAILURE' ? 'bg-red-500/[0.01] hover:bg-red-500/[0.03]'
-                              : 'hover:bg-zinc-800/30'
-                            }`}
-                          >
-                            <td className="py-2.5 font-medium pr-2 text-zinc-200">{s.exerciseName}</td>
-                            
-                            {/* ODZWIERCIEDLENIE BADGE TYPU SERII Z LOGGERA */}
-                            <td className="py-2.5 text-center flex justify-center">
-                              <span className={`inline-flex w-6 h-6 rounded-md border items-center justify-center font-mono text-[10px] font-black tracking-tighter ${currentCfg.bg}`}>
-                                {renderedLabel}
-                              </span>
-                            </td>
-
-                            <td className="py-2.5 text-center text-zinc-200 font-semibold">{s.weight} kg</td>
-                            <td className="py-2.5 text-center text-zinc-400">{s.reps}</td>
-                            <td className="py-2.5 text-right text-gymRed font-bold">
-                              {s.estimatedOneRM ? `${parseFloat(s.estimatedOneRM).toFixed(1)} kg` : '-'}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )
-          })}
-
-          {hasMoreWorkouts && (
-            <button onClick={onLoadMoreWorkouts} className="w-full py-3.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white border border-zinc-800 rounded-lg font-bold text-sm transition-all active:scale-[0.99] cursor-pointer mt-2">
-              Załaduj więcej ({remaining} pozostało)
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* MODAL USUWANIA TRENINGU */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
-          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
-            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Usunąć ten trening?</h3>
-            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja jest bezpowrotna. Dane o serii oraz rekordy 1RM znikną z profilu.</p>
-            <div className="flex gap-3">
-              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
-              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm shadow-lg shadow-red-950/20 cursor-pointer">Tak, usunąć</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL BLOKADY EKSPORTU PREMIUM */}
-      {isPremiumModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div onClick={() => setIsPremiumModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
-          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymPremium text-xl">🔒</div>
-            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Funkcja Premium</h3>
-            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Eksport historii treningów do zewnętrznego arkusza kalkulacyjnego CSV jest dostępny wyłącznie dla posiadaczy konta Premium.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setIsPremiumModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
-              <button 
-                onClick={() => { setIsPremiumModalOpen(false); navigate('/social'); }} 
-                className="flex-1 py-2.5 bg-gradient-to-r from-amber-500 to-gymPremium hover:opacity-90 text-gymDark font-black rounded-lg text-sm cursor-pointer shadow-xl shadow-amber-950/20"
-              >
-                Przejdź na Premium
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
-  )
-}
 </file>
 
 <file path="frontend/src/views/Social.jsx">
@@ -3193,7 +2692,7 @@ CREATE TABLE workout_sessions (
 CREATE TABLE log_series (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
-    exercise_id UUID REFERENCES exercises(id) ON DELETE CASCADE,
+    exercise_id UUID REFERENCES exercises(id) ON DELETE RESTRICT,
     weight NUMERIC NOT NULL,
     reps INT NOT NULL,
     series_order INT NOT NULL,
@@ -3219,6 +2718,7 @@ CREATE TABLE template_series (
     weight NUMERIC(6,2) NOT NULL,
     reps INT NOT NULL,
     series_order INT NOT NULL
+    series_type VARCHAR(20) DEFAULT 'NORMAL' NOT NULL
 );
 
 -- Indeksy wydajnościowe dla klastrowania szablonów
@@ -3259,6 +2759,305 @@ INSERT INTO exercises (name, muscle_group) VALUES
   ('Wyciskanie francuskie ze sztangą łamaną leżąc', 'Triceps'),
   ('Prostowanie przedramion na wyciągu (linki)', 'Triceps')
 ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
+</file>
+
+<file path="frontend/src/views/History.jsx">
+// frontend/src/views/History.jsx
+import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { API_BASE_URL } from '../config/api'
+import WorkoutCalendar from '../components/WorkoutCalendar' // 🛠️ Zaimportowanie modułu kalendarza
+
+// 🛠️ Słownik stylizacji wizualnej typów serii w historii (spójny z NewWorkout)
+const SERIES_TYPES = {
+  NORMAL: { label: (order) => order, bg: 'bg-zinc-800/20 text-textSecondary border-zinc-800' },
+  WARMUP: { label: () => 'W', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/20 shadow-[0_0_8px_rgba(245,158,11,0.05)]' },
+  DROP_SET: { label: () => 'D', bg: 'bg-purple-500/10 text-purple-400 border-purple-500/20 shadow-[0_0_8px_rgba(168,85,247,0.05)]' },
+  FAILURE: { label: () => 'F', bg: 'bg-red-500/10 text-red-400 border-red-500/20 shadow-[0_0_8px_rgba(239,68,68,0.05)]' }
+}
+
+export default function History({ 
+  workoutsHistory, 
+  onDeleteWorkout, 
+  onLoadMoreWorkouts, 
+  hasMoreWorkouts, 
+  onUpdateWorkout,
+  user,  
+  token,
+  showToast,
+  totalWorkoutsCount
+}) {
+  const navigate = useNavigate()
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false)
+  const [workoutToDelete, setWorkoutToDelete] = useState(null)
+  const [isExporting, setIsExporting] = useState(false)
+
+  const [editingSessionId, setEditingSessionId] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [editComment, setEditComment] = useState('')
+
+  const isPremiumUser = user?.is_premium || user?.isPremium || user?.role === 'TRAINER';
+  const remaining = Math.max(0, totalWorkoutsCount - workoutsHistory.length);
+
+  const handleExportCSV = async () => {
+    if (!isPremiumUser) {
+      setIsPremiumModalOpen(true);
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts/export`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Nie udało się pobrać pliku.');
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gympatico_export_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (err) {
+      if (showToast) {
+        showToast(`❌ Błąd eksportu: ${err.message}`, "error")
+      }
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  const initiateDelete = (id) => {
+    setWorkoutToDelete(id)
+    setIsModalOpen(true)
+  }
+
+  const confirmDelete = () => {
+    if (workoutToDelete) {
+      onDeleteWorkout(workoutToDelete)
+    }
+    closeModal()
+  }
+
+  const closeModal = () => {
+    setIsModalOpen(false)
+    setWorkoutToDelete(null)
+  }
+
+  const startEditing = (w) => {
+    setEditingSessionId(w.id)
+    setEditName(w.name)
+    setEditComment(w.comment || '')
+  }
+
+  const cancelEditing = () => {
+    setEditingSessionId(null)
+    setEditName('')
+    setEditComment('')
+  }
+
+  const saveEditing = async (id) => {
+    if (!editName.trim()) return;
+    const isSuccess = await onUpdateWorkout(id, editName.trim(), editComment.trim());
+    if (isSuccess) {
+      setEditingSessionId(null);
+    }
+  }
+
+  return (
+    <section className="bg-gymCard border border-zinc-800/40 p-4 md:p-6 rounded-xl text-left shadow-lg relative">
+      
+      {/* NAGŁÓWEK HISTORII TRENINGÓW */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-zinc-800 pb-4 mb-4 gap-4">
+        <div>
+          <h2 className="text-xl md:text-2xl font-bold tracking-tight">Twoja historia aktywności 📅</h2>
+          <p className="text-zinc-400 text-xs mt-0.5">Wszystkie zarejestrowane sesje robocze w laboratoriach GymPatico.</p>
+        </div>
+
+        <button
+          onClick={handleExportCSV}
+          disabled={isExporting || workoutsHistory.length === 0}
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all active:scale-95 cursor-pointer shadow-md border ${
+            isPremiumUser
+              ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-white'
+              : 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
+          } disabled:opacity-40`}
+        >
+          {isExporting ? '🔄 Generowanie...' : isPremiumUser ? '📊 Eksportuj do CSV' : '🔒 Eksportuj do CSV (PREMIUM)'}
+        </button>
+      </div>
+
+      {/* 🛠️ [INTEGRACJA] Miesięczny kalendarz regularności treningowej z kropkami sesji */}
+      <WorkoutCalendar workoutsHistory={workoutsHistory} />
+      
+      {workoutsHistory.length === 0 ? (
+        <p className="text-zinc-500 italic mt-4 text-center py-6">Brak wpisów w historii.</p>
+      ) : (
+        <div className="flex flex-col gap-4 mt-4">
+          {workoutsHistory.map(w => {
+            const isEditing = w.id === editingSessionId
+
+            return (
+              <div key={w.id} className="bg-[#2d2d2d] p-4 md:p-5 rounded-lg border-l-4 border-gymRed shadow-md transition-all hover:border-l-6">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 sm:gap-4">
+                  <div className="flex-1 flex flex-col gap-2">
+                    {isEditing ? (
+                      <div className="flex flex-col gap-2 max-w-md w-full">
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={e => setEditName(e.target.value)}
+                          className="p-2 text-sm font-bold text-white bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
+                          placeholder="Nazwa treningu"
+                          required
+                        />
+                        <input
+                          type="text"
+                          value={editComment}
+                          onChange={e => setEditComment(e.target.value)}
+                          className="p-2 text-xs text-zinc-300 bg-zinc-900 border border-zinc-700 rounded-lg outline-none focus:border-gymRed"
+                          placeholder="Dodaj komentarz (opcjonalnie)..."
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <h3 className="text-base md:text-lg font-bold text-gymRed leading-tight">{w.name}</h3>
+                        <span className="text-zinc-400 text-xs">{new Date(w.startedAt).toLocaleString()}</span>
+                      </>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    {isEditing ? (
+                      <>
+                        <button onClick={cancelEditing} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white cursor-pointer">Anuluj</button>
+                        <button onClick={() => saveEditing(w.id)} className="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-bold transition-all hover:bg-emerald-500 active:scale-95 cursor-pointer shadow-md">Zapisz ✓</button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => startEditing(w)} className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 text-xs font-bold bg-transparent transition-all hover:bg-zinc-700 hover:text-white active:scale-95 cursor-pointer">Edytuj ✏️</button>
+                        <button onClick={() => initiateDelete(w.id)} className="px-3 py-1.5 rounded border border-gymRed text-gymRed text-xs font-bold bg-transparent transition-all hover:bg-gymRed hover:text-white active:scale-95 cursor-pointer">Usuń ✕</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {!isEditing && w.comment && (
+                  <p className="text-zinc-400 italic mt-3 text-xs md:text-sm bg-zinc-800/40 p-2 rounded border-l border-zinc-700">
+                    &quot;{w.comment}&quot;
+                  </p>
+                )}
+                
+                {/* COMFORT SCROLL NA MOBILE */}
+                <div className="overflow-x-auto mt-4 -mx-4 px-4 sm:mx-0 sm:px-0 [mask-image:linear-gradient(to_right,black_85%,transparent_100%)] sm:[mask-image:none]">
+                  <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
+                    <thead>
+                      <tr className="text-left border-b border-zinc-700 text-zinc-400 text-xs font-semibold uppercase tracking-wider">
+                        <th className="pb-2">Ćwiczenie</th>
+                        <th className="pb-2 text-center w-16">Seria</th>
+                        <th className="pb-2 text-center">Obciążenie</th>
+                        <th className="pb-2 text-center">Reps</th>
+                        <th className="pb-2 text-right">Est. 1RM</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800 text-xs md:text-sm">
+                      {w.series.map(s => {
+                        // Pobieramy konfigurację dla określonego typu serii z bazy
+                        const currentCfg = SERIES_TYPES[s.seriesType || 'NORMAL']
+                        const renderedLabel = currentCfg.label(s.order)
+
+                        return (
+                          <tr 
+                            key={s.id} 
+                            className={`transition-colors ${
+                              s.seriesType === 'WARMUP' ? 'bg-amber-500/[0.01] hover:bg-amber-500/[0.03]'
+                              : s.seriesType === 'DROP_SET' ? 'bg-purple-500/[0.01] hover:bg-purple-500/[0.03]'
+                              : s.seriesType === 'FAILURE' ? 'bg-red-500/[0.01] hover:bg-red-500/[0.03]'
+                              : 'hover:bg-zinc-800/30'
+                            }`}
+                          >
+                            <td className="py-2.5 font-medium pr-2 text-zinc-200">{s.exerciseName}</td>
+                            
+                            {/* ODZWIERCIEDLENIE BADGE TYPU SERII Z LOGGERA */}
+                            <td className="py-2.5 text-center flex justify-center">
+                              <span className={`inline-flex w-6 h-6 rounded-md border items-center justify-center font-mono text-[10px] font-black tracking-tighter ${currentCfg.bg}`}>
+                                {renderedLabel}
+                              </span>
+                            </td>
+
+                            <td className="py-2.5 text-center text-zinc-200 font-semibold">{s.weight} kg</td>
+                            <td className="py-2.5 text-center text-zinc-400">{s.reps}</td>
+                            <td className="py-2.5 text-right text-gymRed font-bold">
+                              {s.estimatedOneRM ? `${parseFloat(s.estimatedOneRM).toFixed(1)} kg` : '-'}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })}
+
+          {hasMoreWorkouts && (
+            <button onClick={onLoadMoreWorkouts} className="w-full py-3.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white border border-zinc-800 rounded-lg font-bold text-sm transition-all active:scale-[0.99] cursor-pointer mt-2">
+              Załaduj więcej ({remaining} pozostało)
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* MODAL USUWANIA TRENINGU */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={closeModal} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymRed text-xl">⚠️</div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Usunąć ten trening?</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Ta operacja jest bezpowrotna. Dane o serii oraz rekordy 1RM znikną z profilu.</p>
+            <div className="flex gap-3">
+              <button onClick={closeModal} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
+              <button onClick={confirmDelete} className="flex-1 py-2.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm shadow-lg shadow-red-950/20 cursor-pointer">Tak, usunąć</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL BLOKADY EKSPORTU PREMIUM */}
+      {isPremiumModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div onClick={() => setIsPremiumModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+          <div className="bg-gymCard border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative z-10 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gymPremium text-xl">🔒</div>
+            <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Funkcja Premium</h3>
+            <p className="text-zinc-400 text-sm mb-6 leading-relaxed">Eksport historii treningów do zewnętrznego arkusza kalkulacyjnego CSV jest dostępny wyłącznie dla posiadaczy konta Premium.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setIsPremiumModalOpen(false)} className="flex-1 py-2.5 bg-[#2d2d2d] hover:bg-zinc-700 text-white font-semibold rounded-lg text-sm border border-zinc-800 cursor-pointer">Anuluj</button>
+              <button 
+                onClick={() => { setIsPremiumModalOpen(false); navigate('/social'); }} 
+                className="flex-1 py-2.5 bg-gradient-to-r from-amber-500 to-gymPremium hover:opacity-90 text-gymDark font-black rounded-lg text-sm cursor-pointer shadow-xl shadow-amber-950/20"
+              >
+                Przejdź na Premium
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
 </file>
 
 <file path="backend/index.js">
@@ -3337,6 +3136,184 @@ if (require.main === module) {
 module.exports = app;
 </file>
 
+<file path="frontend/src/hooks/useWorkouts.js">
+// frontend/src/hooks/useWorkouts.js
+import { useState, useCallback, useRef } from 'react'
+import { API_BASE_URL } from '../config/api'
+
+export function useWorkouts(token, exercises, showToast) {
+  const [workoutsHistory, setWorkoutsHistory] = useState([])
+  const [totalWorkoutsCount, setTotalWorkoutsCount] = useState(0)
+  const [hasMoreWorkouts, setHasMoreWorkouts] = useState(true)
+
+  const [workoutName, setWorkoutName] = useState('')
+  const [workoutComment, setWorkoutComment] = useState('')
+  const [localSeriesList, setLocalSeriesList] = useState([])
+
+  const [currentSelectedExercise, setCurrentSelectedExercise] = useState('')
+  const [seriesWeight, setSeriesWeight] = useState('')
+  const [seriesReps, setSeriesReps] = useState('')
+
+  const [progressionData, setProgressionData] = useState([])
+
+  // 🔴 SEMAFOR BLOKUJĄCY PODWÓJNE KLIKNIĘCIA W PAGINACJĘ
+  const isFetchingRef = useRef(false)
+
+  const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
+    // Jeśli nie ma tokenu lub request już trwa -> przerywamy
+    if (!token || isFetchingRef.current) return
+    
+    // 🔴 POPRAWKA: Deklaracja limitu w prawidłowym zasięgu (Scope)
+    const limit = 20
+    isFetchingRef.current = true // Zakładamy blokadę
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts?limit=${limit}&offset=${currentLength}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Błąd historii treningów')
+      const data = await res.json() // Oczekujemy { workouts, totalCount }
+
+      if (isAppend) {
+        setWorkoutsHistory(prev => [...prev, ...data.workouts])
+        setHasMoreWorkouts(currentLength + data.workouts.length < data.totalCount)
+      } else {
+        setWorkoutsHistory(data.workouts)
+        setHasMoreWorkouts(data.workouts.length < data.totalCount)
+      }
+      setTotalWorkoutsCount(data.totalCount)
+    } catch (err) {
+      console.error('Błąd pobierania historii:', err.message)
+    } finally {
+      // 🔴 ZDEJMOWANIE BLOKADY niezależnie od tego, czy był sukces czy błąd
+      isFetchingRef.current = false 
+    }
+  }, [token])
+
+  const addSeriesToLocalList = useCallback((e) => {
+    e?.preventDefault()
+    if (!seriesWeight || !seriesReps || !currentSelectedExercise) {
+      if (showToast) showToast('Wpisz wagę i powtórzenia! ⚠️', 'error')
+      return
+    }
+    const ex = exercises.find(item => item.id === currentSelectedExercise)
+    if (!ex) return
+
+    const weight = parseFloat(seriesWeight)
+    const reps = parseInt(seriesReps)
+    const estimatedOneRm = reps >= 1 && reps <= 12 ? weight * (1 + reps / 30) : null
+
+    const newSeries = {
+      exerciseId: currentSelectedExercise,
+      exerciseName: ex.name,
+      weight,
+      reps,
+      order: localSeriesList.filter(s => s.exerciseId === currentSelectedExercise).length + 1,
+      estimatedOneRm
+    }
+
+    setLocalSeriesList(prev => [...prev, newSeries])
+    setSeriesWeight('')
+    setSeriesReps('')
+  }, [currentSelectedExercise, seriesWeight, seriesReps, localSeriesList, exercises, showToast])
+
+  const removeSeriesFromLocalList = useCallback((index) => {
+    setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
+  }, [])
+
+  const handleSaveWorkout = useCallback(async (seriesOverride) => {
+    const seriesToSave = seriesOverride ?? localSeriesList
+
+    if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
+    if (seriesToSave.length === 0) throw new Error('Nie można zapisać pustego treningu!')
+
+    const res = await fetch(`${API_BASE_URL}/api/workouts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        name: workoutName,
+        comment: workoutComment,
+        series: seriesToSave.map(s => ({
+          exerciseId: s.exerciseId,
+          weight: s.weight,
+          reps: s.reps,
+          order: s.order,
+          estimatedOneRm: s.estimatedOneRm
+        }))
+      })
+    })
+
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Błąd zapisu treningu')
+
+    setWorkoutName('')
+    setWorkoutComment('')
+    setLocalSeriesList([])
+    return data
+  }, [token, workoutName, workoutComment, localSeriesList])
+
+  const handleDeleteWorkout = useCallback(async (sessionId) => {
+    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć treningu.')
+    return data
+  }, [token])
+
+  const fetchProgression = useCallback(async (exerciseId) => {
+    if (!token || !exerciseId) return
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts/progression/${exerciseId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Błąd pobierania danych progresji')
+      const data = await res.json()
+      setProgressionData(data)
+    } catch (err) {
+      console.error('Błąd pobierania progresu siłowego:', err.message)
+    }
+  }, [token])
+
+  const handleUpdateWorkout = useCallback(async (sessionId, newName, newComment) => {
+    if (!token) return
+    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ name: newName, comment: newComment })
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować treningu.')
+
+    setWorkoutsHistory(prev =>
+      prev.map(w => w.id === sessionId ? { ...w, name: newName, comment: newComment } : w)
+    )
+    return data
+  }, [token])
+
+  return {
+    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, totalWorkoutsCount, fetchWorkoutsData,
+    workoutName, setWorkoutName,
+    workoutComment, setWorkoutComment,
+    currentSelectedExercise, setCurrentSelectedExercise,
+    seriesWeight, setSeriesWeight,
+    seriesReps, setSeriesReps,
+    localSeriesList, setLocalSeriesList,
+    addSeriesToLocalList, removeSeriesFromLocalList,
+    handleSaveWorkout, handleDeleteWorkout,
+    progressionData, fetchProgression,
+    handleUpdateWorkout
+  }
+}
+</file>
+
 <file path="backend/routes/friends.js">
 // backend/routes/friends.js
 const express = require('express');
@@ -3346,9 +3323,7 @@ const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
 const { getUserPlan } = require('../utils/userHelpers'); 
 
-// =========================================================================
 // 1. WYSŁANIE ZAPROSZENIA DO ZNAJOMYCH
-// =========================================================================
 router.post('/request', authenticateToken, checkLimits('friends'), async (req, res) => {
   const { targetNick } = req.body;
   const senderId = req.user.userId;
@@ -3356,7 +3331,8 @@ router.post('/request', authenticateToken, checkLimits('friends'), async (req, r
   if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
 
   try {
-    const userResult = await pool.query('SELECT id FROM users WHERE nick = $1', [targetNick]);
+    // 🔴 POPRAWKA: Wyszukiwanie niewrażliwe na wielkość liter (Case-Insensitive)
+    const userResult = await pool.query('SELECT id FROM users WHERE LOWER(nick) = LOWER($1)', [targetNick.trim()]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
     }
@@ -3374,16 +3350,14 @@ router.post('/request', authenticateToken, checkLimits('friends'), async (req, r
       return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
     }
 
-    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1, $2, \'PENDING\')', [senderId, receiverId]);
+    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1::uuid, $2::uuid, \'PENDING\')', [senderId, receiverId]);
     res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
   } catch (error) {
     res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
   }
 });
 
-// =========================================================================
-// 2. POBRANIE RANKINGU ZNAJOMYCH (Zgłoszenie ciągłości streaków)
-// =========================================================================
+// 2. POBRANIE RANKINGU ZNAJOMYCH
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
@@ -3416,9 +3390,7 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// =========================================================================
 // 3. SKRZYNKA ODBIORCZA ZAPROSZEŃ
-// =========================================================================
 router.get('/requests', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
@@ -3435,23 +3407,18 @@ router.get('/requests', authenticateToken, async (req, res) => {
   }
 });
 
-// =========================================================================
-// 4. AKCEPTACJA ZAPROSZENIA (W pełni załatana faza błędu parametrów)
-// =========================================================================
+// 4. AKCEPTACJA ZAPROSZENIA
 router.post('/accept', authenticateToken, async (req, res) => {
   const { friendshipId } = req.body;
   const userId = req.user.userId; 
 
-  if (!friendshipId) {
-    return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
-  }
+  if (!friendshipId) return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
 
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
 
-    // KROK A: Pobieramy rekord zaproszenia z blokadą wiersza relacji
     const friendshipRes = await client.query(
       `SELECT sender_id, receiver_id FROM friendships 
        WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING' FOR UPDATE`,
@@ -3460,22 +3427,17 @@ router.post('/accept', authenticateToken, async (req, res) => {
 
     if (friendshipRes.rowCount === 0) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ 
-        error: "Zaproszenie nie istnieje, zostało już przetworzone lub nie masz uprawnień do jego akceptacji." 
-      });
+      return res.status(404).json({ error: "Zaproszenie nie istnieje lub zostało przetworzone." });
     }
 
     const senderId = friendshipRes.rows[0].sender_id;
 
-    // KROK B: Defensywne sortowanie ID w celu uniknięcia zakleszczeń (Deadlocks) bazy danych
     const firstId = userId < senderId ? userId : senderId;
     const secondId = userId < senderId ? senderId : userId;
 
-    // 🔴 POPRAWKA: Oba zapytania używają teraz niezależnego $1::uuid, ponieważ to dwa odrębne wywołania funkcji!
     await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [firstId]);
     await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [secondId]);
 
-    // KROK C: Weryfikacja limitu gangu po stronie ODBIORCY
     const receiverPlan = await getUserPlan(userId, client);
     if (receiverPlan && !receiverPlan.is_premium && receiverPlan.role !== 'TRAINER') {
       const countRes = await client.query(
@@ -3485,13 +3447,10 @@ router.post('/accept', authenticateToken, async (req, res) => {
       );
       if (parseInt(countRes.rows[0].count, 10) >= 5) {
         await client.query('ROLLBACK');
-        return res.status(403).json({ 
-          error: "Nie możesz zaakceptować zaproszenia. Osiągnięto limit planu darmowego (maksymalnie 5 znajomych w gangu). Odblokuj Premium 👥!" 
-        });
+        return res.status(403).json({ error: "Osiągnięto limit planu darmowego (5 znajomych w gangu). Odblokuj Premium!" });
       }
     }
 
-    // KROK D: Weryfikacja limitu po stronie NADAWCY
     const senderPlan = await getUserPlan(senderId, client);
     if (senderPlan && !senderPlan.is_premium && senderPlan.role !== 'TRAINER') {
       const countRes = await client.query(
@@ -3501,52 +3460,37 @@ router.post('/accept', authenticateToken, async (req, res) => {
       );
       if (parseInt(countRes.rows[0].count, 10) >= 5) {
         await client.query('ROLLBACK');
-        return res.status(403).json({ 
-          error: "Nie można zaakceptować zaproszenia. Nadawca osiągnął już maksymalny limit 5 znajomych w swoim darmowym gangu!" 
-        });
+        return res.status(403).json({ error: "Nadawca osiągnął już maksymalny limit 5 znajomych w swoim darmowym gangu!" });
       }
     }
 
-    // KROK E: Zmiana statusu znajomości na aktywną
-    await client.query(
-      "UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1::uuid",
-      [friendshipId]
-    );
-
+    await client.query("UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1::uuid", [friendshipId]);
     await client.query('COMMIT');
     res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error("❌ CRITICAL BACKEND ERROR IN POST /accept:", error);
-    res.status(500).json({ error: "Błąd serwera podczas akceptacji zaproszenia", details: error.message });
+    res.status(500).json({ error: "Błąd serwera podczas akceptacji", details: error.message });
   } finally {
     client.release();
   }
 });
 
-// =========================================================================
-// 5. ODRZUCENIE / USUNIĘCIE ZAPROSZENIA
-// =========================================================================
+// 5. ODRZUCENIE ZAPROSZENIA
 router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
   const { friendshipId } = req.params;
   const userId = req.user.userId;
 
   try {
-    const deleteQuery = `
-      DELETE FROM friendships 
-      WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING'
-    `;
-    const result = await pool.query(deleteQuery, [friendshipId, userId]);
-
+    const result = await pool.query(
+      "DELETE FROM friendships WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING'", 
+      [friendshipId, userId]
+    );
     if (result.rowCount === 0) {
-      return res.status(404).json({ 
-        error: "Nie znaleziono takiego zaproszenia lub nie masz uprawnień do jego odrzucenia." 
-      });
+      return res.status(404).json({ error: "Nie znaleziono zaproszenia." });
     }
-
     res.json({ message: "Zaproszenie zostało odrzucone. ✕" });
   } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas odrzucania zaproszenia", details: error.message });
+    res.status(500).json({ error: "Błąd odrzucania zaproszenia", details: error.message });
   }
 });
 
@@ -3894,14 +3838,14 @@ router.delete('/:sessionId', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    const checkQuery = 'SELECT id FROM workout_sessions WHERE id = $1 AND user_id = $2';
+    const checkQuery = 'SELECT id FROM workout_sessions WHERE id = $1::uuid AND user_id = $2::uuid';
     const checkResult = await pool.query(checkQuery, [sessionId, userId]);
 
     if (checkResult.rows.length === 0) {
       return res.status(404).json({ error: "Nie znaleziono treningu lub nie masz uprawnień do jego usunięcia." });
     }
 
-    await pool.query('DELETE FROM workout_sessions WHERE id = $1', [sessionId]);
+    await pool.query('DELETE FROM workout_sessions WHERE id = $1::uuid', [sessionId]);
     res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
   } catch (error) {
     res.status(500).json({ error: "Błąd serwera podczas usunięcia treningu", details: error.message });
@@ -3935,7 +3879,7 @@ router.patch('/:sessionId', authenticateToken, async (req, res) => {
     const updateQuery = `
       UPDATE workout_sessions 
       SET name = $1, comment = $2 
-      WHERE id = $3 AND user_id = $4 
+      WHERE id = $3::uuid AND user_id = $4::uuid 
       RETURNING id, name, comment
     `;
     // 🔴 POPRAWKA: Usunięto nadmiarowe wywołania .trim() z parametrów tablicy SQL
@@ -4280,8 +4224,13 @@ import StatsView from './views/StatsView'
 function AppContent() {
   const [token, setToken] = useState(() => localStorage.getItem('gp_token') || null);
   const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('gp_user');
-    return savedUser ? JSON.parse(savedUser) : null;
+    try {
+      const savedUser = localStorage.getItem('gp_user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch (error) {
+      localStorage.removeItem('gp_user');
+      return null;
+    }
   });
   const [exercises, setExercises] = useState([])
   const [stats, setStats] = useState(null)
@@ -4558,8 +4507,10 @@ function AppContent() {
     try {
       await handleUpdateWorkout(sessionId, name, comment);
       showToast('Trening został zaktualizowany! ✏️', 'success');
+      return true; // Sukces
     } catch (err) {
       showToast(err.message, 'error');
+      return false; // Porażka
     }
   };
 
