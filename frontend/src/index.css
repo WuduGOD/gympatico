@@ -2,20 +2,20 @@
 
 /* Komercyjny Design System GymPatico zmapowany na silnik Tailwind v4 */
 @theme {
-  --color-gymDark: #0c0e12;           /* Głębokie, eleganckie tło aplikacji */
-  --color-gymCard: #1a1f27;           /* Powierzchnia głównych sekcji i kart */
-  --color-gymCardSecondary: #222833;  /* Tło dla inputów, selektorów i wierszy list */
-  --color-gymRed: #ef4444;            /* Główny kolor akcji i CTA */
-  --color-gymRedHover: #dc2626;       /* Stan hover dla przycisków */
+  --color-gymDark: #0c0e12;
+  --color-gymCard: #1a1f27;
+  --color-gymCardSecondary: #222833;
+  --color-gymRed: #ef4444;
+  --color-gymRedHover: #dc2626;
   
   --color-gymSuccess: #22c55e;
   --color-gymWarning: #f59e0b;
   --color-gymDanger: #ef4444;
-  --color-gymPremium: #d4a853;        /* Prestiżowe złoto subskrypcji premium */
+  --color-gymPremium: #d4a853;
 
-  --color-textPrimary: #f4f6f9;       /* Czytelny biało-szary tekst główny */
-  --color-textSecondary: #9aa3b2;     /* Tekst pomocniczy i opisy */
-  --color-textMuted: #6b7280;         /* Wygaszone labele i placeholder */
+  --color-textPrimary: #f4f6f9;
+  --color-textSecondary: #9aa3b2;
+  --color-textMuted: #6b7280;
 
   /* Zaokrąglenia interfejsu mobilnego */
   --radius-gp-sm: 6px;
@@ -30,6 +30,14 @@
     color: var(--color-textPrimary);
     font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
-    padding-bottom: env(safe-area-inset-bottom, 0); /* Bezpieczna strefa dla iPhone'ów */
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    
+    /* 🔴 KLUCZOWA POPRAWKA: Blokuje opóźnienie 300ms przy klikaniu i wyłącza zoom przy podwójnym tapnięciu */
+    touch-action: manipulation; 
+  }
+
+  /* Opcjonalnie: Upewniamy się, że same inputy i przyciski również nie dziedziczą innych zachowań dotykowych */
+  input, button, select, textarea {
+    touch-action: manipulation;
   }
 }
