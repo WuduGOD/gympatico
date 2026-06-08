@@ -486,7 +486,8 @@ function AppContent() {
       <main className="pb-24 md:pb-0">
         <Routes>
           <Route path="/" element={!token ? <Landing /> : <Navigate to="/social" />} />
-          <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
+          <Route path="/login" element={!token ? <Login setToken={setToken} /> : <Navigate to="/" />} />
+          <Route path="/register" element={!token ? <Register /> : <Navigate to="/" />} />
           
           <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={onAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} workoutsHistory={workoutsHistory} templates={templates} /> : <Navigate to="/login" />} />
           
