@@ -2372,7 +2372,57 @@ const checkLimits = (resourceType) => {
 module.exports = checkLimits;
 </file>
 
+<file path="frontend/src/main.jsx">
+// frontend/src/main.jsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+
+// --- GLOBALNY INTERCEPTOR SIECIOWY (FAIL-SAFE FOR JWT EXPIRATION) ---
+const { fetch: originalFetch } = window;
+window.fetch = async (...args) => {
+  const response = await originalFetch(...args);
+  
+  // Przechwytujemy potencjalne błędy uwierzytelnienia/autoryzacji
+  if (response.status === 401 || response.status === 403) {
+    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+    
+    // BEZPIECZNIK 1: Ignorujemy próby logowania/rejestracji
+    if (url && !url.includes('/api/auth/login') && !url.includes('/api/auth/register')) {
+      
+      // 🔴 POPRAWKA: Filtrowanie komunikatów o limitach planu FREE
+      try {
+        // Klonujemy odpowiedź, aby nie zablokować strumienia (body used) dla końcowych widoków/hooków
+        const responseClone = response.clone();
+        const data = await responseClone.json();
+        
+        // Jeśli w body znajduje się słowo kluczowe powiązane z limitami, 
+        // przerywamy procedurę wylogowania i pozwalamy hookowi obsłużyć błąd (np. pokazać toast)
+        if (data && data.error && (data.error.includes('limit') || data.error.includes('Osiągnięto'))) {
+          return response;
+        }
+      } catch (jsonError) {
+        // Jeśli odpowiedź to nie JSON (np. surowy błąd serwera), pozwalamy na dalsze działanie interceptora
+      }
+
+      // Jeśli test klona przeszedł pomyślnie i to nie był limit -> emitujemy zdarzenie wygaśnięcia sesji
+      window.dispatchEvent(new Event('gympatico-unauthorized'));
+    }
+  }
+  
+  return response;
+};
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+</file>
+
 <file path="backend/routes/auth.js">
+// backend/routes/auth.js
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
@@ -2531,6 +2581,28 @@ router.put('/weekly-target', authenticateToken, async (req, res) => {
   }
 });
 
+// 🔴 NOWOŚĆ: SILENT REFRESH (Automatyczne przedłużanie ważności sesji o kolejne 30 dni)
+router.get('/refresh', authenticateToken, (req, res) => {
+  try {
+    // Dane przesyłane w payloadzie dopasowane są do struktury z endpointu /login
+    const payload = { 
+      userId: req.user.userId, 
+      nick: req.user.nick, 
+      role: req.user.role 
+    };
+    
+    const token = jwt.sign(
+      payload, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '30d' }
+    );
+    
+    res.json({ token });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd podczas odnawiania tokenu", details: error.message });
+  }
+});
+
 module.exports = router;
 </file>
 
@@ -2548,33 +2620,36 @@ export function useFriends(token) {
   const [weeklyChallenge, setWeeklyChallenge] = useState([]);
   const [selectedFriendProfile, setSelectedFriendProfile] = useState(null);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
-  const [notifications, setNotifications] = useState([]); // 🔴 STAN POWIADOMIEŃ
+  const [notifications, setNotifications] = useState([]);
 
   const fetchFriendsData = useCallback(async () => {
     if (!token) return;
     try {
-      // 🔴 POPRAWKA: Pobieramy 5 endpointów naraz (dodano notifRes)
       const [friendsRes, requestsRes, activityRes, challengeRes, notifRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/friends`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_BASE_URL}/api/friends/requests`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_BASE_URL}/api/friends/activity`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_BASE_URL}/api/friends/challenges/weekly`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`${API_BASE_URL}/api/friends/notifications`, { headers: { 'Authorization': `Bearer ${token}` } }) // <-- NOWE
+        fetch(`${API_BASE_URL}/api/friends/notifications`, { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
-      const friendsData = await friendsRes.json();
-      const requestsData = await requestsRes.json();
-      const activityData = await activityRes.json();
-      const challengeData = await challengeRes.json();
-      const notifData = await notifRes.json(); // <-- NOWE
+      // 🔴 POPRAWKA (Graceful Degradation):
+      // Wywołujemy .json() tylko i wyłącznie wtedy, gdy odpowiedź serwera ma status 200-299.
+      // W przeciwnym razie bezpiecznie zwracamy pustą tablicę, unikając awarii całego komponentu.
+      const friendsData = friendsRes.ok ? await friendsRes.json() : [];
+      const requestsData = requestsRes.ok ? await requestsRes.json() : [];
+      const activityData = activityRes.ok ? await activityRes.json() : [];
+      const challengeData = challengeRes.ok ? await challengeRes.json() : [];
+      const notifData = notifRes.ok ? await notifRes.json() : [];
 
       setFriends(Array.isArray(friendsData) ? friendsData.map(f => ({ ...f, isPremium: f.is_premium || f.isPremium })) : []);
       setPendingRequests(Array.isArray(requestsData) ? requestsData : []); 
       setActivityFeed(Array.isArray(activityData) ? activityData : []);
       setWeeklyChallenge(Array.isArray(challengeData) ? challengeData : []);
-      setNotifications(Array.isArray(notifData) ? notifData : []); // <-- Zapis powiadomień do stanu
+      setNotifications(Array.isArray(notifData) ? notifData : []);
+      
     } catch (err) {
-      console.error("❌ Błąd synchronizacji społecznościowej:", err.message);
+      console.error("❌ Błąd synchronizacji sieciowej w module społecznościowym:", err.message);
     }
   }, [token]);
 
@@ -2658,7 +2733,7 @@ export function useFriends(token) {
     }
   }, [token]);
 
-  // 🔴 NOWOŚĆ: Oznaczanie powiadomień jako odczytane
+  // Oznaczanie powiadomień jako odczytane
   const markNotificationsAsRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     try {
@@ -2676,58 +2751,9 @@ export function useFriends(token) {
     friendNickInput, setFriendNickInput, socialMessage, setSocialMessage,
     selectedFriendProfile, setSelectedFriendProfile, isProfileLoading, fetchFriendProfile,
     handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend, handleToggleReaction,
-    notifications, markNotificationsAsRead // 🔴 WYEKSPORTOWANO
+    notifications, markNotificationsAsRead
   };
 }
-</file>
-
-<file path="frontend/src/main.jsx">
-// frontend/src/main.jsx
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
-
-// --- GLOBALNY INTERCEPTOR SIECIOWY (FAIL-SAFE FOR JWT EXPIRATION) ---
-const { fetch: originalFetch } = window;
-window.fetch = async (...args) => {
-  const response = await originalFetch(...args);
-  
-  // Przechwytujemy potencjalne błędy uwierzytelnienia/autoryzacji
-  if (response.status === 401 || response.status === 403) {
-    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
-    
-    // BEZPIECZNIK 1: Ignorujemy próby logowania/rejestracji
-    if (url && !url.includes('/api/auth/login') && !url.includes('/api/auth/register')) {
-      
-      // 🔴 POPRAWKA: Filtrowanie komunikatów o limitach planu FREE
-      try {
-        // Klonujemy odpowiedź, aby nie zablokować strumienia (body used) dla końcowych widoków/hooków
-        const responseClone = response.clone();
-        const data = await responseClone.json();
-        
-        // Jeśli w body znajduje się słowo kluczowe powiązane z limitami, 
-        // przerywamy procedurę wylogowania i pozwalamy hookowi obsłużyć błąd (np. pokazać toast)
-        if (data && data.error && (data.error.includes('limit') || data.error.includes('Osiągnięto'))) {
-          return response;
-        }
-      } catch (jsonError) {
-        // Jeśli odpowiedź to nie JSON (np. surowy błąd serwera), pozwalamy na dalsze działanie interceptora
-      }
-
-      // Jeśli test klona przeszedł pomyślnie i to nie był limit -> emitujemy zdarzenie wygaśnięcia sesji
-      window.dispatchEvent(new Event('gympatico-unauthorized'));
-    }
-  }
-  
-  return response;
-};
-
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
 </file>
 
 <file path="frontend/src/views/History.jsx">
@@ -3029,6 +3055,260 @@ export default function History({
 }
 </file>
 
+<file path="backend/index.js">
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const pool = require('./config/db');
+const templatesRouter = require('./routes/templates');
+
+// Krytyczny bezpiecznik środowiskowy
+if (!process.env.JWT_SECRET) {
+  console.error("FATAL ERROR: Zmienna środowiskowa JWT_SECRET nie została zdefiniowana!");
+  process.exit(1);
+}
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// --- GLOBALNE MIDDLEWARE BEZPIECZEŃSTWA NAGŁÓWKÓW ---
+app.use(helmet());
+
+// Zaawansowana i w pełni utwardzona konfiguracja CORS
+app.use(cors({
+  origin: (origin, callback) => {
+    // Zezwalamy na żądania bez nagłówka Origin (np. wewnętrzne testy serwera, Postman, Insomnia)
+    if (!origin) return callback(null, true);
+
+    // Czyszczenie stringów ze skrajnych spacji oraz końcowych ukośników (BHP danych)
+    const cleanOrigin = origin.trim().replace(/\/$/, "");
+    const cleanFrontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim().replace(/\/$/, "") : "";
+
+    // Kryteria dopasowania uprawnień sieciowych (Origins Whitelist)
+    const isLocalhost = cleanOrigin.startsWith('http://localhost') || cleanOrigin.startsWith('http://127.0.0.1');
+    const isMainVercel = cleanFrontendUrl && cleanOrigin === cleanFrontendUrl;
+    
+    // FIX SECURE: Łączymy prefiks nazwy projektu z domeną Vercel.
+    // Wpuszcza tylko adresy typu: gympatico.vercel.app, gympatico-git-main.vercel.app itp.
+    // Blokuje natomiast: jakas-inna-nazwa-uzytkownika.vercel.app
+    const isVercelSubdomain = cleanOrigin.startsWith('https://gympatico') && cleanOrigin.endsWith('.vercel.app');
+
+    if (isLocalhost || isMainVercel || isVercelSubdomain) {
+      // Adres zweryfikowany pozytywnie -> generujemy poprawne nagłówki dla Preflight (OPTIONS)
+      return callback(null, true);
+    } else {
+      // Rejestrujemy próby nieautoryzowanego dostępu na żywo w logach Rendera
+      console.error(`[CORS BLOKADA] Nieautoryzowany Origin: "${origin}". Oczekiwano FRONTEND_URL: "${process.env.FRONTEND_URL}"`);
+      return callback(null, false); // Blokujemy ruch przeglądarkowy czysto, bez crashowania procesu Node
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200 // Zapewnia stabilną obsługę zapytań przedwstępnych OPTIONS w starszych przeglądarkach
+}));
+
+app.use(express.json());
+
+// --- PODPIĘCIE MODUŁOWYCH ROUTERÓW API ---
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/weight', require('./routes/weight'));
+app.use('/api/workouts', require('./routes/workouts'));
+app.use('/api/friends', require('./routes/friends'));
+app.use('/api/exercises', require('./routes/exercises'));
+app.use('/api/stats', require('./routes/stats'));
+app.use('/api/templates', templatesRouter);
+
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true });
+});
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Serwer GymPatico działa stabilnie i bezpiecznie na porcie ${PORT}`);
+  });
+}
+
+module.exports = app;
+</file>
+
+<file path="frontend/src/hooks/useWorkouts.js">
+// frontend/src/hooks/useWorkouts.js
+import { useState, useCallback, useRef } from 'react'
+import { API_BASE_URL } from '../config/api'
+
+export function useWorkouts(token, exercises, showToast) {
+  const [workoutsHistory, setWorkoutsHistory] = useState([])
+  const [totalWorkoutsCount, setTotalWorkoutsCount] = useState(0)
+  const [hasMoreWorkouts, setHasMoreWorkouts] = useState(true)
+
+  const [workoutName, setWorkoutName] = useState('')
+  const [workoutComment, setWorkoutComment] = useState('')
+  const [localSeriesList, setLocalSeriesList] = useState([])
+
+  const [currentSelectedExercise, setCurrentSelectedExercise] = useState('')
+  const [seriesWeight, setSeriesWeight] = useState('')
+  const [seriesReps, setSeriesReps] = useState('')
+
+  const [progressionData, setProgressionData] = useState([])
+
+  // 🔴 SEMAFOR BLOKUJĄCY PODWÓJNE KLIKNIĘCIA W PAGINACJĘ
+  const isFetchingRef = useRef(false)
+
+  const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
+    // Jeśli nie ma tokenu lub request już trwa -> przerywamy
+    if (!token || isFetchingRef.current) return
+    
+    // 🔴 POPRAWKA: Deklaracja limitu w prawidłowym zasięgu (Scope)
+    const limit = 20
+    isFetchingRef.current = true // Zakładamy blokadę
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts?limit=${limit}&offset=${currentLength}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Błąd historii treningów')
+      const data = await res.json() // Oczekujemy { workouts, totalCount }
+
+      if (isAppend) {
+        setWorkoutsHistory(prev => [...prev, ...data.workouts])
+        setHasMoreWorkouts(currentLength + data.workouts.length < data.totalCount)
+      } else {
+        setWorkoutsHistory(data.workouts)
+        setHasMoreWorkouts(data.workouts.length < data.totalCount)
+      }
+      setTotalWorkoutsCount(data.totalCount)
+    } catch (err) {
+      console.error('Błąd pobierania historii:', err.message)
+    } finally {
+      // 🔴 ZDEJMOWANIE BLOKADY niezależnie od tego, czy był sukces czy błąd
+      isFetchingRef.current = false 
+    }
+  }, [token])
+
+  const addSeriesToLocalList = useCallback((e) => {
+    e?.preventDefault()
+    if (!seriesWeight || !seriesReps || !currentSelectedExercise) {
+      if (showToast) showToast('Wpisz wagę i powtórzenia! ⚠️', 'error')
+      return
+    }
+    const ex = exercises.find(item => item.id === currentSelectedExercise)
+    if (!ex) return
+
+    const weight = parseFloat(seriesWeight)
+    const reps = parseInt(seriesReps)
+    const estimatedOneRm = reps >= 1 && reps <= 12 ? weight * (1 + reps / 30) : null
+
+    const newSeries = {
+      exerciseId: currentSelectedExercise,
+      exerciseName: ex.name,
+      weight,
+      reps,
+      order: localSeriesList.filter(s => s.exerciseId === currentSelectedExercise).length + 1,
+      estimatedOneRm
+    }
+
+    setLocalSeriesList(prev => [...prev, newSeries])
+    setSeriesWeight('')
+    setSeriesReps('')
+  }, [currentSelectedExercise, seriesWeight, seriesReps, localSeriesList, exercises, showToast])
+
+  const removeSeriesFromLocalList = useCallback((index) => {
+    setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
+  }, [])
+
+  const handleSaveWorkout = useCallback(async (seriesOverride) => {
+    const seriesToSave = seriesOverride ?? localSeriesList
+
+    if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
+    if (seriesToSave.length === 0) throw new Error('Nie można zapisać pustego treningu!')
+
+    const res = await fetch(`${API_BASE_URL}/api/workouts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        name: workoutName,
+        comment: workoutComment,
+        series: seriesToSave.map(s => ({
+          exerciseId: s.exerciseId,
+          weight: s.weight,
+          reps: s.reps,
+          order: s.order,
+          estimatedOneRm: s.estimatedOneRm
+        }))
+      })
+    })
+
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Błąd zapisu treningu')
+
+    setWorkoutName('')
+    setWorkoutComment('')
+    setLocalSeriesList([])
+    return data
+  }, [token, workoutName, workoutComment, localSeriesList])
+
+  const handleDeleteWorkout = useCallback(async (sessionId) => {
+    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć treningu.')
+    return data
+  }, [token])
+
+  const fetchProgression = useCallback(async (exerciseId) => {
+    if (!token || !exerciseId) return
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/workouts/progression/${exerciseId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Błąd pobierania danych progresji')
+      const data = await res.json()
+      setProgressionData(data)
+    } catch (err) {
+      console.error('Błąd pobierania progresu siłowego:', err.message)
+    }
+  }, [token])
+
+  const handleUpdateWorkout = useCallback(async (sessionId, newName, newComment) => {
+    if (!token) return
+    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ name: newName, comment: newComment })
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować treningu.')
+
+    setWorkoutsHistory(prev =>
+      prev.map(w => w.id === sessionId ? { ...w, name: newName, comment: newComment } : w)
+    )
+    return data
+  }, [token])
+
+  return {
+    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, totalWorkoutsCount, fetchWorkoutsData,
+    workoutName, setWorkoutName,
+    workoutComment, setWorkoutComment,
+    currentSelectedExercise, setCurrentSelectedExercise,
+    seriesWeight, setSeriesWeight,
+    seriesReps, setSeriesReps,
+    localSeriesList, setLocalSeriesList,
+    addSeriesToLocalList, removeSeriesFromLocalList,
+    handleSaveWorkout, handleDeleteWorkout,
+    progressionData, fetchProgression,
+    handleUpdateWorkout
+  }
+}
+</file>
+
 <file path="frontend/src/views/Social.jsx">
 // frontend/src/views/Social.jsx
 import React from 'react'
@@ -3037,8 +3317,17 @@ import FriendProfileModal from '../components/FriendProfileModal'
 const ALLOWED_EMOJIS = ['🔥', '💪', '👑', '👏'];
 
 const getTimeAgo = (dateStr) => {
-  const diff = Date.now() - new Date(dateStr).getTime();
+  // 🔴 ZABEZPIECZENIE: Jeśli nie ma daty, zwróć pusty string lub komunikat
+  if (!dateStr) return ''; 
+
+  const date = new Date(dateStr);
+  // Sprawdzenie czy data jest poprawna
+  if (isNaN(date.getTime())) return '';
+
+  const diff = Date.now() - date.getTime();
   const mins = Math.floor(diff / 60000);
+  
+  if (mins < 0) return 'przed chwilą'; // Zapobieganie błędom przy różnicach stref czasowych
   if (mins < 1) return 'przed chwilą';
   if (mins < 60) return `${mins} min temu`;
   const hours = Math.floor(mins / 60);
@@ -3454,260 +3743,6 @@ INSERT INTO exercises (name, muscle_group) VALUES
 ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
 </file>
 
-<file path="backend/index.js">
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const pool = require('./config/db');
-const templatesRouter = require('./routes/templates');
-
-// Krytyczny bezpiecznik środowiskowy
-if (!process.env.JWT_SECRET) {
-  console.error("FATAL ERROR: Zmienna środowiskowa JWT_SECRET nie została zdefiniowana!");
-  process.exit(1);
-}
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// --- GLOBALNE MIDDLEWARE BEZPIECZEŃSTWA NAGŁÓWKÓW ---
-app.use(helmet());
-
-// Zaawansowana i w pełni utwardzona konfiguracja CORS
-app.use(cors({
-  origin: (origin, callback) => {
-    // Zezwalamy na żądania bez nagłówka Origin (np. wewnętrzne testy serwera, Postman, Insomnia)
-    if (!origin) return callback(null, true);
-
-    // Czyszczenie stringów ze skrajnych spacji oraz końcowych ukośników (BHP danych)
-    const cleanOrigin = origin.trim().replace(/\/$/, "");
-    const cleanFrontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim().replace(/\/$/, "") : "";
-
-    // Kryteria dopasowania uprawnień sieciowych (Origins Whitelist)
-    const isLocalhost = cleanOrigin.startsWith('http://localhost') || cleanOrigin.startsWith('http://127.0.0.1');
-    const isMainVercel = cleanFrontendUrl && cleanOrigin === cleanFrontendUrl;
-    
-    // FIX SECURE: Łączymy prefiks nazwy projektu z domeną Vercel.
-    // Wpuszcza tylko adresy typu: gympatico.vercel.app, gympatico-git-main.vercel.app itp.
-    // Blokuje natomiast: jakas-inna-nazwa-uzytkownika.vercel.app
-    const isVercelSubdomain = cleanOrigin.startsWith('https://gympatico') && cleanOrigin.endsWith('.vercel.app');
-
-    if (isLocalhost || isMainVercel || isVercelSubdomain) {
-      // Adres zweryfikowany pozytywnie -> generujemy poprawne nagłówki dla Preflight (OPTIONS)
-      return callback(null, true);
-    } else {
-      // Rejestrujemy próby nieautoryzowanego dostępu na żywo w logach Rendera
-      console.error(`[CORS BLOKADA] Nieautoryzowany Origin: "${origin}". Oczekiwano FRONTEND_URL: "${process.env.FRONTEND_URL}"`);
-      return callback(null, false); // Blokujemy ruch przeglądarkowy czysto, bez crashowania procesu Node
-    }
-  },
-  credentials: true,
-  optionsSuccessStatus: 200 // Zapewnia stabilną obsługę zapytań przedwstępnych OPTIONS w starszych przeglądarkach
-}));
-
-app.use(express.json());
-
-// --- PODPIĘCIE MODUŁOWYCH ROUTERÓW API ---
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/weight', require('./routes/weight'));
-app.use('/api/workouts', require('./routes/workouts'));
-app.use('/api/friends', require('./routes/friends'));
-app.use('/api/exercises', require('./routes/exercises'));
-app.use('/api/stats', require('./routes/stats'));
-app.use('/api/templates', templatesRouter);
-
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true });
-});
-
-if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`🚀 Serwer GymPatico działa stabilnie i bezpiecznie na porcie ${PORT}`);
-  });
-}
-
-module.exports = app;
-</file>
-
-<file path="frontend/src/hooks/useWorkouts.js">
-// frontend/src/hooks/useWorkouts.js
-import { useState, useCallback, useRef } from 'react'
-import { API_BASE_URL } from '../config/api'
-
-export function useWorkouts(token, exercises, showToast) {
-  const [workoutsHistory, setWorkoutsHistory] = useState([])
-  const [totalWorkoutsCount, setTotalWorkoutsCount] = useState(0)
-  const [hasMoreWorkouts, setHasMoreWorkouts] = useState(true)
-
-  const [workoutName, setWorkoutName] = useState('')
-  const [workoutComment, setWorkoutComment] = useState('')
-  const [localSeriesList, setLocalSeriesList] = useState([])
-
-  const [currentSelectedExercise, setCurrentSelectedExercise] = useState('')
-  const [seriesWeight, setSeriesWeight] = useState('')
-  const [seriesReps, setSeriesReps] = useState('')
-
-  const [progressionData, setProgressionData] = useState([])
-
-  // 🔴 SEMAFOR BLOKUJĄCY PODWÓJNE KLIKNIĘCIA W PAGINACJĘ
-  const isFetchingRef = useRef(false)
-
-  const fetchWorkoutsData = useCallback(async (currentLength = 0, isAppend = false) => {
-    // Jeśli nie ma tokenu lub request już trwa -> przerywamy
-    if (!token || isFetchingRef.current) return
-    
-    // 🔴 POPRAWKA: Deklaracja limitu w prawidłowym zasięgu (Scope)
-    const limit = 20
-    isFetchingRef.current = true // Zakładamy blokadę
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts?limit=${limit}&offset=${currentLength}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Błąd historii treningów')
-      const data = await res.json() // Oczekujemy { workouts, totalCount }
-
-      if (isAppend) {
-        setWorkoutsHistory(prev => [...prev, ...data.workouts])
-        setHasMoreWorkouts(currentLength + data.workouts.length < data.totalCount)
-      } else {
-        setWorkoutsHistory(data.workouts)
-        setHasMoreWorkouts(data.workouts.length < data.totalCount)
-      }
-      setTotalWorkoutsCount(data.totalCount)
-    } catch (err) {
-      console.error('Błąd pobierania historii:', err.message)
-    } finally {
-      // 🔴 ZDEJMOWANIE BLOKADY niezależnie od tego, czy był sukces czy błąd
-      isFetchingRef.current = false 
-    }
-  }, [token])
-
-  const addSeriesToLocalList = useCallback((e) => {
-    e?.preventDefault()
-    if (!seriesWeight || !seriesReps || !currentSelectedExercise) {
-      if (showToast) showToast('Wpisz wagę i powtórzenia! ⚠️', 'error')
-      return
-    }
-    const ex = exercises.find(item => item.id === currentSelectedExercise)
-    if (!ex) return
-
-    const weight = parseFloat(seriesWeight)
-    const reps = parseInt(seriesReps)
-    const estimatedOneRm = reps >= 1 && reps <= 12 ? weight * (1 + reps / 30) : null
-
-    const newSeries = {
-      exerciseId: currentSelectedExercise,
-      exerciseName: ex.name,
-      weight,
-      reps,
-      order: localSeriesList.filter(s => s.exerciseId === currentSelectedExercise).length + 1,
-      estimatedOneRm
-    }
-
-    setLocalSeriesList(prev => [...prev, newSeries])
-    setSeriesWeight('')
-    setSeriesReps('')
-  }, [currentSelectedExercise, seriesWeight, seriesReps, localSeriesList, exercises, showToast])
-
-  const removeSeriesFromLocalList = useCallback((index) => {
-    setLocalSeriesList(prev => prev.filter((_, i) => i !== index))
-  }, [])
-
-  const handleSaveWorkout = useCallback(async (seriesOverride) => {
-    const seriesToSave = seriesOverride ?? localSeriesList
-
-    if (!workoutName) throw new Error('Nazwa treningu jest wymagana!')
-    if (seriesToSave.length === 0) throw new Error('Nie można zapisać pustego treningu!')
-
-    const res = await fetch(`${API_BASE_URL}/api/workouts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        name: workoutName,
-        comment: workoutComment,
-        series: seriesToSave.map(s => ({
-          exerciseId: s.exerciseId,
-          weight: s.weight,
-          reps: s.reps,
-          order: s.order,
-          estimatedOneRm: s.estimatedOneRm
-        }))
-      })
-    })
-
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Błąd zapisu treningu')
-
-    setWorkoutName('')
-    setWorkoutComment('')
-    setLocalSeriesList([])
-    return data
-  }, [token, workoutName, workoutComment, localSeriesList])
-
-  const handleDeleteWorkout = useCallback(async (sessionId) => {
-    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć treningu.')
-    return data
-  }, [token])
-
-  const fetchProgression = useCallback(async (exerciseId) => {
-    if (!token || !exerciseId) return
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/workouts/progression/${exerciseId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Błąd pobierania danych progresji')
-      const data = await res.json()
-      setProgressionData(data)
-    } catch (err) {
-      console.error('Błąd pobierania progresu siłowego:', err.message)
-    }
-  }, [token])
-
-  const handleUpdateWorkout = useCallback(async (sessionId, newName, newComment) => {
-    if (!token) return
-    const res = await fetch(`${API_BASE_URL}/api/workouts/${sessionId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ name: newName, comment: newComment })
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Nie udało się zaktualizować treningu.')
-
-    setWorkoutsHistory(prev =>
-      prev.map(w => w.id === sessionId ? { ...w, name: newName, comment: newComment } : w)
-    )
-    return data
-  }, [token])
-
-  return {
-    workoutsHistory, setWorkoutsHistory, hasMoreWorkouts, totalWorkoutsCount, fetchWorkoutsData,
-    workoutName, setWorkoutName,
-    workoutComment, setWorkoutComment,
-    currentSelectedExercise, setCurrentSelectedExercise,
-    seriesWeight, setSeriesWeight,
-    seriesReps, setSeriesReps,
-    localSeriesList, setLocalSeriesList,
-    addSeriesToLocalList, removeSeriesFromLocalList,
-    handleSaveWorkout, handleDeleteWorkout,
-    progressionData, fetchProgression,
-    handleUpdateWorkout
-  }
-}
-</file>
-
 <file path="backend/routes/friends.js">
 // backend/routes/friends.js
 const express = require('express');
@@ -3858,7 +3893,8 @@ router.get('/activity', authenticateToken, async (req, res) => {
     const query = `
       SELECT 
           u.id as user_id, u.nick, u.is_premium, 
-          ws.id as workout_id, ws.name as workout_name, ws.started_at,
+          ws.id as workout_id, ws.name as workout_name, 
+          COALESCE(ws.ended_at, ws.started_at, NOW()) as started_at, -- 🔴 ZABEZPIECZENIE DATY
           COALESCE(
             (SELECT json_agg(json_build_object('emoji', r.emoji, 'count', r.count, 'user_reacted', r.user_reacted))
              FROM (
@@ -3876,7 +3912,7 @@ router.get('/activity', authenticateToken, async (req, res) => {
           FROM friendships
           WHERE (sender_id = $1::uuid OR receiver_id = $1::uuid) AND status = 'ACCEPTED'
       )
-      ORDER BY ws.started_at DESC
+      ORDER BY COALESCE(ws.ended_at, ws.started_at, NOW()) DESC -- 🔴 POPRAWIONE SORTOWANIE
       LIMIT 30;
     `;
     const result = await pool.query(query, [userId]);
@@ -4058,407 +4094,6 @@ router.patch('/notifications/read', authenticateToken, async (req, res) => {
     res.json({ message: "Powiadomienia odczytane." });
   } catch (error) {
     res.status(500).json({ error: "Błąd aktualizacji powiadomień", details: error.message });
-  }
-});
-
-module.exports = router;
-</file>
-
-<file path="backend/routes/workouts.js">
-// backend/routes/workouts.js
-const express = require('express');
-const router = express.Router();
-const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
-const checkLimits = require('../middleware/checkLimits');
-const { getUserPlan } = require('../utils/userHelpers');
-
-// =========================================================================
-// 1. ZAPISANIE TRENINGU (Zabezpieczone transakcyjnie + Blokada FOR UPDATE + Progi Streaka)
-// =========================================================================
-router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) => {
-  const { name, comment, series } = req.body;
-  const userId = req.user.userId;
-
-  if (!name || !series || !Array.isArray(series) || series.length === 0) {
-    return res.status(400).json({ error: "Nazwa treningu oraz serie są wymagane!" });
-  }
-
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    // Blokada pesymistyczna (Pessimistic Locking) na wierszu użytkownika.
-    // Zapobiega wyścigom żądań (Race Conditions) przy jednoczesnych requestach sieciowych.
-    const userResult = await client.query(
-      'SELECT current_streak, weekly_target_workouts, last_workout_at FROM users WHERE id = $1 FOR UPDATE', 
-      [userId]
-    );
-    
-    if (userResult.rowCount === 0) {
-      throw new Error("Użytkownik nie istnieje w systemie.");
-    }
-
-    const { current_streak, weekly_target_workouts, last_workout_at } = userResult.rows[0];
-    const target = weekly_target_workouts ?? 3;
-
-    // Symetryczne pobieranie stanu licznika tygodniowego PRZED zapisem nowej sesji
-    const lastWeekResult = await client.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
-      AND started_at >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw' 
-      AND started_at < date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
-    );
-    const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count, 10);
-
-    const thisWeekResult = await client.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
-      AND started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
-    );
-    // Liczba sesji przed wstawieniem aktualnej
-    const workoutsBeforeThisOne = parseInt(thisWeekResult.rows[0].count, 10);
-
-    // --- BEZPIECZNE WSTAWIENIE NAGŁÓWKA SESJI ---
-    const sessionResult = await client.query(
-      "INSERT INTO workout_sessions (user_id, name, comment, started_at, ended_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id",
-      [userId, name.trim(), comment || null]
-    );
-    const sessionId = sessionResult.rows[0].id;
-
-    // Przygotowanie płaskich tablic dla optymalizacji sieciowej UNNEST Batch Insert
-    const exerciseIds = [];
-    const weights = [];
-    const reps = [];
-    const orders = [];
-    const estimatedOneRMs = [];
-    const isAlternatives = [];
-    const seriesComments = [];
-    const seriesTypes = [];
-
-    for (let i = 0; i < series.length; i++) {
-      const s = series[i];
-      let estimatedOneRM = null;
-      
-      // Wyliczenie 1RM wg sprawdzonego wzoru Epleya (dla serii od 1 do 12 powtórzeń)
-      if (s.reps >= 1 && s.reps <= 12) {
-        estimatedOneRM = s.weight * (1 + s.reps / 30);
-      }
-
-      exerciseIds.push(s.exerciseId);
-      weights.push(s.weight);
-      reps.push(s.reps);
-      orders.push(s.order || (i + 1));
-      estimatedOneRMs.push(estimatedOneRM);
-      isAlternatives.push(s.isAlternative || false);
-      seriesComments.push(s.comment || null);
-      seriesTypes.push(s.seriesType || 'NORMAL');
-    }
-
-    // Błyskawiczny zapis wielowierszowy (0 marnowania round-tripów sieciowych do bazy)
-    const bulkInsertSeriesQuery = `
-      INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment, series_type)
-      SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::numeric[], $7::boolean[], $8::text[], $9::varchar[])
-    `;
-
-    await client.query(bulkInsertSeriesQuery, [
-      sessionId, exerciseIds, weights, reps, orders, estimatedOneRMs, isAlternatives, seriesComments, seriesTypes
-    ]);
-
-    // --- ANALIZA I AKTUALIZACJA CIĄGŁOŚCI TRENINGOWEJ (STREAK) ---
-    let effectiveStreak = current_streak;
-
-    if (last_workout_at) {
-      const startOfThisWeekResult = await client.query(
-        `SELECT date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw' as start_of_week`
-      );
-      const startOfThisWeek = new Date(startOfThisWeekResult.rows[0].start_of_week);
-      const lastWorkoutDate = new Date(last_workout_at);
-
-      // Jeśli ostatni trening odbył się przed bieżącym tygodniem, weryfikujemy czy cel został domknięty
-      if (lastWorkoutDate < startOfThisWeek) {
-        if (workoutsLastWeek < target) {
-          effectiveStreak = 0; // Przerwana ciągłość -> reset streaka
-        }
-      }
-    }
-
-    // Dodając ten trening, łączna suma w tym tygodniu wyniesie:
-    const workoutsWithThisOne = workoutsBeforeThisOne + 1;
-    let newStreak = effectiveStreak;
-
-    // Próg bezpieczeństwa (Threshold Guard). Streak rośnie tylko wtedy,
-    // gdy ten konkretny trening przebija barierę celu, chroniąc przed "farmowaniem" streaka.
-    if (workoutsWithThisOne >= target && workoutsBeforeThisOne < target) {
-      newStreak = effectiveStreak + 1;
-    }
-
-    // Aktualizacja rekordu użytkownika przy użyciu GREATEST dla bezpiecznego max_streak
-    await client.query(
-      'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
-      [newStreak, userId]
-    );
-
-    await client.query('COMMIT');
-    res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    res.status(500).json({ error: "Błąd transakcji podczas zapisywania treningu", details: error.message });
-  } finally {
-    client.release();
-  }
-});
-
-// =========================================================================
-// 2. POBRANIE HISTORII TRENINGÓW (Z paginacją i twardym limitem 10 sesji dla FREE)
-// =========================================================================
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  
-  let limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
-  let offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
-
-  try {
-    const plan = await getUserPlan(userId);
-
-    if (!plan) {
-      return res.status(404).json({ error: "Użytkownik nie istnieje." });
-    }
-
-    const countQuery = 'SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1';
-    const countResult = await pool.query(countQuery, [userId]);
-    let totalCount = parseInt(countResult.rows[0].count, 10);
-
-    // Wymuszanie twardego sufitu biznesowego dla kont bez subskrypcji Premium / Roli Trenera
-    if (!plan.is_premium && plan.role !== 'TRAINER') {
-      totalCount = Math.min(totalCount, 10);
-      if (offset >= 10) {
-        return res.json({ workouts: [], totalCount: totalCount });
-      }
-      limit = Math.min(limit, 10 - offset);
-    }
-
-    const sessionsQuery = `
-      SELECT id, name, comment, started_at as "startedAt"
-      FROM workout_sessions
-      WHERE user_id = $1
-      ORDER BY started_at DESC
-      LIMIT $2 OFFSET $3
-    `;
-    const sessionsResult = await pool.query(sessionsQuery, [userId, limit, offset]);
-    const sessions = sessionsResult.rows;
-
-    if (sessions.length === 0) {
-      return res.json({ workouts: [], totalCount: totalCount });
-    }
-
-    const sessionIds = sessions.map(s => s.id);
-
-    // Pobranie powiązanych serii z uwzględnieniem mapowania camelCase klucza seriesType
-    const seriesQuery = `
-      SELECT 
-        ls.id, 
-        ls.workout_session_id, 
-        ls.exercise_id, 
-        ls.weight, 
-        ls.reps, 
-        ls.series_order as "order",
-        ls.estimated_one_rm,
-        ls.series_type as "seriesType",
-        ex.name as "exerciseName"
-      FROM log_series ls
-      JOIN exercises ex ON ls.exercise_id = ex.id
-      WHERE ls.workout_session_id = ANY($1)
-      ORDER BY ls.workout_session_id, ls.series_order ASC
-    `;
-    const seriesResult = await pool.query(seriesQuery, [sessionIds]);
-    const allSeries = seriesResult.rows;
-
-    const historyData = sessions.map(session => {
-      return {
-        ...session,
-        series: allSeries.filter(s => s.workout_session_id === session.id)
-      };
-    });
-
-    res.json({ workouts: historyData, totalCount: totalCount });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas pobierania historii", details: error.message });
-  }
-});
-
-// =========================================================================
-// 3. EKSPORT HISTORII DO PLIKU CSV (Tylko dla Premium / Trainer)
-// =========================================================================
-router.get('/export', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-
-  try {
-    const plan = await getUserPlan(userId);
-
-    if (!plan) {
-      return res.status(404).json({ error: "Użytkownik nie istnieje." });
-    }
-
-    if (!plan.is_premium && plan.role !== 'TRAINER') {
-      return res.status(403).json({ 
-        error: "Funkcja eksportu historii do pliku CSV jest dostępna wyłącznie dla użytkowników planu PREMIUM! 🦾" 
-      });
-    }
-
-    const query = `
-      SELECT 
-        TO_CHAR(ws.started_at, 'YYYY-MM-DD HH24:MI') as "Data",
-        ws.name as "Nazwa treningu",
-        COALESCE(ws.comment, '') as "Komentarz do treningu",
-        ex.name as "Ćwiczenie",
-        ex.muscle_group as "Grupa mięśniowa",
-        ls.series_order as "Numer serii",
-        ls.series_type as "Typ serii",
-        ls.weight as "Ciężar (kg)",
-        ls.reps as "Powtórzenia",
-        COALESCE(ROUND(ls.estimated_one_rm, 1), 0) as "Estymowane 1RM"
-      FROM workout_sessions ws
-      JOIN log_series ls ON ws.id = ls.workout_session_id
-      JOIN exercises ex ON ls.exercise_id = ex.id
-      WHERE ws.user_id = $1
-      ORDER BY ws.started_at DESC, ls.series_order ASC
-    `;
-    const { rows } = await pool.query(query, [userId]);
-
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename=gympatico_historia_treningow.csv');
-    
-    // Wstrzyknięcie znacznika BOM dla prawidłowego kodowania polskich znaków w MS Excel
-    res.write('\uFEFF');
-
-    const headers = ["Data", "Nazwa treningu", "Komentarz do treningu", "Ćwiczenie", "Grupa mięśniowa", "Numer serii", "Typ serii", "Ciężar (kg)", "Powtórzenia", "Estymowane 1RM"];
-    res.write(headers.join(';') + '\n');
-
-    for (const row of rows) {
-      const line = headers.map(header => {
-        const value = row[header];
-        if (typeof value === 'string' && (value.includes(';') || value.includes('"') || value.includes('\n'))) {
-          return `"${value.replace(/"/g, '""')}"`;
-        }
-        return value;
-      });
-      res.write(line.join(';') + '\n');
-    }
-
-    res.end();
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas generowania pliku eksportu", details: error.message });
-  }
-});
-
-// =========================================================================
-// 4. POBRANIE PROGRESJI 1RM ĆWICZENIA (Z ograniczeniem czasowym 30 dni dla FREE)
-// =========================================================================
-router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
-  const { exerciseId } = req.params;
-  const userId = req.user.userId;
-
-  try {
-    const plan = await getUserPlan(userId);
-
-    if (!plan) {
-      return res.status(404).json({ error: "Użytkownik nie istnieje." });
-    }
-
-    let timeBoundaryFilter = '';
-    if (!plan.is_premium && plan.role !== 'TRAINER') {
-      timeBoundaryFilter = "AND ws.started_at >= NOW() - INTERVAL '30 days'";
-    }
-
-    const query = `
-      SELECT 
-        TO_CHAR(ws.started_at, 'YYYY-MM-DD') as date,
-        MAX(ls.estimated_one_rm) as max_1rm
-      FROM log_series ls
-      JOIN workout_sessions ws ON ls.workout_session_id = ws.id
-      WHERE ls.exercise_id = $1 
-        AND ws.user_id = $2 
-        AND ls.estimated_one_rm IS NOT NULL
-        ${timeBoundaryFilter}
-      GROUP BY TO_CHAR(ws.started_at, 'YYYY-MM-DD')
-      ORDER BY date ASC
-    `;
-    
-    const result = await pool.query(query, [exerciseId, userId]);
-    
-    const progressionData = result.rows.map(row => ({
-      date: row.date,
-      oneRm: parseFloat(row.max_1rm)
-    }));
-
-    res.json(progressionData);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd podczas pobierania progresji 1RM", details: error.message });
-  }
-});
-
-// =========================================================================
-// 5. USUNIĘCIE TRENINGU (Z weryfikacją uprawnień właściciela)
-// =========================================================================
-router.delete('/:sessionId', authenticateToken, async (req, res) => {
-  const { sessionId } = req.params;
-  const userId = req.user.userId;
-
-  try {
-    const checkQuery = 'SELECT id FROM workout_sessions WHERE id = $1::uuid AND user_id = $2::uuid';
-    const checkResult = await pool.query(checkQuery, [sessionId, userId]);
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: "Nie znaleziono treningu lub nie masz uprawnień do jego usunięcia." });
-    }
-
-    await pool.query('DELETE FROM workout_sessions WHERE id = $1::uuid', [sessionId]);
-    res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas usunięcia treningu", details: error.message });
-  }
-});
-
-// =========================================================================
-// 6. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz z walidacją długości znaków)
-// =========================================================================
-router.patch('/:sessionId', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { sessionId } = req.params;
-  let { name, comment } = req.body;
-
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: "Nazwa treningu jest wymagana!" });
-  }
-
-  name = name.trim();
-  comment = comment ? comment.trim() : null;
-
-  if (name.length < 3 || name.length > 100) {
-    return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
-  }
-
-  if (comment && comment.length > 500) {
-    return res.status(400).json({ error: "Komentarz może mieć maksymalnie 500 znaków!" });
-  }
-
-  try {
-    const updateQuery = `
-      UPDATE workout_sessions 
-      SET name = $1, comment = $2 
-      WHERE id = $3::uuid AND user_id = $4::uuid 
-      RETURNING id, name, comment
-    `;
-    // 🔴 POPRAWKA: Usunięto nadmiarowe wywołania .trim() z parametrów tablicy SQL
-    const result = await pool.query(updateQuery, [name, comment, sessionId, userId]);
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Nie znaleziono sesji treningowej lub brak uprawnień." });
-    }
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas edycji parametrów treningu", details: error.message });
   }
 });
 
@@ -4883,6 +4518,429 @@ export default function Dashboard({
 }
 </file>
 
+<file path="backend/routes/workouts.js">
+// backend/routes/workouts.js
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+const checkLimits = require('../middleware/checkLimits');
+const { getUserPlan } = require('../utils/userHelpers');
+
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// =========================================================================
+// 1. ZAPISANIE TRENINGU (Zabezpieczone transakcyjnie + Blokada FOR UPDATE + Progi Streaka)
+// =========================================================================
+router.post('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { name, comment, series } = req.body;
+
+  // 1. Podstawowa walidacja struktury
+  if (!name || !name.trim() || !Array.isArray(series) || series.length === 0) {
+    return res.status(400).json({ error: "Nazwa treningu oraz zestaw serii są wymagane!" });
+  }
+
+  // 2. 🔴 NOWOŚĆ: Rygorystyczna walidacja każdego exerciseId
+  for (let i = 0; i < series.length; i++) {
+    const exId = series[i].exerciseId;
+    
+    if (!exId || !uuidRegex.test(exId)) {
+      return res.status(400).json({ 
+        error: `Błąd walidacji: Odrzucono zapis. Przekazano nieprawidłowy lub uszkodzony identyfikator ćwiczenia w serii ${i + 1}.` 
+      });
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Blokada pesymistyczna (Pessimistic Locking) na wierszu użytkownika.
+    // Zapobiega wyścigom żądań (Race Conditions) przy jednoczesnych requestach sieciowych.
+    const userResult = await client.query(
+      'SELECT current_streak, weekly_target_workouts, last_workout_at FROM users WHERE id = $1 FOR UPDATE', 
+      [userId]
+    );
+    
+    if (userResult.rowCount === 0) {
+      throw new Error("Użytkownik nie istnieje w systemie.");
+    }
+
+    const { current_streak, weekly_target_workouts, last_workout_at } = userResult.rows[0];
+    const target = weekly_target_workouts ?? 3;
+
+    // Symetryczne pobieranie stanu licznika tygodniowego PRZED zapisem nowej sesji
+    const lastWeekResult = await client.query(
+      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
+      AND started_at >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw' 
+      AND started_at < date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
+    );
+    const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count, 10);
+
+    const thisWeekResult = await client.query(
+      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
+      AND started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
+    );
+    // Liczba sesji przed wstawieniem aktualnej
+    const workoutsBeforeThisOne = parseInt(thisWeekResult.rows[0].count, 10);
+
+    // --- BEZPIECZNE WSTAWIENIE NAGŁÓWKA SESJI ---
+    const sessionResult = await client.query(
+      "INSERT INTO workout_sessions (user_id, name, comment, started_at, ended_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id",
+      [userId, name.trim(), comment || null]
+    );
+    const sessionId = sessionResult.rows[0].id;
+
+    // Przygotowanie płaskich tablic dla optymalizacji sieciowej UNNEST Batch Insert
+    const exerciseIds = [];
+    const weights = [];
+    const reps = [];
+    const orders = [];
+    const estimatedOneRMs = [];
+    const isAlternatives = [];
+    const seriesComments = [];
+    const seriesTypes = [];
+
+    for (let i = 0; i < series.length; i++) {
+      const s = series[i];
+      let estimatedOneRM = null;
+      
+      // Wyliczenie 1RM wg sprawdzonego wzoru Epleya (dla serii od 1 do 12 powtórzeń)
+      if (s.reps >= 1 && s.reps <= 12) {
+        estimatedOneRM = s.weight * (1 + s.reps / 30);
+      }
+
+      exerciseIds.push(s.exerciseId);
+      weights.push(s.weight);
+      reps.push(s.reps);
+      orders.push(s.order || (i + 1));
+      estimatedOneRMs.push(estimatedOneRM);
+      isAlternatives.push(s.isAlternative || false);
+      seriesComments.push(s.comment || null);
+      seriesTypes.push(s.seriesType || 'NORMAL');
+    }
+
+    // Błyskawiczny zapis wielowierszowy (0 marnowania round-tripów sieciowych do bazy)
+    const bulkInsertSeriesQuery = `
+      INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment, series_type)
+      SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::numeric[], $7::boolean[], $8::text[], $9::varchar[])
+    `;
+
+    await client.query(bulkInsertSeriesQuery, [
+      sessionId, exerciseIds, weights, reps, orders, estimatedOneRMs, isAlternatives, seriesComments, seriesTypes
+    ]);
+
+    // --- ANALIZA I AKTUALIZACJA CIĄGŁOŚCI TRENINGOWEJ (STREAK) ---
+    let effectiveStreak = current_streak;
+
+    if (last_workout_at) {
+      const startOfThisWeekResult = await client.query(
+        `SELECT date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw' as start_of_week`
+      );
+      const startOfThisWeek = new Date(startOfThisWeekResult.rows[0].start_of_week);
+      const lastWorkoutDate = new Date(last_workout_at);
+
+      // Jeśli ostatni trening odbył się przed bieżącym tygodniem, weryfikujemy czy cel został domknięty
+      if (lastWorkoutDate < startOfThisWeek) {
+        if (workoutsLastWeek < target) {
+          effectiveStreak = 0; // Przerwana ciągłość -> reset streaka
+        }
+      }
+    }
+
+    // Dodając ten trening, łączna suma w tym tygodniu wyniesie:
+    const workoutsWithThisOne = workoutsBeforeThisOne + 1;
+    let newStreak = effectiveStreak;
+
+    // Próg bezpieczeństwa (Threshold Guard). Streak rośnie tylko wtedy,
+    // gdy ten konkretny trening przebija barierę celu, chroniąc przed "farmowaniem" streaka.
+    if (workoutsWithThisOne >= target && workoutsBeforeThisOne < target) {
+      newStreak = effectiveStreak + 1;
+    }
+
+    // Aktualizacja rekordu użytkownika przy użyciu GREATEST dla bezpiecznego max_streak
+    await client.query(
+      'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
+      [newStreak, userId]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: "Błąd transakcji podczas zapisywania treningu", details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// =========================================================================
+// 2. POBRANIE HISTORII TRENINGÓW (Z paginacją i twardym limitem 10 sesji dla FREE)
+// =========================================================================
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  
+  let limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  let offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
+  try {
+    const plan = await getUserPlan(userId);
+
+    if (!plan) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    const countQuery = 'SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1';
+    const countResult = await pool.query(countQuery, [userId]);
+    let totalCount = parseInt(countResult.rows[0].count, 10);
+
+    // Wymuszanie twardego sufitu biznesowego dla kont bez subskrypcji Premium / Roli Trenera
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
+      totalCount = Math.min(totalCount, 10);
+      if (offset >= 10) {
+        return res.json({ workouts: [], totalCount: totalCount });
+      }
+      limit = Math.min(limit, 10 - offset);
+    }
+
+    const sessionsQuery = `
+      SELECT id, name, comment, started_at as "startedAt"
+      FROM workout_sessions
+      WHERE user_id = $1
+      ORDER BY started_at DESC
+      LIMIT $2 OFFSET $3
+    `;
+    const sessionsResult = await pool.query(sessionsQuery, [userId, limit, offset]);
+    const sessions = sessionsResult.rows;
+
+    if (sessions.length === 0) {
+      return res.json({ workouts: [], totalCount: totalCount });
+    }
+
+    const sessionIds = sessions.map(s => s.id);
+
+    // Pobranie powiązanych serii z uwzględnieniem mapowania camelCase klucza seriesType
+    const seriesQuery = `
+      SELECT 
+        ls.id, 
+        ls.workout_session_id, 
+        ls.exercise_id, 
+        ls.weight, 
+        ls.reps, 
+        ls.series_order as "order",
+        ls.estimated_one_rm,
+        ls.series_type as "seriesType",
+        ex.name as "exerciseName"
+      FROM log_series ls
+      JOIN exercises ex ON ls.exercise_id = ex.id
+      WHERE ls.workout_session_id = ANY($1)
+      ORDER BY ls.workout_session_id, ls.series_order ASC
+    `;
+    const seriesResult = await pool.query(seriesQuery, [sessionIds]);
+    const allSeries = seriesResult.rows;
+
+    const historyData = sessions.map(session => {
+      return {
+        ...session,
+        series: allSeries.filter(s => s.workout_session_id === session.id)
+      };
+    });
+
+    res.json({ workouts: historyData, totalCount: totalCount });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas pobierania historii", details: error.message });
+  }
+});
+
+// =========================================================================
+// 3. EKSPORT HISTORII DO PLIKU CSV (Tylko dla Premium / Trainer)
+// =========================================================================
+router.get('/export', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const plan = await getUserPlan(userId);
+
+    if (!plan) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
+      return res.status(403).json({ 
+        error: "Funkcja eksportu historii do pliku CSV jest dostępna wyłącznie dla użytkowników planu PREMIUM! 🦾" 
+      });
+    }
+
+    const query = `
+      SELECT 
+        TO_CHAR(ws.started_at, 'YYYY-MM-DD HH24:MI') as "Data",
+        ws.name as "Nazwa treningu",
+        COALESCE(ws.comment, '') as "Komentarz do treningu",
+        ex.name as "Ćwiczenie",
+        ex.muscle_group as "Grupa mięśniowa",
+        ls.series_order as "Numer serii",
+        ls.series_type as "Typ serii",
+        ls.weight as "Ciężar (kg)",
+        ls.reps as "Powtórzenia",
+        COALESCE(ROUND(ls.estimated_one_rm, 1), 0) as "Estymowane 1RM"
+      FROM workout_sessions ws
+      JOIN log_series ls ON ws.id = ls.workout_session_id
+      JOIN exercises ex ON ls.exercise_id = ex.id
+      WHERE ws.user_id = $1
+      ORDER BY ws.started_at DESC, ls.series_order ASC
+    `;
+    const { rows } = await pool.query(query, [userId]);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename=gympatico_historia_treningow.csv');
+    
+    // Wstrzyknięcie znacznika BOM dla prawidłowego kodowania polskich znaków w MS Excel
+    res.write('\uFEFF');
+
+    const headers = ["Data", "Nazwa treningu", "Komentarz do treningu", "Ćwiczenie", "Grupa mięśniowa", "Numer serii", "Typ serii", "Ciężar (kg)", "Powtórzenia", "Estymowane 1RM"];
+    res.write(headers.join(';') + '\n');
+
+    for (const row of rows) {
+      const line = headers.map(header => {
+        const value = row[header];
+        if (typeof value === 'string' && (value.includes(';') || value.includes('"') || value.includes('\n'))) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      });
+      res.write(line.join(';') + '\n');
+    }
+
+    res.end();
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas generowania pliku eksportu", details: error.message });
+  }
+});
+
+// =========================================================================
+// 4. POBRANIE PROGRESJI 1RM ĆWICZENIA (Z ograniczeniem czasowym 30 dni dla FREE)
+// =========================================================================
+router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
+  const { exerciseId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    const plan = await getUserPlan(userId);
+
+    if (!plan) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    let timeBoundaryFilter = '';
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
+      timeBoundaryFilter = "AND ws.started_at >= NOW() - INTERVAL '30 days'";
+    }
+
+    const query = `
+      SELECT 
+        TO_CHAR(ws.started_at, 'YYYY-MM-DD') as date,
+        MAX(ls.estimated_one_rm) as max_1rm
+      FROM log_series ls
+      JOIN workout_sessions ws ON ls.workout_session_id = ws.id
+      WHERE ls.exercise_id = $1 
+        AND ws.user_id = $2 
+        AND ls.estimated_one_rm IS NOT NULL
+        ${timeBoundaryFilter}
+      GROUP BY TO_CHAR(ws.started_at, 'YYYY-MM-DD')
+      ORDER BY date ASC
+    `;
+    
+    const result = await pool.query(query, [exerciseId, userId]);
+    
+    const progressionData = result.rows.map(row => ({
+      date: row.date,
+      oneRm: parseFloat(row.max_1rm)
+    }));
+
+    res.json(progressionData);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd podczas pobierania progresji 1RM", details: error.message });
+  }
+});
+
+// =========================================================================
+// 5. USUNIĘCIE TRENINGU (Z weryfikacją uprawnień właściciela)
+// =========================================================================
+router.delete('/:id', authenticateToken, async (req, res) => {
+  const sessionId = req.params.id;
+  const userId = req.user.userId;
+
+  try {
+    // Jedno, atomowe zapytanie do bazy danych:
+    const result = await pool.query(
+      "DELETE FROM workout_sessions WHERE id = $1::uuid AND user_id = $2::uuid RETURNING id",
+      [sessionId, userId]
+    );
+
+    // Jeśli rowCount wynosi 0, oznacza to, że albo trening nie istnieje, 
+    // albo należy do kogoś innego (user_id się nie zgadza).
+    if (result.rowCount === 0) {
+      return res.status(404).json({ 
+        error: "Trening nie istnieje lub nie masz uprawnień do jego usunięcia." 
+      });
+    }
+
+    res.json({ message: "Trening został usunięty pomyślnie. 🗑️" });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Błąd podczas usuwania treningu", 
+      details: error.message 
+    });
+  }
+});
+
+// =========================================================================
+// 6. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz z walidacją długości znaków)
+// =========================================================================
+router.patch('/:sessionId', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { sessionId } = req.params;
+  let { name, comment } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: "Nazwa treningu jest wymagana!" });
+  }
+
+  name = name.trim();
+  comment = comment ? comment.trim() : null;
+
+  if (name.length < 3 || name.length > 100) {
+    return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
+  }
+
+  if (comment && comment.length > 500) {
+    return res.status(400).json({ error: "Komentarz może mieć maksymalnie 500 znaków!" });
+  }
+
+  try {
+    const updateQuery = `
+      UPDATE workout_sessions 
+      SET name = $1, comment = $2 
+      WHERE id = $3::uuid AND user_id = $4::uuid 
+      RETURNING id, name, comment
+    `;
+    // 🔴 POPRAWKA: Usunięto nadmiarowe wywołania .trim() z parametrów tablicy SQL
+    const result = await pool.query(updateQuery, [name, comment, sessionId, userId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Nie znaleziono sesji treningowej lub brak uprawnień." });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas edycji parametrów treningu", details: error.message });
+  }
+});
+
+module.exports = router;
+</file>
+
 <file path="frontend/src/App.jsx">
 // frontend/src/App.jsx
 import { useState, useEffect, useCallback } from 'react'
@@ -4903,6 +4961,16 @@ import { API_BASE_URL } from './config/api'
 import StatsView from './views/StatsView'
 
 import NotificationBell from './components/NotificationBell';
+
+// Prosty dekoder weryfikujący czas życia JWT
+const getJwtExpiry = (token) => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp * 1000; // Zwracamy w milisekundach
+  } catch (e) {
+    return null;
+  }
+};
 
 function AppContent() {
   const [token, setToken] = useState(() => localStorage.getItem('gp_token') || null);
@@ -5041,6 +5109,40 @@ function AppContent() {
   useEffect(() => {
     fetchAllData()
   }, [token, fetchAllData])
+
+  useEffect(() => {
+    if (!token) return;
+
+    const checkAndRefreshToken = async () => {
+      const expiryTime = getJwtExpiry(token);
+      if (!expiryTime) return;
+
+      const timeUntilExpiry = expiryTime - Date.now();
+      const SEVEN_DAYS_IN_MS = 7 * 24 * 60 * 60 * 1000;
+
+      // Jeśli do wygaśnięcia tokena zostało mniej niż 7 dni, odnawiamy go w tle
+      if (timeUntilExpiry > 0 && timeUntilExpiry < SEVEN_DAYS_IN_MS) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            if (data.token) {
+              localStorage.setItem('gp_token', data.token);
+              setToken(data.token);
+              console.log('🔄 Sesja GymPatico została dyskretnie przedłużona.');
+            }
+          }
+        } catch (err) {
+          console.error("Błąd podczas odnawiania sesji w tle:", err);
+        }
+      }
+    };
+
+    checkAndRefreshToken();
+  }, [token]);
 
   useEffect(() => {
     const handleSessionExpired = () => {

@@ -1,6 +1,7 @@
 // frontend/src/App.jsx
 import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import Settings from './views/Settings';
 
 import LoginView from './views/LoginView'
 import Dashboard from './views/Dashboard'
@@ -22,7 +23,7 @@ import NotificationBell from './components/NotificationBell';
 const getJwtExpiry = (token) => {
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.exp * 1000; // Zwracamy w milisekundach
+    return payload.exp * 1000;
   } catch (e) {
     return null;
   }
@@ -59,7 +60,7 @@ function AppContent() {
   
   const { 
     friends, pendingRequests, friendNickInput, setFriendNickInput, selectedFriendProfile, setSelectedFriendProfile, isProfileLoading, fetchFriendProfile, 
-    handleSendFriendRequest, handleAcceptFriend, handleRejectFriend, fetchFriendsData, activityFeed, handleToggleReaction, weeklyChallenge, notifications, markNotificationsAsRead
+    handleSendFriendRequest, handleAcceptFriend, handleRejectFriend, fetchFriendsData, activityFeed, handleToggleReaction, weeklyChallenge, notifications, markNotificationsAsRead, handleRemoveFriend
   } = useFriends(token)
 
   const { templates, fetchTemplates, handleSaveTemplate, handleDeleteTemplate } = useTemplates(token, showToast);
@@ -162,10 +163,13 @@ function AppContent() {
     }
   }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates]);
 
+  // 🔴 ZABEZPIECZENIE PRZED INFINITE LOOP (wywołanie tylko przy zmianie tokena)
   useEffect(() => {
     fetchAllData()
-  }, [token, fetchAllData])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
 
+  // 🔴 SILENT REFRESH: Automatyczne przedłużanie sesji
   useEffect(() => {
     if (!token) return;
 
@@ -176,7 +180,6 @@ function AppContent() {
       const timeUntilExpiry = expiryTime - Date.now();
       const SEVEN_DAYS_IN_MS = 7 * 24 * 60 * 60 * 1000;
 
-      // Jeśli do wygaśnięcia tokena zostało mniej niż 7 dni, odnawiamy go w tle
       if (timeUntilExpiry > 0 && timeUntilExpiry < SEVEN_DAYS_IN_MS) {
         try {
           const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
@@ -239,7 +242,7 @@ function AppContent() {
       await handleAddWeight(e);
       await fetchAllData();
     } catch (err) {
-      // Błąd został obsłużony wewnątrz hooka
+      // Błąd obsługiwany w hooku
     }
   };
 
@@ -289,6 +292,18 @@ function AppContent() {
       await handleRejectFriend(friendshipId);
       showToast('Zaproszenie zostało odrzucone.', 'success');
       await fetchAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // 🔴 NOWOŚĆ: Wrapper usuwania znajomego
+  const onRemoveFriend = async (friendId) => {
+    try {
+      await handleRemoveFriend(friendId);
+      showToast('Użytkownik został usunięty z Gangu 💔', 'success');
+      setSelectedFriendProfile(null); // Zamykamy modal profilu
+      await fetchAllData(); // Odświeżamy rankingi i feed
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -348,14 +363,14 @@ function AppContent() {
     try {
       await handleUpdateWorkout(sessionId, name, comment);
       showToast('Trening został zaktualizowany! ✏️', 'success');
-      return true; // Sukces
+      return true; 
     } catch (err) {
       showToast(err.message, 'error');
-      return false; // Porażka
+      return false; 
     }
   };
 
-  const isMoreRouteActive = location.pathname === '/exercises' || location.pathname === '/social'
+  const isMoreRouteActive = location.pathname === '/exercises' || location.pathname === '/social' || location.pathname === '/settings';
 
   return (
     <div className="p-4 md:p-6 font-sans bg-gymDark text-white min-h-screen relative">
@@ -370,7 +385,6 @@ function AppContent() {
             </div>
             
             <div className="flex items-center gap-3 md:gap-4 shrink-0">
-              {/* 🔴 KOMPONENT DZWONKA */}
               <NotificationBell 
                 notifications={notifications} 
                 markAsRead={markNotificationsAsRead} 
@@ -383,6 +397,7 @@ function AppContent() {
                 <button onClick={() => navigate('/new-workout')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/new-workout' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>+ Nowy Trening</button>
                 <button onClick={() => navigate('/history')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/history' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Historia</button>
                 <button onClick={() => navigate('/social')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/social' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Społeczność 👥</button>
+                <button onClick={() => navigate('/settings')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/settings' ? 'bg-zinc-700 text-white' : 'bg-transparent text-zinc-400 hover:text-white hover:bg-zinc-800'}`}>⚙️</button>
                 <button onClick={handleLogout} className="px-4 py-2 text-xs font-semibold rounded-lg bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer transition-all ml-2">Wyloguj</button>
               </nav>
 
@@ -431,6 +446,13 @@ function AppContent() {
                   <div>
                     <div>Gang GymPatico</div>
                     <div className="text-[11px] text-zinc-500 font-normal mt-0.5">Ranking streaków, zaproszenia i społeczność</div>
+                  </div>
+                </button>
+                <button onClick={() => { navigate('/settings'); setIsMoreMenuOpen(false); }} className={`flex items-center gap-3.5 p-3.5 rounded-xl border text-left font-bold text-sm transition-all cursor-pointer ${location.pathname === '/settings' ? 'border-zinc-600 bg-zinc-800 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}>
+                  <span className="text-xl">⚙️</span>
+                  <div>
+                    <div>Ustawienia</div>
+                    <div className="text-[11px] text-zinc-500 font-normal mt-0.5">Powiadomienia i preferencje konta</div>
                   </div>
                 </button>
               </div>
@@ -484,8 +506,9 @@ function AppContent() {
             />
           ) : <Navigate to="/login" />} />
           
-          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} activityFeed={activityFeed} onToggleReaction={handleToggleReaction} weeklyChallenge={weeklyChallenge} fetchFriendProfile={fetchFriendProfile} selectedFriendProfile={selectedFriendProfile} setSelectedFriendProfile={setSelectedFriendProfile} isProfileLoading={isProfileLoading} /> : <Navigate to="/login" />} />
+          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} activityFeed={activityFeed} onToggleReaction={handleToggleReaction} weeklyChallenge={weeklyChallenge} fetchFriendProfile={fetchFriendProfile} selectedFriendProfile={selectedFriendProfile} setSelectedFriendProfile={setSelectedFriendProfile} isProfileLoading={isProfileLoading} onRemoveFriend={onRemoveFriend} /> : <Navigate to="/login" />} />
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
+          <Route path="/settings" element={token ? <Settings token={token} showToast={showToast} /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>
       </main>

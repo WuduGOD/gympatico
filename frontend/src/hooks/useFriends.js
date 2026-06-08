@@ -24,9 +24,6 @@ export function useFriends(token) {
         fetch(`${API_BASE_URL}/api/friends/notifications`, { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
-      // 🔴 POPRAWKA (Graceful Degradation):
-      // Wywołujemy .json() tylko i wyłącznie wtedy, gdy odpowiedź serwera ma status 200-299.
-      // W przeciwnym razie bezpiecznie zwracamy pustą tablicę, unikając awarii całego komponentu.
       const friendsData = friendsRes.ok ? await friendsRes.json() : [];
       const requestsData = requestsRes.ok ? await requestsRes.json() : [];
       const activityData = activityRes.ok ? await activityRes.json() : [];
@@ -44,7 +41,6 @@ export function useFriends(token) {
     }
   }, [token]);
 
-  // Pobieranie profilu do pojedynku Head-to-Head
   const fetchFriendProfile = async (friendId) => {
     setIsProfileLoading(true);
     try {
@@ -88,43 +84,69 @@ export function useFriends(token) {
     return data;
   };
 
-  // Optymistyczne aktualizowanie reakcji w locie
+  const handleRemoveFriend = async (friendId) => {
+    const res = await fetch(`${API_BASE_URL}/api/friends/${friendId}`, { 
+      method: 'DELETE', 
+      headers: { 'Authorization': `Bearer ${token}` } 
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć znajomego.');
+    return data;
+  };
+
+  // 🔴 ZAKTUALIZOWANE: Optymistyczne aktualizowanie reakcji w locie z pełnym Rollbackiem
   const handleToggleReaction = useCallback(async (workoutId, emoji) => {
-    setActivityFeed(prevFeed => prevFeed.map(act => {
-      if (act.workout_id !== workoutId) return act;
+    let rollbackFeed = null; // Zmienna do przechwycenia dokładnego stanu przed zmianą
+
+    // 1. Zmień UI natychmiast i zapamiętaj poprzedni stan
+    setActivityFeed(prevFeed => {
+      rollbackFeed = [...prevFeed]; // Zapisujemy kopię zapasową
       
-      let currentReactions = [...(act.reactions || [])];
-      const existingIdx = currentReactions.findIndex(r => r.emoji === emoji);
+      return prevFeed.map(act => {
+        if (act.workout_id !== workoutId) return act;
+        
+        let currentReactions = [...(act.reactions || [])];
+        const existingIdx = currentReactions.findIndex(r => r.emoji === emoji);
 
-      if (existingIdx >= 0) {
-        const r = { ...currentReactions[existingIdx] };
-        if (r.user_reacted) {
-          r.count -= 1;
-          r.user_reacted = false;
+        if (existingIdx >= 0) {
+          const r = { ...currentReactions[existingIdx] };
+          if (r.user_reacted) {
+            r.count -= 1;
+            r.user_reacted = false;
+          } else {
+            r.count += 1;
+            r.user_reacted = true;
+          }
+          currentReactions[existingIdx] = r;
+          if (r.count <= 0) currentReactions.splice(existingIdx, 1);
         } else {
-          r.count += 1;
-          r.user_reacted = true;
+          currentReactions.push({ emoji, count: 1, user_reacted: true });
         }
-        currentReactions[existingIdx] = r;
-        if (r.count <= 0) currentReactions.splice(existingIdx, 1);
-      } else {
-        currentReactions.push({ emoji, count: 1, user_reacted: true });
-      }
-      return { ...act, reactions: currentReactions };
-    }));
+        return { ...act, reactions: currentReactions };
+      });
+    });
 
+    // 2. Wyślij dane do bazy w tle
     try {
-      await fetch(`${API_BASE_URL}/api/friends/activity/reaction`, {
+      const res = await fetch(`${API_BASE_URL}/api/friends/activity/reaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ workoutId, emoji })
       });
+      
+      // Jeśli serwer zwróci błąd (np. 400 lub 500), wymuszamy rzucenie wyjątku
+      if (!res.ok) {
+        throw new Error(`Błąd serwera: ${res.status}`);
+      }
     } catch (err) {
-      console.error("Błąd zapisu reakcji", err);
+      console.error("❌ Błąd zapisu reakcji! Wycofuję zmiany w UI (Rollback).", err);
+      // 3. Wycofaj zmiany w UI w przypadku niepowodzenia
+      if (rollbackFeed) {
+        setActivityFeed(rollbackFeed);
+      }
     }
   }, [token]);
 
-  // Oznaczanie powiadomień jako odczytane
   const markNotificationsAsRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     try {
@@ -141,7 +163,7 @@ export function useFriends(token) {
     friends, setFriends, pendingRequests, setPendingRequests, activityFeed, weeklyChallenge,
     friendNickInput, setFriendNickInput, socialMessage, setSocialMessage,
     selectedFriendProfile, setSelectedFriendProfile, isProfileLoading, fetchFriendProfile,
-    handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend, handleToggleReaction,
+    handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend, handleRemoveFriend, handleToggleReaction,
     notifications, markNotificationsAsRead
   };
 }

@@ -1,7 +1,7 @@
 // frontend/src/components/FriendProfileModal.jsx
 import React from 'react';
 
-export default function FriendProfileModal({ profile, onClose, myNick }) {
+export default function FriendProfileModal({ profile, onClose, myNick, onRemoveFriend }) {
   if (!profile) return null;
 
   // Konwersja na tony dla lepszego efektu
@@ -87,6 +87,18 @@ export default function FriendProfileModal({ profile, onClose, myNick }) {
             className="w-full mt-6 py-3.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl text-sm transition-colors"
           >
             Zamknij podgląd
+          </button>
+
+        {/* 🔴 NOWOŚĆ: Przycisk usuwania znajomego */}
+          <button 
+            onClick={() => {
+              if (window.confirm(`Czy na pewno chcesz wyrzucić użytkownika ${profile.nick} ze swojego Gangu?\nStracisz dostęp do jego statystyk.`)) {
+                onRemoveFriend(profile.id);
+              }
+            }} 
+            className="w-full py-3 bg-transparent hover:bg-red-500/10 text-zinc-500 hover:text-gymDanger font-bold rounded-xl text-xs transition-colors cursor-pointer"
+          >
+            Usuń ze znajomych 💔
           </button>
         </div>
       </div>

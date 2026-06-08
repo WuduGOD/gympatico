@@ -30,7 +30,7 @@ export default function Social({
   pendingRequests, handleAcceptFriend, handleRejectFriend,
   friends, user, activityFeed, onToggleReaction, 
   fetchFriendProfile, selectedFriendProfile, setSelectedFriendProfile, isProfileLoading,
-  weeklyChallenge
+  weeklyChallenge, onRemoveFriend
 }) {
   
   const handleSubmit = (e) => {
@@ -264,6 +264,7 @@ export default function Social({
         profile={selectedFriendProfile} 
         myNick={user?.nick || 'Ja'}
         onClose={() => setSelectedFriendProfile(null)} 
+        onRemoveFriend={onRemoveFriend}
       />
 
     </div>

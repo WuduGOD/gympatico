@@ -142,7 +142,7 @@ router.put('/weekly-target', authenticateToken, async (req, res) => {
   try {
     const query = `
       UPDATE users 
-      SET weekly_target_workouts = $1 
+      SET weekly_target_workouts = $1, target_updated_at = NOW() -- 🔴 DODANO ZNACZNIK CZASU
       WHERE id = $2 
       RETURNING weekly_target_workouts
     `;

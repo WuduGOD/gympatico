@@ -5,8 +5,56 @@ const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
 const { getUserPlan } = require('../utils/userHelpers'); 
+const webpush = require('web-push');
 
+// =========================================================================
+// KONFIGURACJA WEB PUSH (VAPID)
+// =========================================================================
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:kontakt@gympatico.pl',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+}
+
+// Funkcja pomocnicza do bezpiecznego wysyłania powiadomień i czyszczenia bazy
+const sendPushNotification = async (targetUserId, payloadObj) => {
+  if (!process.env.VAPID_PUBLIC_KEY) return; // Pomija, jeśli nie skonfigurowano VAPID w .env
+
+  try {
+    const subsRes = await pool.query(
+      "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1::uuid", 
+      [targetUserId]
+    );
+
+    if (subsRes.rowCount === 0) return;
+
+    const payload = JSON.stringify(payloadObj);
+
+    const pushPromises = subsRes.rows.map(sub => {
+      const pushSubscription = { 
+        endpoint: sub.endpoint, 
+        keys: { auth: sub.auth, p256dh: sub.p256dh } 
+      };
+      
+      return webpush.sendNotification(pushSubscription, payload).catch(err => {
+        // 410 (Gone) lub 404 (Not Found) oznaczają, że użytkownik cofnął uprawnienia w przeglądarce
+        if (err.statusCode === 410 || err.statusCode === 404) {
+          return pool.query("DELETE FROM push_subscriptions WHERE endpoint = $1", [sub.endpoint]);
+        }
+      });
+    });
+
+    await Promise.all(pushPromises);
+  } catch (e) {
+    console.error("Błąd systemowy podczas wysyłania powiadomienia Push:", e.message);
+  }
+};
+
+// =========================================================================
 // 1. WYSŁANIE ZAPROSZENIA
+// =========================================================================
 router.post('/request', authenticateToken, checkLimits('friends'), async (req, res) => {
   const { targetNick } = req.body;
   const senderId = req.user.userId;
@@ -27,13 +75,23 @@ router.post('/request', authenticateToken, checkLimits('friends'), async (req, r
     if (checkResult.rows.length > 0) return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
 
     await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1::uuid, $2::uuid, \'PENDING\')', [senderId, receiverId]);
+    
+    // Opcjonalnie: Wyślij push do odbiorcy (jeśli chcesz powiadamiać o nowych zaproszeniach)
+    await sendPushNotification(receiverId, {
+      title: "Nowe zaproszenie! ✉️",
+      body: `${req.user.nick} chce dołączyć do Twojego Gangu!`,
+      url: "/social"
+    });
+
     res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
   } catch (error) {
     res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
   }
 });
 
+// =========================================================================
 // 2. RANKING ZNAJOMYCH
+// =========================================================================
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
@@ -56,7 +114,9 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+// =========================================================================
 // 3. SKRZYNKA ODBIORCZA ZAPROSZEŃ
+// =========================================================================
 router.get('/requests', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
@@ -70,7 +130,9 @@ router.get('/requests', authenticateToken, async (req, res) => {
   }
 });
 
+// =========================================================================
 // 4. AKCEPTACJA ZAPROSZENIA
+// =========================================================================
 router.post('/accept', authenticateToken, async (req, res) => {
   const { friendshipId } = req.body;
   const userId = req.user.userId; 
@@ -111,11 +173,22 @@ router.post('/accept', authenticateToken, async (req, res) => {
     }
 
     await client.query("UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1::uuid", [friendshipId]);
+    
+    // Zapis powiadomienia w bazie dla in-app UI
     await client.query(
       "INSERT INTO notifications (user_id, sender_id, type, message) VALUES ($1::uuid, $2::uuid, 'FRIEND_ACCEPT', 'Zaakceptował(a) Twoje zaproszenie do Gangu!')",
       [senderId, userId]
     );
+
     await client.query('COMMIT');
+
+    // 🔴 Wysłanie powiadomienia Web Push do nadawcy
+    await sendPushNotification(senderId, {
+      title: "Zaproszenie zaakceptowane! 🤝",
+      body: `${req.user.nick} dołączył(a) do Twojego Gangu!`,
+      url: "/social"
+    });
+
     res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -125,7 +198,9 @@ router.post('/accept', authenticateToken, async (req, res) => {
   }
 });
 
+// =========================================================================
 // 5. ODRZUCENIE ZAPROSZENIA
+// =========================================================================
 router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
   const { friendshipId } = req.params;
   const userId = req.user.userId;
@@ -139,7 +214,7 @@ router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => 
 });
 
 // =========================================================================
-// 6. FEED AKTYWNOŚCI ZNAJOMYCH (Agregacja Reakcji)
+// 6. FEED AKTYWNOŚCI ZNAJOMYCH
 // =========================================================================
 router.get('/activity', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
@@ -148,7 +223,7 @@ router.get('/activity', authenticateToken, async (req, res) => {
       SELECT 
           u.id as user_id, u.nick, u.is_premium, 
           ws.id as workout_id, ws.name as workout_name, 
-          COALESCE(ws.ended_at, ws.started_at, NOW()) as started_at, -- 🔴 ZABEZPIECZENIE DATY
+          COALESCE(ws.ended_at, ws.started_at, NOW()) as started_at,
           COALESCE(
             (SELECT json_agg(json_build_object('emoji', r.emoji, 'count', r.count, 'user_reacted', r.user_reacted))
              FROM (
@@ -166,7 +241,7 @@ router.get('/activity', authenticateToken, async (req, res) => {
           FROM friendships
           WHERE (sender_id = $1::uuid OR receiver_id = $1::uuid) AND status = 'ACCEPTED'
       )
-      ORDER BY COALESCE(ws.ended_at, ws.started_at, NOW()) DESC -- 🔴 POPRAWIONE SORTOWANIE
+      ORDER BY COALESCE(ws.ended_at, ws.started_at, NOW()) DESC
       LIMIT 30;
     `;
     const result = await pool.query(query, [userId]);
@@ -177,13 +252,21 @@ router.get('/activity', authenticateToken, async (req, res) => {
 });
 
 // =========================================================================
-// 7. PRZEŁĄCZANIE REAKCJI (Dodaj / Usuń)
+// 7. PRZEŁĄCZANIE REAKCJI (Dodaj / Usuń) + Powiadomienia
 // =========================================================================
+const ALLOWED_EMOJIS = ['🔥', '💪', '👑', '👏'];
+
 router.post('/activity/reaction', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   const { workoutId, emoji } = req.body;
   
-  if (!workoutId || !emoji) return res.status(400).json({ error: "Brak danych reakcji." });
+  if (!workoutId || !emoji) {
+    return res.status(400).json({ error: "Brak danych reakcji." });
+  }
+
+  if (!ALLOWED_EMOJIS.includes(emoji)) {
+    return res.status(400).json({ error: "Niedozwolona reakcja." });
+  }
 
   try {
     const checkRes = await pool.query(
@@ -200,15 +283,25 @@ router.post('/activity/reaction', authenticateToken, async (req, res) => {
         [workoutId, userId, emoji]
       );
 
-      // 🔴 NOWOŚĆ: Powiadomienie dla autora treningu (tylko jeśli to nie jest jego własna reakcja)
       const workoutRes = await pool.query("SELECT user_id FROM workout_sessions WHERE id = $1::uuid", [workoutId]);
-      const ownerId = workoutRes.rows[0].user_id;
+      
+      if (workoutRes.rowCount > 0) {
+        const ownerId = workoutRes.rows[0].user_id;
+        
+        if (ownerId !== userId) {
+          // Zapis w bazie
+          await pool.query(
+            "INSERT INTO notifications (user_id, sender_id, type, message) VALUES ($1::uuid, $2::uuid, 'REACTION', $3)",
+            [ownerId, userId, `Zareagował(a) ${emoji} na Twój trening!`]
+          );
 
-      if (ownerId !== userId) {
-        await pool.query(
-          "INSERT INTO notifications (user_id, sender_id, type, message) VALUES ($1::uuid, $2::uuid, 'REACTION', $3)",
-          [ownerId, userId, `Zareagował(a) ${emoji} na Twój trening!`]
-        );
+          // 🔴 Wysłanie powiadomienia Web Push do autora treningu
+          await sendPushNotification(ownerId, {
+            title: "Nowa reakcja! 🔥",
+            body: `${req.user.nick} zareagował(a) ${emoji} na Twój trening!`,
+            url: "/social"
+          });
+        }
       }
 
       return res.json({ message: "Reakcja dodana" });
@@ -219,14 +312,13 @@ router.post('/activity/reaction', authenticateToken, async (req, res) => {
 });
 
 // =========================================================================
-// 8. WYZWANIA TYGODNIA (Dynamiczny Ranking Tonażu i Treningów)
+// 8. WYZWANIA TYGODNIA
 // =========================================================================
 router.get('/challenges/weekly', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
     const query = `
       WITH gang_members AS (
-        -- Ty i Twoi zaakceptowani znajomi
         SELECT receiver_id as user_id FROM friendships WHERE sender_id = $1::uuid AND status = 'ACCEPTED'
         UNION
         SELECT sender_id as user_id FROM friendships WHERE receiver_id = $1::uuid AND status = 'ACCEPTED'
@@ -241,7 +333,6 @@ router.get('/challenges/weekly', authenticateToken, async (req, res) => {
         FROM workout_sessions ws
         LEFT JOIN log_series ls ON ws.id = ls.workout_session_id
         WHERE ws.user_id IN (SELECT user_id FROM gang_members)
-          -- Zliczamy tylko od początku obecnego tygodnia (Poniedziałek 00:00)
           AND ws.started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'
         GROUP BY ws.user_id
       )
@@ -264,7 +355,7 @@ router.get('/challenges/weekly', authenticateToken, async (req, res) => {
 });
 
 // =========================================================================
-// 9. PODGLĄD PROFILU ZNAJOMEGO (Weryfikacja 1v1 - Head-to-Head)
+// 9. PODGLĄD PROFILU ZNAJOMEGO
 // =========================================================================
 router.get('/profile/:friendId', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
@@ -348,6 +439,54 @@ router.patch('/notifications/read', authenticateToken, async (req, res) => {
     res.json({ message: "Powiadomienia odczytane." });
   } catch (error) {
     res.status(500).json({ error: "Błąd aktualizacji powiadomień", details: error.message });
+  }
+});
+
+// =========================================================================
+// 12. USUWANIE ZNAJOMEGO
+// =========================================================================
+router.delete('/:friendId', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { friendId } = req.params;
+
+  try {
+    const result = await pool.query(`
+      DELETE FROM friendships 
+      WHERE status = 'ACCEPTED' 
+      AND ((sender_id = $1::uuid AND receiver_id = $2::uuid) OR (sender_id = $2::uuid AND receiver_id = $1::uuid))
+    `, [userId, friendId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Nie znaleziono takiej znajomości." });
+    }
+
+    res.json({ message: "Użytkownik został usunięty ze znajomych. 💔" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd podczas usuwania znajomego", details: error.message });
+  }
+});
+
+// =========================================================================
+// 13. REJESTRACJA SUBSKRYPCJI PUSH (PWA)
+// =========================================================================
+router.post('/subscribe', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const subscription = req.body;
+
+  if (!subscription || !subscription.endpoint || !subscription.keys) {
+    return res.status(400).json({ error: "Brak poprawnych danych subskrypcji." });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) 
+       VALUES ($1::uuid, $2, $3, $4) 
+       ON CONFLICT (user_id, endpoint) DO NOTHING`,
+      [userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth]
+    );
+    res.status(201).json({ message: "Subskrypcja Push zapisana poprawnie!" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd zapisu subskrypcji Push", details: error.message });
   }
 });
 
