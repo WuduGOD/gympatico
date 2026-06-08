@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import Settings from './views/Settings';
+import Landing from './views/Landing';
 
 import LoginView from './views/LoginView'
 import Dashboard from './views/Dashboard'
@@ -484,6 +485,7 @@ function AppContent() {
 
       <main className="pb-24 md:pb-0">
         <Routes>
+          <Route path="/" element={!token ? <Landing /> : <Navigate to="/social" />} />
           <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
           
           <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={onAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} workoutsHistory={workoutsHistory} templates={templates} /> : <Navigate to="/login" />} />

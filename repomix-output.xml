@@ -69,11 +69,11 @@ frontend/package.json
 frontend/playwright.config.js
 frontend/public/badge-72x72.png
 frontend/public/favicon.svg
+frontend/public/gym-push.js
 frontend/public/icon-192x192.png
 frontend/public/icons.svg
 frontend/public/pwa-192x192.png
 frontend/public/pwa-512x512.png
-frontend/public/sw.js
 frontend/README.md
 frontend/src/App.css
 frontend/src/App.jsx
@@ -234,34 +234,7 @@ export default defineConfig([
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="46" fill="none" viewBox="0 0 48 46"><path fill="#863bff" d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" style="fill:#863bff;fill:color(display-p3 .5252 .23 1);fill-opacity:1"/><mask id="a" width="48" height="46" x="0" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M25.842 44.938c-.664.844-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.183c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.498 0-3.579-1.842-3.579H1.133c-.92 0-1.456-1.04-.92-1.787L9.91.473c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.578 1.842 3.578h11.377c.943 0 1.473 1.088.89 1.832L25.843 44.94z" style="fill:#000;fill-opacity:1"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#ede6ff" rx="5.508" ry="14.704" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -4.47 31.516)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#ede6ff" rx="10.399" ry="29.851" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -39.328 7.883)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#7e14ff" rx="5.508" ry="30.487" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -25.913 -14.639)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -32.644 -3.334)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -34.34 30.47)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#ede6ff" rx="14.072" ry="22.078" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="rotate(93.35 24.506 48.493)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx=".387" cy="8.972" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(39.51 .387 8.972)"/></g><g filter="url(#k)"><ellipse cx="47.523" cy="-6.092" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 47.523 -6.092)"/></g><g filter="url(#l)"><ellipse cx="41.412" cy="6.333" fill="#47bfff" rx="5.971" ry="9.665" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 41.412 6.333)"/></g><g filter="url(#m)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#n)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#o)"><ellipse cx="35.651" cy="29.907" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 35.651 29.907)"/></g><g filter="url(#p)"><ellipse cx="38.418" cy="32.4" fill="#47bfff" rx="5.971" ry="15.297" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 38.418 32.4)"/></g></g><defs><filter id="b" width="60.045" height="41.654" x="-19.77" y="16.149" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-54.613" y="-7.533" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-49.64" y="2.03" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-45.045" y="20.029" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-43.513" y="21.178" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="15.756" y="-17.901" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-27.636" y="-22.853" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="20.116" y="-38.415" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="24.641" y="-11.323" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="8.244" y="-2.416" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="18.713" y="10.588" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter></defs></svg>
 </file>
 
-<file path="frontend/public/icons.svg">
-<svg xmlns="http://www.w3.org/2000/svg">
-  <symbol id="bluesky-icon" viewBox="0 0 16 17">
-    <g clip-path="url(#bluesky-clip)"><path fill="#08060d" d="M7.75 7.735c-.693-1.348-2.58-3.86-4.334-5.097-1.68-1.187-2.32-.981-2.74-.79C.188 2.065.1 2.812.1 3.251s.241 3.602.398 4.13c.52 1.744 2.367 2.333 4.07 2.145-2.495.37-4.71 1.278-1.805 4.512 3.196 3.309 4.38-.71 4.987-2.746.608 2.036 1.307 5.91 4.93 2.746 2.72-2.746.747-4.143-1.747-4.512 1.702.189 3.55-.4 4.07-2.145.156-.528.397-3.691.397-4.13s-.088-1.186-.575-1.406c-.42-.19-1.06-.395-2.741.79-1.755 1.24-3.64 3.752-4.334 5.099"/></g>
-    <defs><clipPath id="bluesky-clip"><path fill="#fff" d="M.1.85h15.3v15.3H.1z"/></clipPath></defs>
-  </symbol>
-  <symbol id="discord-icon" viewBox="0 0 20 19">
-    <path fill="#08060d" d="M16.224 3.768a14.5 14.5 0 0 0-3.67-1.153c-.158.286-.343.67-.47.976a13.5 13.5 0 0 0-4.067 0c-.128-.306-.317-.69-.476-.976A14.4 14.4 0 0 0 3.868 3.77C1.546 7.28.916 10.703 1.231 14.077a14.7 14.7 0 0 0 4.5 2.306q.545-.748.965-1.587a9.5 9.5 0 0 1-1.518-.74q.191-.14.372-.293c2.927 1.369 6.107 1.369 8.999 0q.183.152.372.294-.723.437-1.52.74.418.838.963 1.588a14.6 14.6 0 0 0 4.504-2.308c.37-3.911-.63-7.302-2.644-10.309m-9.13 8.234c-.878 0-1.599-.82-1.599-1.82 0-.998.705-1.82 1.6-1.82.894 0 1.614.82 1.599 1.82.001 1-.705 1.82-1.6 1.82m5.91 0c-.878 0-1.599-.82-1.599-1.82 0-.998.705-1.82 1.6-1.82.893 0 1.614.82 1.599 1.82 0 1-.706 1.82-1.6 1.82"/>
-  </symbol>
-  <symbol id="documentation-icon" viewBox="0 0 21 20">
-    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="m15.5 13.333 1.533 1.322c.645.555.967.833.967 1.178s-.322.623-.967 1.179L15.5 18.333m-3.333-5-1.534 1.322c-.644.555-.966.833-.966 1.178s.322.623.966 1.179l1.534 1.321"/>
-    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M17.167 10.836v-4.32c0-1.41 0-2.117-.224-2.68-.359-.906-1.118-1.621-2.08-1.96-.599-.21-1.349-.21-2.848-.21-2.623 0-3.935 0-4.983.369-1.684.591-3.013 1.842-3.641 3.428C3 6.449 3 7.684 3 10.154v2.122c0 2.558 0 3.838.706 4.726q.306.383.713.671c.76.536 1.79.64 3.581.66"/>
-    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M3 10a2.78 2.78 0 0 1 2.778-2.778c.555 0 1.209.097 1.748-.047.48-.129.854-.503.982-.982.145-.54.048-1.194.048-1.749a2.78 2.78 0 0 1 2.777-2.777"/>
-  </symbol>
-  <symbol id="github-icon" viewBox="0 0 19 19">
-    <path fill="#08060d" fill-rule="evenodd" d="M9.356 1.85C5.05 1.85 1.57 5.356 1.57 9.694a7.84 7.84 0 0 0 5.324 7.44c.387.079.528-.168.528-.376 0-.182-.013-.805-.013-1.454-2.165.467-2.616-.935-2.616-.935-.349-.91-.864-1.143-.864-1.143-.71-.48.051-.48.051-.48.787.051 1.2.805 1.2.805.695 1.194 1.817.857 2.268.649.064-.507.27-.857.49-1.052-1.728-.182-3.545-.857-3.545-3.87 0-.857.31-1.558.8-2.104-.078-.195-.349-1 .077-2.078 0 0 .657-.208 2.14.805a7.5 7.5 0 0 1 1.946-.26c.657 0 1.328.092 1.946.26 1.483-1.013 2.14-.805 2.14-.805.426 1.078.155 1.883.078 2.078.502.546.799 1.247.799 2.104 0 3.013-1.818 3.675-3.558 3.87.284.247.528.714.528 1.454 0 1.052-.012 1.896-.012 2.156 0 .208.142.455.528.377a7.84 7.84 0 0 0 5.324-7.441c.013-4.338-3.48-7.844-7.773-7.844" clip-rule="evenodd"/>
-  </symbol>
-  <symbol id="social-icon" viewBox="0 0 20 20">
-    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M12.5 6.667a4.167 4.167 0 1 0-8.334 0 4.167 4.167 0 0 0 8.334 0"/>
-    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M2.5 16.667a5.833 5.833 0 0 1 8.75-5.053m3.837.474.513 1.035c.07.144.257.282.414.309l.93.155c.596.1.736.536.307.965l-.723.73a.64.64 0 0 0-.152.531l.207.903c.164.715-.213.991-.84.618l-.872-.52a.63.63 0 0 0-.577 0l-.872.52c-.624.373-1.003.094-.84-.618l.207-.903a.64.64 0 0 0-.152-.532l-.723-.729c-.426-.43-.289-.864.306-.964l.93-.156a.64.64 0 0 0 .412-.31l.513-1.034c.28-.562.735-.562 1.012 0"/>
-  </symbol>
-  <symbol id="x-icon" viewBox="0 0 19 19">
-    <path fill="#08060d" fill-rule="evenodd" d="M1.893 1.98c.052.072 1.245 1.769 2.653 3.77l2.892 4.114c.183.261.333.48.333.486s-.068.089-.152.183l-.522.593-.765.867-3.597 4.087c-.375.426-.734.834-.798.905a1 1 0 0 0-.118.148c0 .01.236.017.664.017h.663l.729-.83c.4-.457.796-.906.879-.999a692 692 0 0 0 1.794-2.038c.034-.037.301-.34.594-.675l.551-.624.345-.392a7 7 0 0 1 .34-.374c.006 0 .93 1.306 2.052 2.903l2.084 2.965.045.063h2.275c1.87 0 2.273-.003 2.266-.021-.008-.02-1.098-1.572-3.894-5.547-2.013-2.862-2.28-3.246-2.273-3.266.008-.019.282-.332 2.085-2.38l2-2.274 1.567-1.782c.022-.028-.016-.03-.65-.03h-.674l-.3.342a871 871 0 0 1-1.782 2.025c-.067.075-.405.458-.75.852a100 100 0 0 1-.803.91c-.148.172-.299.344-.99 1.127-.304.343-.32.358-.345.327-.015-.019-.904-1.282-1.976-2.808L6.365 1.85H1.8zm1.782.91 8.078 11.294c.772 1.08 1.413 1.973 1.425 1.984.016.017.241.02 1.05.017l1.03-.004-2.694-3.766L7.796 5.75 5.722 2.852l-1.039-.004-1.039-.004z" clip-rule="evenodd"/>
-  </symbol>
-</svg>
-</file>
-
-<file path="frontend/public/sw.js">
+<file path="frontend/public/gym-push.js">
 // frontend/public/sw.js
 
 // =========================================================================
@@ -328,6 +301,33 @@ self.addEventListener('notificationclick', function(event) {
     })
   );
 });
+</file>
+
+<file path="frontend/public/icons.svg">
+<svg xmlns="http://www.w3.org/2000/svg">
+  <symbol id="bluesky-icon" viewBox="0 0 16 17">
+    <g clip-path="url(#bluesky-clip)"><path fill="#08060d" d="M7.75 7.735c-.693-1.348-2.58-3.86-4.334-5.097-1.68-1.187-2.32-.981-2.74-.79C.188 2.065.1 2.812.1 3.251s.241 3.602.398 4.13c.52 1.744 2.367 2.333 4.07 2.145-2.495.37-4.71 1.278-1.805 4.512 3.196 3.309 4.38-.71 4.987-2.746.608 2.036 1.307 5.91 4.93 2.746 2.72-2.746.747-4.143-1.747-4.512 1.702.189 3.55-.4 4.07-2.145.156-.528.397-3.691.397-4.13s-.088-1.186-.575-1.406c-.42-.19-1.06-.395-2.741.79-1.755 1.24-3.64 3.752-4.334 5.099"/></g>
+    <defs><clipPath id="bluesky-clip"><path fill="#fff" d="M.1.85h15.3v15.3H.1z"/></clipPath></defs>
+  </symbol>
+  <symbol id="discord-icon" viewBox="0 0 20 19">
+    <path fill="#08060d" d="M16.224 3.768a14.5 14.5 0 0 0-3.67-1.153c-.158.286-.343.67-.47.976a13.5 13.5 0 0 0-4.067 0c-.128-.306-.317-.69-.476-.976A14.4 14.4 0 0 0 3.868 3.77C1.546 7.28.916 10.703 1.231 14.077a14.7 14.7 0 0 0 4.5 2.306q.545-.748.965-1.587a9.5 9.5 0 0 1-1.518-.74q.191-.14.372-.293c2.927 1.369 6.107 1.369 8.999 0q.183.152.372.294-.723.437-1.52.74.418.838.963 1.588a14.6 14.6 0 0 0 4.504-2.308c.37-3.911-.63-7.302-2.644-10.309m-9.13 8.234c-.878 0-1.599-.82-1.599-1.82 0-.998.705-1.82 1.6-1.82.894 0 1.614.82 1.599 1.82.001 1-.705 1.82-1.6 1.82m5.91 0c-.878 0-1.599-.82-1.599-1.82 0-.998.705-1.82 1.6-1.82.893 0 1.614.82 1.599 1.82 0 1-.706 1.82-1.6 1.82"/>
+  </symbol>
+  <symbol id="documentation-icon" viewBox="0 0 21 20">
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="m15.5 13.333 1.533 1.322c.645.555.967.833.967 1.178s-.322.623-.967 1.179L15.5 18.333m-3.333-5-1.534 1.322c-.644.555-.966.833-.966 1.178s.322.623.966 1.179l1.534 1.321"/>
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M17.167 10.836v-4.32c0-1.41 0-2.117-.224-2.68-.359-.906-1.118-1.621-2.08-1.96-.599-.21-1.349-.21-2.848-.21-2.623 0-3.935 0-4.983.369-1.684.591-3.013 1.842-3.641 3.428C3 6.449 3 7.684 3 10.154v2.122c0 2.558 0 3.838.706 4.726q.306.383.713.671c.76.536 1.79.64 3.581.66"/>
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M3 10a2.78 2.78 0 0 1 2.778-2.778c.555 0 1.209.097 1.748-.047.48-.129.854-.503.982-.982.145-.54.048-1.194.048-1.749a2.78 2.78 0 0 1 2.777-2.777"/>
+  </symbol>
+  <symbol id="github-icon" viewBox="0 0 19 19">
+    <path fill="#08060d" fill-rule="evenodd" d="M9.356 1.85C5.05 1.85 1.57 5.356 1.57 9.694a7.84 7.84 0 0 0 5.324 7.44c.387.079.528-.168.528-.376 0-.182-.013-.805-.013-1.454-2.165.467-2.616-.935-2.616-.935-.349-.91-.864-1.143-.864-1.143-.71-.48.051-.48.051-.48.787.051 1.2.805 1.2.805.695 1.194 1.817.857 2.268.649.064-.507.27-.857.49-1.052-1.728-.182-3.545-.857-3.545-3.87 0-.857.31-1.558.8-2.104-.078-.195-.349-1 .077-2.078 0 0 .657-.208 2.14.805a7.5 7.5 0 0 1 1.946-.26c.657 0 1.328.092 1.946.26 1.483-1.013 2.14-.805 2.14-.805.426 1.078.155 1.883.078 2.078.502.546.799 1.247.799 2.104 0 3.013-1.818 3.675-3.558 3.87.284.247.528.714.528 1.454 0 1.052-.012 1.896-.012 2.156 0 .208.142.455.528.377a7.84 7.84 0 0 0 5.324-7.441c.013-4.338-3.48-7.844-7.773-7.844" clip-rule="evenodd"/>
+  </symbol>
+  <symbol id="social-icon" viewBox="0 0 20 20">
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M12.5 6.667a4.167 4.167 0 1 0-8.334 0 4.167 4.167 0 0 0 8.334 0"/>
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M2.5 16.667a5.833 5.833 0 0 1 8.75-5.053m3.837.474.513 1.035c.07.144.257.282.414.309l.93.155c.596.1.736.536.307.965l-.723.73a.64.64 0 0 0-.152.531l.207.903c.164.715-.213.991-.84.618l-.872-.52a.63.63 0 0 0-.577 0l-.872.52c-.624.373-1.003.094-.84-.618l.207-.903a.64.64 0 0 0-.152-.532l-.723-.729c-.426-.43-.289-.864.306-.964l.93-.156a.64.64 0 0 0 .412-.31l.513-1.034c.28-.562.735-.562 1.012 0"/>
+  </symbol>
+  <symbol id="x-icon" viewBox="0 0 19 19">
+    <path fill="#08060d" fill-rule="evenodd" d="M1.893 1.98c.052.072 1.245 1.769 2.653 3.77l2.892 4.114c.183.261.333.48.333.486s-.068.089-.152.183l-.522.593-.765.867-3.597 4.087c-.375.426-.734.834-.798.905a1 1 0 0 0-.118.148c0 .01.236.017.664.017h.663l.729-.83c.4-.457.796-.906.879-.999a692 692 0 0 0 1.794-2.038c.034-.037.301-.34.594-.675l.551-.624.345-.392a7 7 0 0 1 .34-.374c.006 0 .93 1.306 2.052 2.903l2.084 2.965.045.063h2.275c1.87 0 2.273-.003 2.266-.021-.008-.02-1.098-1.572-3.894-5.547-2.013-2.862-2.28-3.246-2.273-3.266.008-.019.282-.332 2.085-2.38l2-2.274 1.567-1.782c.022-.028-.016-.03-.65-.03h-.674l-.3.342a871 871 0 0 1-1.782 2.025c-.067.075-.405.458-.75.852a100 100 0 0 1-.803.91c-.148.172-.299.344-.99 1.127-.304.343-.32.358-.345.327-.015-.019-.904-1.282-1.976-2.808L6.365 1.85H1.8zm1.782.91 8.078 11.294c.772 1.08 1.413 1.973 1.425 1.984.016.017.241.02 1.05.017l1.03-.004-2.694-3.766L7.796 5.75 5.722 2.852l-1.039-.004-1.039-.004z" clip-rule="evenodd"/>
+  </symbol>
+</svg>
 </file>
 
 <file path="frontend/README.md">
@@ -904,145 +904,6 @@ export default function LoginView({ onLoginSuccess }) {
       </div>
     </div>
   )
-}
-</file>
-
-<file path="frontend/src/views/Settings.jsx">
-// frontend/src/views/Settings.jsx
-import { useState, useEffect } from 'react';
-import { API_BASE_URL } from '../config/api';
-
-// Funkcja pomocnicza dekodująca klucz VAPID z Base64
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
-
-export default function Settings({ token, showToast }) {
-  const [isPushSupported, setIsPushSupported] = useState(false);
-  const [permissionState, setPermissionState] = useState('default');
-  const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    // Sprawdzamy wsparcie dla Push API w przeglądarce/urządzeniu
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      setIsPushSupported(true);
-      setPermissionState(Notification.permission);
-    }
-  }, []);
-
-  const handleSubscribePush = async () => {
-    setIsLoading(true);
-    try {
-      // 1. Prośba o uprawnienia systemowe
-      const permission = await Notification.requestPermission();
-      setPermissionState(permission);
-
-      if (permission !== 'granted') {
-        throw new Error('Odmówiono dostępu do powiadomień.');
-      }
-
-      // 2. Pobranie aktywnego Service Workera
-      const registration = await navigator.serviceWorker.ready;
-      
-      // 3. Pobranie i konwersja klucza VAPID
-      const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-      if (!vapidPublicKey) {
-        throw new Error('Brak klucza VAPID w konfiguracji aplikacji.');
-      }
-      const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
-
-      // 4. Subskrypcja w przeglądarce
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: convertedVapidKey
-      });
-
-      // 5. Wysłanie subskrypcji na backend (endpoint zapisany w routes/friends.js)
-      const res = await fetch(`${API_BASE_URL}/api/friends/subscribe`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify(subscription)
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Błąd zapisu na serwerze.');
-      }
-
-      showToast('Powiadomienia Push zostały aktywowane! 🔔', 'success');
-    } catch (err) {
-      console.error(err);
-      showToast(err.message, 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-300">
-      
-      <div className="border-b border-zinc-800/80 pb-4">
-        <h2 className="text-2xl font-black text-white">⚙️ Ustawienia</h2>
-        <p className="text-zinc-400 text-sm mt-1">Zarządzaj swoim kontem i preferencjami.</p>
-      </div>
-
-      {/* KAFELEK 1: POWIADOMIENIA PUSH */}
-      <div className="bg-[#161920] border border-zinc-800 rounded-2xl p-5 shadow-xl">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              Powiadomienia Push 🔔
-            </h3>
-            <p className="text-sm text-zinc-400 mt-1">
-              Otrzymuj alerty o zaproszeniach do Gangu i nowych reakcjach (🔥) pod Twoimi treningami, nawet gdy apka jest zamknięta.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-5 border-t border-zinc-800/60 pt-5">
-          {!isPushSupported ? (
-            <div className="text-sm text-amber-500 bg-amber-500/10 p-4 rounded-xl border border-amber-500/20">
-              <strong>Brak wsparcia:</strong> Twoja przeglądarka lub urządzenie nie obsługuje powiadomień. <br/>
-              <em>Jeśli jesteś na iPhone/iOS, musisz najpierw dodać tę stronę do ekranu głównego (Dodaj do ekranu początkowego).</em>
-            </div>
-          ) : permissionState === 'granted' ? (
-            <div className="text-sm text-emerald-500 bg-emerald-500/10 p-4 rounded-xl border border-emerald-500/20 font-bold flex items-center gap-2">
-              ✅ Powiadomienia są włączone dla tego urządzenia!
-            </div>
-          ) : permissionState === 'denied' ? (
-            <div className="text-sm text-red-500 bg-red-500/10 p-4 rounded-xl border border-red-500/20">
-              ❌ Zablokowałeś powiadomienia w przeglądarce. Zmień uprawnienia w ustawieniach strony (ikonka kłódki przy pasku adresu URL), aby je włączyć.
-            </div>
-          ) : (
-            <button 
-              onClick={handleSubscribePush}
-              disabled={isLoading}
-              className="w-full md:w-auto px-6 py-3 bg-gymRed hover:bg-red-600 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Aktywowanie...' : 'Włącz powiadomienia na tym urządzeniu'}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* MIEJSCE NA PRZYSZŁE KAFELKI */}
-      <div className="bg-[#161920]/50 border border-zinc-800 border-dashed rounded-2xl p-5 flex flex-col items-center justify-center text-center text-zinc-500 min-h-[120px]">
-        <span className="text-2xl mb-2">🚧</span>
-        <span className="text-sm font-semibold">Więcej ustawień wkrótce...</span>
-      </div>
-
-    </div>
-  );
 }
 </file>
 
@@ -1882,6 +1743,172 @@ export default function ExercisesList({ exercises, onAddExercise, onDeleteExerci
 }
 </file>
 
+<file path="frontend/src/views/Settings.jsx">
+// frontend/src/views/Settings.jsx
+import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
+
+// Dekoder klucza VAPID
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+export default function Settings({ token, showToast }) {
+  const [isPushSupported, setIsPushSupported] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [currentSubscription, setCurrentSubscription] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // 1. Sprawdzamy stan przy ładowaniu strony
+  useEffect(() => {
+    const checkSubscriptionState = async () => {
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        setIsPushSupported(true);
+        try {
+          const registration = await navigator.serviceWorker.ready;
+          // Sprawdzamy, czy to urządzenie ma już aktywną subskrypcję w tle
+          const sub = await registration.pushManager.getSubscription();
+          if (sub) {
+            setIsSubscribed(true);
+            setCurrentSubscription(sub);
+          }
+        } catch (err) {
+          console.error("Błąd podczas sprawdzania subskrypcji:", err);
+        }
+      }
+      setIsLoading(false);
+    };
+
+    checkSubscriptionState();
+  }, []);
+
+  // 2. Obsługa Kliknięcia Suwaka
+  const handleTogglePush = async () => {
+    setIsLoading(true);
+    try {
+      const registration = await navigator.serviceWorker.ready;
+
+      // PRZYPADEK A: CHCEMY WYŁĄCZYĆ POWIADOMIENIA
+      if (isSubscribed && currentSubscription) {
+        // Usuwamy z serwera
+        await fetch(`${API_BASE_URL}/api/friends/unsubscribe`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ endpoint: currentSubscription.endpoint })
+        });
+        
+        // Odpinamy z przeglądarki
+        await currentSubscription.unsubscribe();
+        
+        setIsSubscribed(false);
+        setCurrentSubscription(null);
+        showToast('Powiadomienia zostały wyłączone na tym urządzeniu. 🔕', 'success');
+      } 
+      
+      // PRZYPADEK B: CHCEMY WŁĄCZYĆ POWIADOMIENIA
+      else {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          throw new Error('Musisz odblokować powiadomienia w ustawieniach przeglądarki!');
+        }
+
+        const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+        if (!vapidPublicKey) throw new Error('Brak klucza VAPID!');
+        
+        const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+
+        // Subskrybujemy urządzenie
+        const newSubscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey
+        });
+
+        // Wysyłamy na backend
+        const res = await fetch(`${API_BASE_URL}/api/friends/subscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(newSubscription)
+        });
+
+        if (!res.ok) throw new Error('Błąd zapisu na serwerze.');
+
+        setIsSubscribed(true);
+        setCurrentSubscription(newSubscription);
+        showToast('Powiadomienia Push aktywowane! 🔔', 'success');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast(err.message, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-300">
+      
+      <div className="border-b border-zinc-800/80 pb-4">
+        <h2 className="text-2xl font-black text-white">⚙️ Ustawienia</h2>
+        <p className="text-zinc-400 text-sm mt-1">Zarządzaj swoim kontem i preferencjami.</p>
+      </div>
+
+      <div className="bg-[#161920] border border-zinc-800 rounded-2xl p-5 shadow-xl">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              Powiadomienia Push 🔔
+            </h3>
+            <p className="text-sm text-zinc-400 mt-1 mr-4">
+              Alerty o zaproszeniach do Gangu i nowych reakcjach (🔥) pod treningami na tym urządzeniu.
+            </p>
+          </div>
+          
+          {/* SUWAK (TOGGLE SWITCH) */}
+          <div className="shrink-0">
+            {!isPushSupported ? (
+              <span className="text-xs text-red-400 font-bold bg-red-400/10 px-2 py-1 rounded">Brak wsparcia</span>
+            ) : isLoading ? (
+              <div className="w-12 h-6 bg-zinc-800 rounded-full animate-pulse" />
+            ) : (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isSubscribed}
+                onClick={handleTogglePush}
+                disabled={isLoading}
+                className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors duration-300 ease-in-out cursor-pointer focus:outline-none focus:ring-2 focus:ring-gymRed focus:ring-offset-2 focus:ring-offset-[#161920] ${
+                  isSubscribed ? 'bg-gymRed shadow-[0_0_12px_rgba(239,68,68,0.4)]' : 'bg-zinc-700'
+                }`}
+              >
+                <span className="sr-only">Włącz powiadomienia</span>
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform duration-300 ease-in-out ${
+                    isSubscribed ? 'translate-x-8' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-[#161920]/50 border border-zinc-800 border-dashed rounded-2xl p-5 flex flex-col items-center justify-center text-center text-zinc-500 min-h-[120px]">
+        <span className="text-2xl mb-2">🚧</span>
+        <span className="text-sm font-semibold">Więcej ustawień wkrótce...</span>
+      </div>
+
+    </div>
+  );
+}
+</file>
+
 <file path="backend/config/db.js">
 const { Pool } = require('pg');
 require('dotenv').config();
@@ -2529,53 +2556,6 @@ export default function RestTimer({ onFinish }) {
 }
 </file>
 
-<file path="frontend/vite.config.js">
-// frontend/vite.config.js
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
-import { VitePWA } from 'vite-plugin-pwa'
-
-export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto',
-      includeAssets: ['favicon.svg'],
-      
-      // JAWNA KONFIGURACJA WORKBOX (Eliminacja ostrzeżenia o braku .wasm i poprawne cache'owanie)
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico}']
-      },
-      
-      manifest: {
-        name: 'GymPatico - Profesjonalny Dziennik Treningowy',
-        short_name: 'GymPatico',
-        description: 'Zaawansowany dziennik treningowy, analityka progresu siłowego oraz kompletny atlas ćwiczeń dla kulturystów i amatorów sportów siłowych.',
-        theme_color: '#0c0e12',
-        background_color: '#0c0e12',
-        display: 'standalone',
-        orientation: 'portrait',
-        icons: [
-          {
-            src: 'pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png'
-          },
-          {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png'
-          }
-        ]
-      }
-    })
-  ],
-})
-</file>
-
 <file path="backend/middleware/checkLimits.js">
 // backend/middleware/checkLimits.js
 const pool = require('../config/db');
@@ -2631,66 +2611,52 @@ const checkLimits = (resourceType) => {
 module.exports = checkLimits;
 </file>
 
-<file path="frontend/src/main.jsx">
-// frontend/src/main.jsx
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
+<file path="frontend/vite.config.js">
+// frontend/vite.config.js
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { VitePWA } from 'vite-plugin-pwa'
 
-// --- GLOBALNY INTERCEPTOR SIECIOWY (FAIL-SAFE FOR JWT EXPIRATION) ---
-const { fetch: originalFetch } = window;
-window.fetch = async (...args) => {
-  const response = await originalFetch(...args);
-  
-  // Przechwytujemy potencjalne błędy uwierzytelnienia/autoryzacji
-  if (response.status === 401 || response.status === 403) {
-    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
-    
-    // BEZPIECZNIK 1: Ignorujemy próby logowania/rejestracji
-    if (url && !url.includes('/api/auth/login') && !url.includes('/api/auth/register')) {
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      injectRegister: 'auto',
+      includeAssets: ['favicon.svg'],
       
-      // 🔴 POPRAWKA: Filtrowanie komunikatów o limitach planu FREE
-      try {
-        // Klonujemy odpowiedź, aby nie zablokować strumienia (body used) dla końcowych widoków/hooków
-        const responseClone = response.clone();
-        const data = await responseClone.json();
-        
-        // Jeśli w body znajduje się słowo kluczowe powiązane z limitami, 
-        // przerywamy procedurę wylogowania i pozwalamy hookowi obsłużyć błąd (np. pokazać toast)
-        if (data && data.error && (data.error.includes('limit') || data.error.includes('Osiągnięto'))) {
-          return response;
-        }
-      } catch (jsonError) {
-        // Jeśli odpowiedź to nie JSON (np. surowy błąd serwera), pozwalamy na dalsze działanie interceptora
+      // 🔴 POPRAWKA: Wstrzyknięcie naszego pliku z logiką Push do wygenerowanego SW
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        importScripts: ['/gym-push.js'] 
+      },
+      
+      manifest: {
+        name: 'GymPatico - Profesjonalny Dziennik Treningowy',
+        short_name: 'GymPatico',
+        description: 'Zaawansowany dziennik treningowy, analityka progresu siłowego oraz kompletny atlas ćwiczeń dla kulturystów i amatorów sportów siłowych.',
+        theme_color: '#0c0e12',
+        background_color: '#0c0e12',
+        display: 'standalone',
+        orientation: 'portrait',
+        icons: [
+          {
+            src: 'pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png'
+          }
+        ]
       }
-
-      // Jeśli test klona przeszedł pomyślnie i to nie był limit -> emitujemy zdarzenie wygaśnięcia sesji
-      window.dispatchEvent(new Event('gympatico-unauthorized'));
-    }
-  }
-  
-  return response;
-};
-
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
-
-// Rejestracja Service Workera dla powiadomień Push
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then(registration => {
-        console.log('✅ Service Worker zarejestrowany pomyślnie. Scope:', registration.scope);
-      })
-      .catch(error => {
-        console.error('❌ Błąd rejestracji Service Workera:', error);
-      });
-  });
-}
+    })
+  ],
+})
 </file>
 
 <file path="backend/routes/auth.js">
@@ -3048,6 +3014,55 @@ export function useFriends(token) {
     notifications, markNotificationsAsRead
   };
 }
+</file>
+
+<file path="frontend/src/main.jsx">
+// frontend/src/main.jsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+
+// --- GLOBALNY INTERCEPTOR SIECIOWY (FAIL-SAFE FOR JWT EXPIRATION) ---
+const { fetch: originalFetch } = window;
+window.fetch = async (...args) => {
+  const response = await originalFetch(...args);
+  
+  // Przechwytujemy potencjalne błędy uwierzytelnienia/autoryzacji
+  if (response.status === 401 || response.status === 403) {
+    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+    
+    // BEZPIECZNIK 1: Ignorujemy próby logowania/rejestracji
+    if (url && !url.includes('/api/auth/login') && !url.includes('/api/auth/register')) {
+      
+      // 🔴 POPRAWKA: Filtrowanie komunikatów o limitach planu FREE
+      try {
+        // Klonujemy odpowiedź, aby nie zablokować strumienia (body used) dla końcowych widoków/hooków
+        const responseClone = response.clone();
+        const data = await responseClone.json();
+        
+        // Jeśli w body znajduje się słowo kluczowe powiązane z limitami, 
+        // przerywamy procedurę wylogowania i pozwalamy hookowi obsłużyć błąd (np. pokazać toast)
+        if (data && data.error && (data.error.includes('limit') || data.error.includes('Osiągnięto'))) {
+          return response;
+        }
+      } catch (jsonError) {
+        // Jeśli odpowiedź to nie JSON (np. surowy błąd serwera), pozwalamy na dalsze działanie interceptora
+      }
+
+      // Jeśli test klona przeszedł pomyślnie i to nie był limit -> emitujemy zdarzenie wygaśnięcia sesji
+      window.dispatchEvent(new Event('gympatico-unauthorized'));
+    }
+  }
+  
+  return response;
+};
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
 </file>
 
 <file path="frontend/src/views/History.jsx">
@@ -4456,6 +4471,431 @@ export default function Dashboard({
 }
 </file>
 
+<file path="backend/routes/workouts.js">
+// backend/routes/workouts.js
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+const checkLimits = require('../middleware/checkLimits');
+const { getUserPlan } = require('../utils/userHelpers');
+
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// =========================================================================
+// 1. ZAPISANIE TRENINGU (Zabezpieczone transakcyjnie + Blokada FOR UPDATE + Progi Streaka + Amnestia)
+// =========================================================================
+router.post('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { name, comment, series } = req.body;
+
+  // 1. Podstawowa walidacja struktury
+  if (!name || !name.trim() || !Array.isArray(series) || series.length === 0) {
+    return res.status(400).json({ error: "Nazwa treningu oraz zestaw serii są wymagane!" });
+  }
+
+  // 2. Rygorystyczna walidacja każdego exerciseId
+  for (let i = 0; i < series.length; i++) {
+    const exId = series[i].exerciseId;
+    
+    if (!exId || !uuidRegex.test(exId)) {
+      return res.status(400).json({ 
+        error: `Błąd walidacji: Odrzucono zapis. Przekazano nieprawidłowy lub uszkodzony identyfikator ćwiczenia w serii ${i + 1}.` 
+      });
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Blokada pesymistyczna (Pessimistic Locking) na wierszu użytkownika.
+    // Pobieramy target_updated_at niezbędne do logiki amnestii streaka.
+    const userResult = await client.query(
+      'SELECT current_streak, weekly_target_workouts, last_workout_at, target_updated_at FROM users WHERE id = $1 FOR UPDATE', 
+      [userId]
+    );
+    
+    if (userResult.rowCount === 0) {
+      throw new Error("Użytkownik nie istnieje w systemie.");
+    }
+
+    const { current_streak, weekly_target_workouts, last_workout_at, target_updated_at } = userResult.rows[0];
+    const target = weekly_target_workouts ?? 3;
+
+    // Symetryczne pobieranie stanu licznika tygodniowego PRZED zapisem nowej sesji
+    const lastWeekResult = await client.query(
+      `SELECT COUNT(*) as count FROM workout_sessions WHERE user_id = $1 
+      AND started_at >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw' 
+      AND started_at < date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
+    );
+    const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count, 10);
+
+    const thisWeekResult = await client.query(
+      `SELECT COUNT(*) as count FROM workout_sessions WHERE user_id = $1 
+      AND started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
+    );
+    const workoutsBeforeThisOne = parseInt(thisWeekResult.rows[0].count, 10);
+
+    // --- BEZPIECZNE WSTAWIENIE NAGŁÓWKA SESJI ---
+    const sessionResult = await client.query(
+      "INSERT INTO workout_sessions (user_id, name, comment, started_at, ended_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id",
+      [userId, name.trim(), comment || null]
+    );
+    const sessionId = sessionResult.rows[0].id;
+
+    // Przygotowanie płaskich tablic dla optymalizacji sieciowej UNNEST Batch Insert
+    const exerciseIds = [];
+    const weights = [];
+    const reps = [];
+    const orders = [];
+    const estimatedOneRMs = [];
+    const isAlternatives = [];
+    const seriesComments = [];
+    const seriesTypes = [];
+
+    for (let i = 0; i < series.length; i++) {
+      const s = series[i];
+      let estimatedOneRM = null;
+      
+      if (s.reps >= 1 && s.reps <= 12) {
+        estimatedOneRM = s.weight * (1 + s.reps / 30);
+      }
+
+      exerciseIds.push(s.exerciseId);
+      weights.push(s.weight);
+      reps.push(s.reps);
+      orders.push(s.order || (i + 1));
+      estimatedOneRMs.push(estimatedOneRM);
+      isAlternatives.push(s.isAlternative || false);
+      seriesComments.push(s.comment || null);
+      seriesTypes.push(s.seriesType || 'NORMAL');
+    }
+
+    const bulkInsertSeriesQuery = `
+      INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment, series_type)
+      SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::numeric[], $7::boolean[], $8::text[], $9::varchar[])
+    `;
+
+    await client.query(bulkInsertSeriesQuery, [
+      sessionId, exerciseIds, weights, reps, orders, estimatedOneRMs, isAlternatives, seriesComments, seriesTypes
+    ]);
+
+    // --- ANALIZA I AKTUALIZACJA CIĄGŁOŚCI TRENINGOWEJ (STREAK Z AMNESTIĄ) ---
+    let effectiveStreak = current_streak;
+
+    // Pobranie idealnych granic czasowych z bazy w odpowiedniej strefie
+    const datesResult = await client.query(`
+      SELECT 
+        (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw') as start_of_this_week,
+        ((date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw') as start_of_last_week
+    `);
+    const startOfThisWeek = new Date(datesResult.rows[0].start_of_this_week);
+    const startOfLastWeek = new Date(datesResult.rows[0].start_of_last_week);
+    const targetUpdatedAt = target_updated_at ? new Date(target_updated_at) : new Date(0);
+
+    if (last_workout_at) {
+      const lastWorkoutDate = new Date(last_workout_at);
+
+      // Jeśli ostatni trening odbył się przed bieżącym tygodniem, oceniamy zeszły tydzień
+      if (lastWorkoutDate < startOfThisWeek) {
+        if (workoutsLastWeek < target) {
+          
+          // 🔴 KLAUZULA AMNESTII: Czy użytkownik zmienił cel w trakcie zeszłego tygodnia (lub później)?
+          const isAmnestyActive = targetUpdatedAt >= startOfLastWeek;
+
+          if (!isAmnestyActive) {
+            effectiveStreak = 0; // Przerwana ciągłość i brak amnestii -> reset streaka
+          }
+        }
+      }
+    }
+
+    // Dodając ten trening, łączna suma w tym tygodniu wyniesie:
+    const workoutsWithThisOne = workoutsBeforeThisOne + 1;
+    let newStreak = effectiveStreak;
+
+    // Próg bezpieczeństwa (Threshold Guard)
+    if (workoutsWithThisOne >= target && workoutsBeforeThisOne < target) {
+      newStreak = effectiveStreak + 1;
+    }
+
+    // Aktualizacja rekordu użytkownika
+    await client.query(
+      'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
+      [newStreak, userId]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: "Błąd transakcji podczas zapisywania treningu", details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// =========================================================================
+// 2. POBRANIE HISTORII TRENINGÓW (Z paginacją i twardym limitem 10 sesji dla FREE)
+// =========================================================================
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  
+  let limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  let offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
+  try {
+    const plan = await getUserPlan(userId);
+
+    if (!plan) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    const countQuery = 'SELECT COUNT(*) as count FROM workout_sessions WHERE user_id = $1';
+    const countResult = await pool.query(countQuery, [userId]);
+    let totalCount = parseInt(countResult.rows[0].count, 10);
+
+    // Wymuszanie twardego sufitu biznesowego dla kont bez subskrypcji Premium / Roli Trenera
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
+      totalCount = Math.min(totalCount, 10);
+      if (offset >= 10) {
+        return res.json({ workouts: [], totalCount: totalCount });
+      }
+      limit = Math.min(limit, 10 - offset);
+    }
+
+    const sessionsQuery = `
+      SELECT id, name, comment, started_at as "startedAt"
+      FROM workout_sessions
+      WHERE user_id = $1
+      ORDER BY started_at DESC
+      LIMIT $2 OFFSET $3
+    `;
+    const sessionsResult = await pool.query(sessionsQuery, [userId, limit, offset]);
+    const sessions = sessionsResult.rows;
+
+    if (sessions.length === 0) {
+      return res.json({ workouts: [], totalCount: totalCount });
+    }
+
+    const sessionIds = sessions.map(s => s.id);
+
+    const seriesQuery = `
+      SELECT 
+        ls.id, 
+        ls.workout_session_id, 
+        ls.exercise_id, 
+        ls.weight, 
+        ls.reps, 
+        ls.series_order as "order",
+        ls.estimated_one_rm,
+        ls.series_type as "seriesType",
+        ex.name as "exerciseName"
+      FROM log_series ls
+      JOIN exercises ex ON ls.exercise_id = ex.id
+      WHERE ls.workout_session_id = ANY($1)
+      ORDER BY ls.workout_session_id, ls.series_order ASC
+    `;
+    const seriesResult = await pool.query(seriesQuery, [sessionIds]);
+    const allSeries = seriesResult.rows;
+
+    const historyData = sessions.map(session => {
+      return {
+        ...session,
+        series: allSeries.filter(s => s.workout_session_id === session.id)
+      };
+    });
+
+    res.json({ workouts: historyData, totalCount: totalCount });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas pobierania historii", details: error.message });
+  }
+});
+
+// =========================================================================
+// 3. EKSPORT HISTORII DO PLIKU CSV (Tylko dla Premium / Trainer)
+// =========================================================================
+router.get('/export', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const plan = await getUserPlan(userId);
+
+    if (!plan) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
+      return res.status(403).json({ 
+        error: "Funkcja eksportu historii do pliku CSV jest dostępna wyłącznie dla użytkowników planu PREMIUM! 🦾" 
+      });
+    }
+
+    const query = `
+      SELECT 
+        TO_CHAR(ws.started_at, 'YYYY-MM-DD HH24:MI') as "Data",
+        ws.name as "Nazwa treningu",
+        COALESCE(ws.comment, '') as "Komentarz do treningu",
+        ex.name as "Ćwiczenie",
+        ex.muscle_group as "Grupa mięśniowa",
+        ls.series_order as "Numer serii",
+        ls.series_type as "Typ serii",
+        ls.weight as "Ciężar (kg)",
+        ls.reps as "Powtórzenia",
+        COALESCE(ROUND(ls.estimated_one_rm, 1), 0) as "Estymowane 1RM"
+      FROM workout_sessions ws
+      JOIN log_series ls ON ws.id = ls.workout_session_id
+      JOIN exercises ex ON ls.exercise_id = ex.id
+      WHERE ws.user_id = $1
+      ORDER BY ws.started_at DESC, ls.series_order ASC
+    `;
+    const { rows } = await pool.query(query, [userId]);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename=gympatico_historia_treningow.csv');
+    
+    res.write('\uFEFF');
+
+    const headers = ["Data", "Nazwa treningu", "Komentarz do treningu", "Ćwiczenie", "Grupa mięśniowa", "Numer serii", "Typ serii", "Ciężar (kg)", "Powtórzenia", "Estymowane 1RM"];
+    res.write(headers.join(';') + '\n');
+
+    for (const row of rows) {
+      const line = headers.map(header => {
+        const value = row[header];
+        if (typeof value === 'string' && (value.includes(';') || value.includes('"') || value.includes('\n'))) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      });
+      res.write(line.join(';') + '\n');
+    }
+
+    res.end();
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas generowania pliku eksportu", details: error.message });
+  }
+});
+
+// =========================================================================
+// 4. POBRANIE PROGRESJI 1RM ĆWICZENIA (Z ograniczeniem czasowym 30 dni dla FREE)
+// =========================================================================
+router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
+  const { exerciseId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    const plan = await getUserPlan(userId);
+
+    if (!plan) {
+      return res.status(404).json({ error: "Użytkownik nie istnieje." });
+    }
+
+    let timeBoundaryFilter = '';
+    if (!plan.is_premium && plan.role !== 'TRAINER') {
+      timeBoundaryFilter = "AND ws.started_at >= NOW() - INTERVAL '30 days'";
+    }
+
+    const query = `
+      SELECT 
+        TO_CHAR(ws.started_at, 'YYYY-MM-DD') as date,
+        MAX(ls.estimated_one_rm) as max_1rm
+      FROM log_series ls
+      JOIN workout_sessions ws ON ls.workout_session_id = ws.id
+      WHERE ls.exercise_id = $1 
+        AND ws.user_id = $2 
+        AND ls.estimated_one_rm IS NOT NULL
+        ${timeBoundaryFilter}
+      GROUP BY TO_CHAR(ws.started_at, 'YYYY-MM-DD')
+      ORDER BY date ASC
+    `;
+    
+    const result = await pool.query(query, [exerciseId, userId]);
+    
+    const progressionData = result.rows.map(row => ({
+      date: row.date,
+      oneRm: parseFloat(row.max_1rm)
+    }));
+
+    res.json(progressionData);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd podczas pobierania progresji 1RM", details: error.message });
+  }
+});
+
+// =========================================================================
+// 5. USUNIĘCIE TRENINGU (Z weryfikacją uprawnień właściciela)
+// =========================================================================
+router.delete('/:id', authenticateToken, async (req, res) => {
+  const sessionId = req.params.id;
+  const userId = req.user.userId;
+
+  try {
+    const result = await pool.query(
+      "DELETE FROM workout_sessions WHERE id = $1::uuid AND user_id = $2::uuid RETURNING id",
+      [sessionId, userId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ 
+        error: "Trening nie istnieje lub nie masz uprawnień do jego usunięcia." 
+      });
+    }
+
+    res.json({ message: "Trening został usunięty pomyślnie. 🗑️" });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Błąd podczas usuwania treningu", 
+      details: error.message 
+    });
+  }
+});
+
+// =========================================================================
+// 6. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz)
+// =========================================================================
+router.patch('/:sessionId', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { sessionId } = req.params;
+  let { name, comment } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: "Nazwa treningu jest wymagana!" });
+  }
+
+  name = name.trim();
+  comment = comment ? comment.trim() : null;
+
+  if (name.length < 3 || name.length > 100) {
+    return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
+  }
+
+  if (comment && comment.length > 500) {
+    return res.status(400).json({ error: "Komentarz może mieć maksymalnie 500 znaków!" });
+  }
+
+  try {
+    const updateQuery = `
+      UPDATE workout_sessions 
+      SET name = $1, comment = $2 
+      WHERE id = $3::uuid AND user_id = $4::uuid 
+      RETURNING id, name, comment
+    `;
+    const result = await pool.query(updateQuery, [name, comment, sessionId, userId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Nie znaleziono sesji treningowej lub brak uprawnień." });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd serwera podczas edycji parametrów treningu", details: error.message });
+  }
+});
+
+module.exports = router;
+</file>
+
 <file path="backend/routes/friends.js">
 // backend/routes/friends.js
 const express = require('express');
@@ -4902,6 +5342,29 @@ router.patch('/notifications/read', authenticateToken, async (req, res) => {
 });
 
 // =========================================================================
+// 14. USUWANIE SUBSKRYPCJI PUSH (Wyłączenie powiadomień suwakiem)
+// =========================================================================
+router.delete('/unsubscribe', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { endpoint } = req.body;
+
+  if (!endpoint) {
+    return res.status(400).json({ error: "Brak endpointu subskrypcji do usunięcia." });
+  }
+
+  try {
+    await pool.query(
+      "DELETE FROM push_subscriptions WHERE user_id = $1::uuid AND endpoint = $2",
+      [userId, endpoint]
+    );
+    res.json({ message: "Subskrypcja Push usunięta z bazy." });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd usuwania subskrypcji Push", details: error.message });
+  }
+});
+
+
+// =========================================================================
 // 12. USUWANIE ZNAJOMEGO
 // =========================================================================
 router.delete('/:friendId', authenticateToken, async (req, res) => {
@@ -4946,431 +5409,6 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
     res.status(201).json({ message: "Subskrypcja Push zapisana poprawnie!" });
   } catch (error) {
     res.status(500).json({ error: "Błąd zapisu subskrypcji Push", details: error.message });
-  }
-});
-
-module.exports = router;
-</file>
-
-<file path="backend/routes/workouts.js">
-// backend/routes/workouts.js
-const express = require('express');
-const router = express.Router();
-const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
-const checkLimits = require('../middleware/checkLimits');
-const { getUserPlan } = require('../utils/userHelpers');
-
-const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-// =========================================================================
-// 1. ZAPISANIE TRENINGU (Zabezpieczone transakcyjnie + Blokada FOR UPDATE + Progi Streaka + Amnestia)
-// =========================================================================
-router.post('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { name, comment, series } = req.body;
-
-  // 1. Podstawowa walidacja struktury
-  if (!name || !name.trim() || !Array.isArray(series) || series.length === 0) {
-    return res.status(400).json({ error: "Nazwa treningu oraz zestaw serii są wymagane!" });
-  }
-
-  // 2. Rygorystyczna walidacja każdego exerciseId
-  for (let i = 0; i < series.length; i++) {
-    const exId = series[i].exerciseId;
-    
-    if (!exId || !uuidRegex.test(exId)) {
-      return res.status(400).json({ 
-        error: `Błąd walidacji: Odrzucono zapis. Przekazano nieprawidłowy lub uszkodzony identyfikator ćwiczenia w serii ${i + 1}.` 
-      });
-    }
-  }
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    // Blokada pesymistyczna (Pessimistic Locking) na wierszu użytkownika.
-    // Pobieramy target_updated_at niezbędne do logiki amnestii streaka.
-    const userResult = await client.query(
-      'SELECT current_streak, weekly_target_workouts, last_workout_at, target_updated_at FROM users WHERE id = $1 FOR UPDATE', 
-      [userId]
-    );
-    
-    if (userResult.rowCount === 0) {
-      throw new Error("Użytkownik nie istnieje w systemie.");
-    }
-
-    const { current_streak, weekly_target_workouts, last_workout_at, target_updated_at } = userResult.rows[0];
-    const target = weekly_target_workouts ?? 3;
-
-    // Symetryczne pobieranie stanu licznika tygodniowego PRZED zapisem nowej sesji
-    const lastWeekResult = await client.query(
-      `SELECT COUNT(*) as count FROM workout_sessions WHERE user_id = $1 
-      AND started_at >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw' 
-      AND started_at < date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
-    );
-    const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count, 10);
-
-    const thisWeekResult = await client.query(
-      `SELECT COUNT(*) as count FROM workout_sessions WHERE user_id = $1 
-      AND started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
-    );
-    const workoutsBeforeThisOne = parseInt(thisWeekResult.rows[0].count, 10);
-
-    // --- BEZPIECZNE WSTAWIENIE NAGŁÓWKA SESJI ---
-    const sessionResult = await client.query(
-      "INSERT INTO workout_sessions (user_id, name, comment, started_at, ended_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id",
-      [userId, name.trim(), comment || null]
-    );
-    const sessionId = sessionResult.rows[0].id;
-
-    // Przygotowanie płaskich tablic dla optymalizacji sieciowej UNNEST Batch Insert
-    const exerciseIds = [];
-    const weights = [];
-    const reps = [];
-    const orders = [];
-    const estimatedOneRMs = [];
-    const isAlternatives = [];
-    const seriesComments = [];
-    const seriesTypes = [];
-
-    for (let i = 0; i < series.length; i++) {
-      const s = series[i];
-      let estimatedOneRM = null;
-      
-      if (s.reps >= 1 && s.reps <= 12) {
-        estimatedOneRM = s.weight * (1 + s.reps / 30);
-      }
-
-      exerciseIds.push(s.exerciseId);
-      weights.push(s.weight);
-      reps.push(s.reps);
-      orders.push(s.order || (i + 1));
-      estimatedOneRMs.push(estimatedOneRM);
-      isAlternatives.push(s.isAlternative || false);
-      seriesComments.push(s.comment || null);
-      seriesTypes.push(s.seriesType || 'NORMAL');
-    }
-
-    const bulkInsertSeriesQuery = `
-      INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment, series_type)
-      SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::numeric[], $7::boolean[], $8::text[], $9::varchar[])
-    `;
-
-    await client.query(bulkInsertSeriesQuery, [
-      sessionId, exerciseIds, weights, reps, orders, estimatedOneRMs, isAlternatives, seriesComments, seriesTypes
-    ]);
-
-    // --- ANALIZA I AKTUALIZACJA CIĄGŁOŚCI TRENINGOWEJ (STREAK Z AMNESTIĄ) ---
-    let effectiveStreak = current_streak;
-
-    // Pobranie idealnych granic czasowych z bazy w odpowiedniej strefie
-    const datesResult = await client.query(`
-      SELECT 
-        (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw') as start_of_this_week,
-        ((date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw') as start_of_last_week
-    `);
-    const startOfThisWeek = new Date(datesResult.rows[0].start_of_this_week);
-    const startOfLastWeek = new Date(datesResult.rows[0].start_of_last_week);
-    const targetUpdatedAt = target_updated_at ? new Date(target_updated_at) : new Date(0);
-
-    if (last_workout_at) {
-      const lastWorkoutDate = new Date(last_workout_at);
-
-      // Jeśli ostatni trening odbył się przed bieżącym tygodniem, oceniamy zeszły tydzień
-      if (lastWorkoutDate < startOfThisWeek) {
-        if (workoutsLastWeek < target) {
-          
-          // 🔴 KLAUZULA AMNESTII: Czy użytkownik zmienił cel w trakcie zeszłego tygodnia (lub później)?
-          const isAmnestyActive = targetUpdatedAt >= startOfLastWeek;
-
-          if (!isAmnestyActive) {
-            effectiveStreak = 0; // Przerwana ciągłość i brak amnestii -> reset streaka
-          }
-        }
-      }
-    }
-
-    // Dodając ten trening, łączna suma w tym tygodniu wyniesie:
-    const workoutsWithThisOne = workoutsBeforeThisOne + 1;
-    let newStreak = effectiveStreak;
-
-    // Próg bezpieczeństwa (Threshold Guard)
-    if (workoutsWithThisOne >= target && workoutsBeforeThisOne < target) {
-      newStreak = effectiveStreak + 1;
-    }
-
-    // Aktualizacja rekordu użytkownika
-    await client.query(
-      'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
-      [newStreak, userId]
-    );
-
-    await client.query('COMMIT');
-    res.status(201).json({ message: "Trening zapisany! 🔥", sessionId, currentStreak: newStreak });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    res.status(500).json({ error: "Błąd transakcji podczas zapisywania treningu", details: error.message });
-  } finally {
-    client.release();
-  }
-});
-
-// =========================================================================
-// 2. POBRANIE HISTORII TRENINGÓW (Z paginacją i twardym limitem 10 sesji dla FREE)
-// =========================================================================
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  
-  let limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
-  let offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
-
-  try {
-    const plan = await getUserPlan(userId);
-
-    if (!plan) {
-      return res.status(404).json({ error: "Użytkownik nie istnieje." });
-    }
-
-    const countQuery = 'SELECT COUNT(*) as count FROM workout_sessions WHERE user_id = $1';
-    const countResult = await pool.query(countQuery, [userId]);
-    let totalCount = parseInt(countResult.rows[0].count, 10);
-
-    // Wymuszanie twardego sufitu biznesowego dla kont bez subskrypcji Premium / Roli Trenera
-    if (!plan.is_premium && plan.role !== 'TRAINER') {
-      totalCount = Math.min(totalCount, 10);
-      if (offset >= 10) {
-        return res.json({ workouts: [], totalCount: totalCount });
-      }
-      limit = Math.min(limit, 10 - offset);
-    }
-
-    const sessionsQuery = `
-      SELECT id, name, comment, started_at as "startedAt"
-      FROM workout_sessions
-      WHERE user_id = $1
-      ORDER BY started_at DESC
-      LIMIT $2 OFFSET $3
-    `;
-    const sessionsResult = await pool.query(sessionsQuery, [userId, limit, offset]);
-    const sessions = sessionsResult.rows;
-
-    if (sessions.length === 0) {
-      return res.json({ workouts: [], totalCount: totalCount });
-    }
-
-    const sessionIds = sessions.map(s => s.id);
-
-    const seriesQuery = `
-      SELECT 
-        ls.id, 
-        ls.workout_session_id, 
-        ls.exercise_id, 
-        ls.weight, 
-        ls.reps, 
-        ls.series_order as "order",
-        ls.estimated_one_rm,
-        ls.series_type as "seriesType",
-        ex.name as "exerciseName"
-      FROM log_series ls
-      JOIN exercises ex ON ls.exercise_id = ex.id
-      WHERE ls.workout_session_id = ANY($1)
-      ORDER BY ls.workout_session_id, ls.series_order ASC
-    `;
-    const seriesResult = await pool.query(seriesQuery, [sessionIds]);
-    const allSeries = seriesResult.rows;
-
-    const historyData = sessions.map(session => {
-      return {
-        ...session,
-        series: allSeries.filter(s => s.workout_session_id === session.id)
-      };
-    });
-
-    res.json({ workouts: historyData, totalCount: totalCount });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas pobierania historii", details: error.message });
-  }
-});
-
-// =========================================================================
-// 3. EKSPORT HISTORII DO PLIKU CSV (Tylko dla Premium / Trainer)
-// =========================================================================
-router.get('/export', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-
-  try {
-    const plan = await getUserPlan(userId);
-
-    if (!plan) {
-      return res.status(404).json({ error: "Użytkownik nie istnieje." });
-    }
-
-    if (!plan.is_premium && plan.role !== 'TRAINER') {
-      return res.status(403).json({ 
-        error: "Funkcja eksportu historii do pliku CSV jest dostępna wyłącznie dla użytkowników planu PREMIUM! 🦾" 
-      });
-    }
-
-    const query = `
-      SELECT 
-        TO_CHAR(ws.started_at, 'YYYY-MM-DD HH24:MI') as "Data",
-        ws.name as "Nazwa treningu",
-        COALESCE(ws.comment, '') as "Komentarz do treningu",
-        ex.name as "Ćwiczenie",
-        ex.muscle_group as "Grupa mięśniowa",
-        ls.series_order as "Numer serii",
-        ls.series_type as "Typ serii",
-        ls.weight as "Ciężar (kg)",
-        ls.reps as "Powtórzenia",
-        COALESCE(ROUND(ls.estimated_one_rm, 1), 0) as "Estymowane 1RM"
-      FROM workout_sessions ws
-      JOIN log_series ls ON ws.id = ls.workout_session_id
-      JOIN exercises ex ON ls.exercise_id = ex.id
-      WHERE ws.user_id = $1
-      ORDER BY ws.started_at DESC, ls.series_order ASC
-    `;
-    const { rows } = await pool.query(query, [userId]);
-
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename=gympatico_historia_treningow.csv');
-    
-    res.write('\uFEFF');
-
-    const headers = ["Data", "Nazwa treningu", "Komentarz do treningu", "Ćwiczenie", "Grupa mięśniowa", "Numer serii", "Typ serii", "Ciężar (kg)", "Powtórzenia", "Estymowane 1RM"];
-    res.write(headers.join(';') + '\n');
-
-    for (const row of rows) {
-      const line = headers.map(header => {
-        const value = row[header];
-        if (typeof value === 'string' && (value.includes(';') || value.includes('"') || value.includes('\n'))) {
-          return `"${value.replace(/"/g, '""')}"`;
-        }
-        return value;
-      });
-      res.write(line.join(';') + '\n');
-    }
-
-    res.end();
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas generowania pliku eksportu", details: error.message });
-  }
-});
-
-// =========================================================================
-// 4. POBRANIE PROGRESJI 1RM ĆWICZENIA (Z ograniczeniem czasowym 30 dni dla FREE)
-// =========================================================================
-router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
-  const { exerciseId } = req.params;
-  const userId = req.user.userId;
-
-  try {
-    const plan = await getUserPlan(userId);
-
-    if (!plan) {
-      return res.status(404).json({ error: "Użytkownik nie istnieje." });
-    }
-
-    let timeBoundaryFilter = '';
-    if (!plan.is_premium && plan.role !== 'TRAINER') {
-      timeBoundaryFilter = "AND ws.started_at >= NOW() - INTERVAL '30 days'";
-    }
-
-    const query = `
-      SELECT 
-        TO_CHAR(ws.started_at, 'YYYY-MM-DD') as date,
-        MAX(ls.estimated_one_rm) as max_1rm
-      FROM log_series ls
-      JOIN workout_sessions ws ON ls.workout_session_id = ws.id
-      WHERE ls.exercise_id = $1 
-        AND ws.user_id = $2 
-        AND ls.estimated_one_rm IS NOT NULL
-        ${timeBoundaryFilter}
-      GROUP BY TO_CHAR(ws.started_at, 'YYYY-MM-DD')
-      ORDER BY date ASC
-    `;
-    
-    const result = await pool.query(query, [exerciseId, userId]);
-    
-    const progressionData = result.rows.map(row => ({
-      date: row.date,
-      oneRm: parseFloat(row.max_1rm)
-    }));
-
-    res.json(progressionData);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd podczas pobierania progresji 1RM", details: error.message });
-  }
-});
-
-// =========================================================================
-// 5. USUNIĘCIE TRENINGU (Z weryfikacją uprawnień właściciela)
-// =========================================================================
-router.delete('/:id', authenticateToken, async (req, res) => {
-  const sessionId = req.params.id;
-  const userId = req.user.userId;
-
-  try {
-    const result = await pool.query(
-      "DELETE FROM workout_sessions WHERE id = $1::uuid AND user_id = $2::uuid RETURNING id",
-      [sessionId, userId]
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ 
-        error: "Trening nie istnieje lub nie masz uprawnień do jego usunięcia." 
-      });
-    }
-
-    res.json({ message: "Trening został usunięty pomyślnie. 🗑️" });
-  } catch (error) {
-    res.status(500).json({ 
-      error: "Błąd podczas usuwania treningu", 
-      details: error.message 
-    });
-  }
-});
-
-// =========================================================================
-// 6. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz)
-// =========================================================================
-router.patch('/:sessionId', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { sessionId } = req.params;
-  let { name, comment } = req.body;
-
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: "Nazwa treningu jest wymagana!" });
-  }
-
-  name = name.trim();
-  comment = comment ? comment.trim() : null;
-
-  if (name.length < 3 || name.length > 100) {
-    return res.status(400).json({ error: "Nazwa treningu musi mieć od 3 do 100 znaków!" });
-  }
-
-  if (comment && comment.length > 500) {
-    return res.status(400).json({ error: "Komentarz może mieć maksymalnie 500 znaków!" });
-  }
-
-  try {
-    const updateQuery = `
-      UPDATE workout_sessions 
-      SET name = $1, comment = $2 
-      WHERE id = $3::uuid AND user_id = $4::uuid 
-      RETURNING id, name, comment
-    `;
-    const result = await pool.query(updateQuery, [name, comment, sessionId, userId]);
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Nie znaleziono sesji treningowej lub brak uprawnień." });
-    }
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas edycji parametrów treningu", details: error.message });
   }
 });
 
@@ -5469,13 +5507,28 @@ function AppContent() {
     navigate('/')
   }
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
+    // 🔴 NOWOŚĆ: Niszczenie subskrypcji Push przed wylogowaniem
+    try {
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          await subscription.unsubscribe(); // Odcina przeglądarkę od serwerów Push
+          console.log("Subskrypcja Push została zniszczona.");
+        }
+      }
+    } catch (e) {
+      console.error("Błąd podczas czyszczenia subskrypcji Push:", e);
+    }
+
+    // Standardowe czyszczenie sesji
     localStorage.removeItem('gp_token');
     localStorage.removeItem('gp_user');
     setToken(null);
     setUser(null);
     setLocalSeriesList([]); 
-    setIsMoreMenuOpen(false)
+    setIsMoreMenuOpen(false);
     navigate('/login');
   }, [navigate, setLocalSeriesList]);
 
