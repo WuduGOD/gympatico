@@ -1,9 +1,11 @@
 import React, { useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { API_BASE_URL } from '../config/api'
 
 export default function LoginView({ onLoginSuccess }) {
+  const location = useLocation()
   // Stan przełączający między logowaniem (false) a rejestracją (true)
-  const [isRegistering, setIsRegistering] = useState(false)
+  const [isRegistering, setIsRegistering] = useState(location.pathname === '/register')
   
   // Stany formularza
   const [email, setEmail] = useState('')

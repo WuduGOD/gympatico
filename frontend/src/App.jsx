@@ -485,12 +485,29 @@ function AppContent() {
 
       <main className="pb-24 md:pb-0">
         <Routes>
-          <Route path="/" element={!token ? <Landing /> : <Navigate to="/social" />} />
-          <Route path="/login" element={!token ? <Login setToken={setToken} /> : <Navigate to="/" />} />
-          <Route path="/register" element={!token ? <Register /> : <Navigate to="/" />} />
+          {/* 1. STRONA GŁÓWNA: Niezalogowany widzi Landing, zalogowany widzi Dashboard */}
+          <Route path="/" element={token ? (
+            <Dashboard 
+              user={user} 
+              weightLogs={weightLogs} 
+              weightInput={weightInput} 
+              setWeightInput={setWeightInput} 
+              handleAddWeight={onAddWeight} 
+              exercises={exercises} 
+              onUpdateWeeklyTarget={onUpdateWeeklyTarget} 
+              progressionData={progressionData} 
+              fetchProgression={fetchProgression} 
+              onDeleteWeight={onDeleteWeightLog} 
+              workoutsHistory={workoutsHistory} 
+              templates={templates} 
+            />
+          ) : <Landing />} />
+
+          {/* 2. AUTORYZACJA: Oba adresy korzystają z komponentu LoginView */}
+          <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
+          <Route path="/register" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
           
-          <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={onAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} workoutsHistory={workoutsHistory} templates={templates} /> : <Navigate to="/login" />} />
-          
+          {/* 3. ZABLOKOWANE ŚCIEŻKI APLIKACJI */}
           <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} onDeleteExercise={onDeleteCustomExercise} /> : <Navigate to="/login" />} />
           
           <Route path="/new-workout" element={token ? (
@@ -525,8 +542,12 @@ function AppContent() {
           ) : <Navigate to="/login" />} />
           
           <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} activityFeed={activityFeed} onToggleReaction={handleToggleReaction} weeklyChallenge={weeklyChallenge} fetchFriendProfile={fetchFriendProfile} selectedFriendProfile={selectedFriendProfile} setSelectedFriendProfile={setSelectedFriendProfile} isProfileLoading={isProfileLoading} onRemoveFriend={onRemoveFriend} /> : <Navigate to="/login" />} />
+          
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
+          
           <Route path="/settings" element={token ? <Settings token={token} showToast={showToast} /> : <Navigate to="/login" />} />
+          
+          {/* 4. FALLBACK: Nieznany adres URL */}
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>
       </main>
