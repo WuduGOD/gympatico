@@ -443,6 +443,29 @@ router.patch('/notifications/read', authenticateToken, async (req, res) => {
 });
 
 // =========================================================================
+// 14. USUWANIE SUBSKRYPCJI PUSH (Wyłączenie powiadomień suwakiem)
+// =========================================================================
+router.delete('/unsubscribe', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { endpoint } = req.body;
+
+  if (!endpoint) {
+    return res.status(400).json({ error: "Brak endpointu subskrypcji do usunięcia." });
+  }
+
+  try {
+    await pool.query(
+      "DELETE FROM push_subscriptions WHERE user_id = $1::uuid AND endpoint = $2",
+      [userId, endpoint]
+    );
+    res.json({ message: "Subskrypcja Push usunięta z bazy." });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd usuwania subskrypcji Push", details: error.message });
+  }
+});
+
+
+// =========================================================================
 // 12. USUWANIE ZNAJOMEGO
 // =========================================================================
 router.delete('/:friendId', authenticateToken, async (req, res) => {
@@ -487,28 +510,6 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
     res.status(201).json({ message: "Subskrypcja Push zapisana poprawnie!" });
   } catch (error) {
     res.status(500).json({ error: "Błąd zapisu subskrypcji Push", details: error.message });
-  }
-});
-
-// =========================================================================
-// 14. USUWANIE SUBSKRYPCJI PUSH (Wyłączenie powiadomień suwakiem)
-// =========================================================================
-router.delete('/unsubscribe', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { endpoint } = req.body;
-
-  if (!endpoint) {
-    return res.status(400).json({ error: "Brak endpointu subskrypcji do usunięcia." });
-  }
-
-  try {
-    await pool.query(
-      "DELETE FROM push_subscriptions WHERE user_id = $1::uuid AND endpoint = $2",
-      [userId, endpoint]
-    );
-    res.json({ message: "Subskrypcja Push usunięta z bazy." });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd usuwania subskrypcji Push", details: error.message });
   }
 });
 
