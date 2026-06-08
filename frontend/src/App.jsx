@@ -89,13 +89,28 @@ function AppContent() {
     navigate('/')
   }
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
+    // 🔴 NOWOŚĆ: Niszczenie subskrypcji Push przed wylogowaniem
+    try {
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          await subscription.unsubscribe(); // Odcina przeglądarkę od serwerów Push
+          console.log("Subskrypcja Push została zniszczona.");
+        }
+      }
+    } catch (e) {
+      console.error("Błąd podczas czyszczenia subskrypcji Push:", e);
+    }
+
+    // Standardowe czyszczenie sesji
     localStorage.removeItem('gp_token');
     localStorage.removeItem('gp_user');
     setToken(null);
     setUser(null);
     setLocalSeriesList([]); 
-    setIsMoreMenuOpen(false)
+    setIsMoreMenuOpen(false);
     navigate('/login');
   }, [navigate, setLocalSeriesList]);
 

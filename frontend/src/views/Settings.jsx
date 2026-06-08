@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config/api';
 
-// Funkcja pomocnicza dekodująca klucz VAPID z Base64
+// Dekoder klucza VAPID
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -16,60 +16,87 @@ function urlBase64ToUint8Array(base64String) {
 
 export default function Settings({ token, showToast }) {
   const [isPushSupported, setIsPushSupported] = useState(false);
-  const [permissionState, setPermissionState] = useState('default');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [currentSubscription, setCurrentSubscription] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // 1. Sprawdzamy stan przy ładowaniu strony
   useEffect(() => {
-    // Sprawdzamy wsparcie dla Push API w przeglądarce/urządzeniu
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      setIsPushSupported(true);
-      setPermissionState(Notification.permission);
-    }
+    const checkSubscriptionState = async () => {
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        setIsPushSupported(true);
+        try {
+          const registration = await navigator.serviceWorker.ready;
+          // Sprawdzamy, czy to urządzenie ma już aktywną subskrypcję w tle
+          const sub = await registration.pushManager.getSubscription();
+          if (sub) {
+            setIsSubscribed(true);
+            setCurrentSubscription(sub);
+          }
+        } catch (err) {
+          console.error("Błąd podczas sprawdzania subskrypcji:", err);
+        }
+      }
+      setIsLoading(false);
+    };
+
+    checkSubscriptionState();
   }, []);
 
-  const handleSubscribePush = async () => {
+  // 2. Obsługa Kliknięcia Suwaka
+  const handleTogglePush = async () => {
     setIsLoading(true);
     try {
-      // 1. Prośba o uprawnienia systemowe
-      const permission = await Notification.requestPermission();
-      setPermissionState(permission);
-
-      if (permission !== 'granted') {
-        throw new Error('Odmówiono dostępu do powiadomień.');
-      }
-
-      // 2. Pobranie aktywnego Service Workera
       const registration = await navigator.serviceWorker.ready;
+
+      // PRZYPADEK A: CHCEMY WYŁĄCZYĆ POWIADOMIENIA
+      if (isSubscribed && currentSubscription) {
+        // Usuwamy z serwera
+        await fetch(`${API_BASE_URL}/api/friends/unsubscribe`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ endpoint: currentSubscription.endpoint })
+        });
+        
+        // Odpinamy z przeglądarki
+        await currentSubscription.unsubscribe();
+        
+        setIsSubscribed(false);
+        setCurrentSubscription(null);
+        showToast('Powiadomienia zostały wyłączone na tym urządzeniu. 🔕', 'success');
+      } 
       
-      // 3. Pobranie i konwersja klucza VAPID
-      const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-      if (!vapidPublicKey) {
-        throw new Error('Brak klucza VAPID w konfiguracji aplikacji.');
+      // PRZYPADEK B: CHCEMY WŁĄCZYĆ POWIADOMIENIA
+      else {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          throw new Error('Musisz odblokować powiadomienia w ustawieniach przeglądarki!');
+        }
+
+        const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+        if (!vapidPublicKey) throw new Error('Brak klucza VAPID!');
+        
+        const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+
+        // Subskrybujemy urządzenie
+        const newSubscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey
+        });
+
+        // Wysyłamy na backend
+        const res = await fetch(`${API_BASE_URL}/api/friends/subscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(newSubscription)
+        });
+
+        if (!res.ok) throw new Error('Błąd zapisu na serwerze.');
+
+        setIsSubscribed(true);
+        setCurrentSubscription(newSubscription);
+        showToast('Powiadomienia Push aktywowane! 🔔', 'success');
       }
-      const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
-
-      // 4. Subskrypcja w przeglądarce
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: convertedVapidKey
-      });
-
-      // 5. Wysłanie subskrypcji na backend (endpoint zapisany w routes/friends.js)
-      const res = await fetch(`${API_BASE_URL}/api/friends/subscribe`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify(subscription)
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Błąd zapisu na serwerze.');
-      }
-
-      showToast('Powiadomienia Push zostały aktywowane! 🔔', 'success');
     } catch (err) {
       console.error(err);
       showToast(err.message, 'error');
@@ -86,46 +113,46 @@ export default function Settings({ token, showToast }) {
         <p className="text-zinc-400 text-sm mt-1">Zarządzaj swoim kontem i preferencjami.</p>
       </div>
 
-      {/* KAFELEK 1: POWIADOMIENIA PUSH */}
       <div className="bg-[#161920] border border-zinc-800 rounded-2xl p-5 shadow-xl">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               Powiadomienia Push 🔔
             </h3>
-            <p className="text-sm text-zinc-400 mt-1">
-              Otrzymuj alerty o zaproszeniach do Gangu i nowych reakcjach (🔥) pod Twoimi treningami, nawet gdy apka jest zamknięta.
+            <p className="text-sm text-zinc-400 mt-1 mr-4">
+              Alerty o zaproszeniach do Gangu i nowych reakcjach (🔥) pod treningami na tym urządzeniu.
             </p>
           </div>
-        </div>
-
-        <div className="mt-5 border-t border-zinc-800/60 pt-5">
-          {!isPushSupported ? (
-            <div className="text-sm text-amber-500 bg-amber-500/10 p-4 rounded-xl border border-amber-500/20">
-              <strong>Brak wsparcia:</strong> Twoja przeglądarka lub urządzenie nie obsługuje powiadomień. <br/>
-              <em>Jeśli jesteś na iPhone/iOS, musisz najpierw dodać tę stronę do ekranu głównego (Dodaj do ekranu początkowego).</em>
-            </div>
-          ) : permissionState === 'granted' ? (
-            <div className="text-sm text-emerald-500 bg-emerald-500/10 p-4 rounded-xl border border-emerald-500/20 font-bold flex items-center gap-2">
-              ✅ Powiadomienia są włączone dla tego urządzenia!
-            </div>
-          ) : permissionState === 'denied' ? (
-            <div className="text-sm text-red-500 bg-red-500/10 p-4 rounded-xl border border-red-500/20">
-              ❌ Zablokowałeś powiadomienia w przeglądarce. Zmień uprawnienia w ustawieniach strony (ikonka kłódki przy pasku adresu URL), aby je włączyć.
-            </div>
-          ) : (
-            <button 
-              onClick={handleSubscribePush}
-              disabled={isLoading}
-              className="w-full md:w-auto px-6 py-3 bg-gymRed hover:bg-red-600 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Aktywowanie...' : 'Włącz powiadomienia na tym urządzeniu'}
-            </button>
-          )}
+          
+          {/* SUWAK (TOGGLE SWITCH) */}
+          <div className="shrink-0">
+            {!isPushSupported ? (
+              <span className="text-xs text-red-400 font-bold bg-red-400/10 px-2 py-1 rounded">Brak wsparcia</span>
+            ) : isLoading ? (
+              <div className="w-12 h-6 bg-zinc-800 rounded-full animate-pulse" />
+            ) : (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isSubscribed}
+                onClick={handleTogglePush}
+                disabled={isLoading}
+                className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors duration-300 ease-in-out cursor-pointer focus:outline-none focus:ring-2 focus:ring-gymRed focus:ring-offset-2 focus:ring-offset-[#161920] ${
+                  isSubscribed ? 'bg-gymRed shadow-[0_0_12px_rgba(239,68,68,0.4)]' : 'bg-zinc-700'
+                }`}
+              >
+                <span className="sr-only">Włącz powiadomienia</span>
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform duration-300 ease-in-out ${
+                    isSubscribed ? 'translate-x-8' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* MIEJSCE NA PRZYSZŁE KAFELKI */}
       <div className="bg-[#161920]/50 border border-zinc-800 border-dashed rounded-2xl p-5 flex flex-col items-center justify-center text-center text-zinc-500 min-h-[120px]">
         <span className="text-2xl mb-2">🚧</span>
         <span className="text-sm font-semibold">Więcej ustawień wkrótce...</span>
