@@ -51,6 +51,7 @@ backend/package.json
 backend/routes/auth.js
 backend/routes/exercises.js
 backend/routes/friends.js
+backend/routes/notifications.js
 backend/routes/stats.js
 backend/routes/templates.js
 backend/routes/weight.js
@@ -66,10 +67,13 @@ frontend/eslint.config.js
 frontend/index.html
 frontend/package.json
 frontend/playwright.config.js
+frontend/public/badge-72x72.png
 frontend/public/favicon.svg
+frontend/public/icon-192x192.png
 frontend/public/icons.svg
 frontend/public/pwa-192x192.png
 frontend/public/pwa-512x512.png
+frontend/public/sw.js
 frontend/README.md
 frontend/src/App.css
 frontend/src/App.jsx
@@ -93,6 +97,7 @@ frontend/src/views/History.jsx
 frontend/src/views/LoginView.jsx
 frontend/src/views/NewWorkout.jsx
 frontend/src/views/RestTimer.jsx
+frontend/src/views/Settings.jsx
 frontend/src/views/Social.jsx
 frontend/src/views/StatsView.jsx
 frontend/tests/gympatico.spec.js
@@ -138,6 +143,39 @@ const authenticateToken = (req, res, next) => {
 };
 
 module.exports = authenticateToken;
+</file>
+
+<file path="backend/routes/notifications.js">
+const express = require('express');
+const router = express.Router();
+const webpush = require('web-push');
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+
+// Konfiguracja VAPID
+webpush.setVapidDetails(
+  process.env.VAPID_SUBJECT,
+  process.env.VAPID_PUBLIC_KEY,
+  process.env.VAPID_PRIVATE_KEY
+);
+
+// 1. ENDPOINT: Rejestracja urządzenia (wywoływana z frontendu)
+router.post('/subscribe', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const subscription = req.body; // To jest obiekt z przeglądarki
+
+  try {
+    await pool.query(
+      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) 
+       VALUES ($1, $2, $3, $4) 
+       ON CONFLICT (user_id, endpoint) DO NOTHING`,
+      [userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth]
+    );
+    res.status(201).json({ message: "Subskrypcja Push zapisana!" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd zapisu subskrypcji." });
+  }
+});
 </file>
 
 <file path="backend/schema.sql">
@@ -223,6 +261,75 @@ export default defineConfig([
 </svg>
 </file>
 
+<file path="frontend/public/sw.js">
+// frontend/public/sw.js
+
+// =========================================================================
+// 1. ODBIÓR POWIADOMIENIA (Zdarzenie 'push')
+// =========================================================================
+self.addEventListener('push', function(event) {
+  // Jeśli z backendu nie przyszły żadne dane, przerywamy
+  if (!event.data) return;
+
+  try {
+    const data = event.data.json();
+    
+    // Opcje konfiguracyjne powiadomienia (UX)
+    const options = {
+      body: data.body,
+      // 'icon' to główne logo, które pojawia się obok tekstu powiadomienia
+      icon: data.icon || '/vite.svg', 
+      // 'badge' to malutka, zazwyczaj biała na przezroczystym tle ikonka (tylko na Androida), 
+      // która pojawia się na górnym pasku statusu telefonu
+      badge: data.badge || '/vite.svg', 
+      // Wibracja: [wibruj, pauza, wibruj] (w milisekundach)
+      vibrate: [200, 100, 200], 
+      // Przekazujemy ukryte dane (np. URL do otwarcia po kliknięciu)
+      data: {
+        url: data.url || '/'
+      },
+      // Wymusza pokazanie powiadomienia na ekranie telefonu, a nie tylko ciche doręczenie
+      requireInteraction: false
+    };
+
+    // Zmuszamy Service Workera, aby poczekał na wyświetlenie powiadomienia systemu operacyjnego
+    event.waitUntil(
+      self.registration.showNotification(data.title, options)
+    );
+  } catch (error) {
+    console.error('Błąd parsowania danych Push:', error);
+  }
+});
+
+// =========================================================================
+// 2. REAKCJA NA KLIKNIĘCIE (Zdarzenie 'notificationclick')
+// =========================================================================
+self.addEventListener('notificationclick', function(event) {
+  // Zamykamy powiadomienie (żeby nie wisiało na pasku zadań telefonu/systemu)
+  event.notification.close();
+
+  const targetUrl = event.notification.data.url;
+
+  // Szukamy, czy karta z aplikacją GymPatico jest już otwarta w tle
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(windowClients) {
+      // Jeśli użytkownik ma już otwartą apkę, po prostu ją "wyciągamy" na wierzch i przekierowujemy
+      for (let i = 0; i < windowClients.length; i++) {
+        const client = windowClients[i];
+        if (client.url.includes(targetUrl) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      
+      // Jeśli apka była całkowicie zamknięta, otwieramy nowe okno na zadanym URL (np. /social)
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
+</file>
+
 <file path="frontend/README.md">
 # React + Vite
 
@@ -264,104 +371,6 @@ body {
 
 <file path="frontend/src/assets/vite.svg">
 <svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
-</file>
-
-<file path="frontend/src/components/FriendProfileModal.jsx">
-// frontend/src/components/FriendProfileModal.jsx
-import React from 'react';
-
-export default function FriendProfileModal({ profile, onClose, myNick }) {
-  if (!profile) return null;
-
-  // Konwersja na tony dla lepszego efektu
-  const myVolTons = (profile.my_volume / 1000).toFixed(1);
-  const frVolTons = (profile.friend_volume / 1000).toFixed(1);
-
-  // Kto wygrywa w poszczególnych kategoriach?
-  const myWorkoutsWin = profile.my_workouts >= profile.friend_workouts;
-  const frWorkoutsWin = profile.friend_workouts >= profile.my_workouts;
-  const myVolWin = profile.my_volume >= profile.friend_volume;
-  const frVolWin = profile.friend_volume >= profile.my_volume;
-
-  return (
-    <div className="fixed inset-0 z-[9999] flex flex-col justify-end animate-in fade-in duration-200">
-      <div onClick={onClose} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-      
-      <div className="bg-gymCard border-t border-zinc-800 w-full max-w-[640px] mx-auto rounded-t-3xl shadow-2xl relative z-10 animate-in slide-in-from-bottom duration-300 max-h-[85vh] overflow-hidden flex flex-col">
-        {/* Uchwyt do zamykania */}
-        <div className="w-12 h-1.5 bg-zinc-700 rounded-full mx-auto mt-3 mb-2 shrink-0" />
-        
-        <div className="overflow-y-auto px-5 pb-8 pt-2">
-          {/* HERO SECTION */}
-          <div className="flex flex-col items-center text-center mb-6">
-            <div className="w-20 h-20 rounded-full bg-zinc-800 border-2 border-gymRed flex items-center justify-center text-3xl font-black text-white shadow-[0_0_20px_rgba(239,68,68,0.2)] mb-3 relative">
-              {profile.nick.charAt(0).toUpperCase()}
-              {profile.is_premium && (
-                <div className="absolute -bottom-2 bg-amber-500 border border-amber-300 text-black text-[9px] px-2 py-0.5 rounded-full font-black tracking-widest uppercase shadow-md">
-                  Premium
-                </div>
-              )}
-            </div>
-            <h2 className="text-2xl font-black text-white tracking-tight">{profile.nick}</h2>
-            <p className="text-gymRed font-bold text-sm mt-1">🔥 Utrzymuje cel od {profile.current_streak} tyg.</p>
-          </div>
-
-          {/* HEAD-TO-HEAD RING */}
-          <div className="bg-gymCardSecondary/50 border border-zinc-800/80 rounded-2xl p-4 mb-6 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
-            
-            <h3 className="text-[10px] font-black text-textSecondary uppercase tracking-widest text-center mb-4 border-b border-zinc-800/50 pb-2">
-              Pojedynek 1v1 (Ostatnie 30 dni)
-            </h3>
-            
-            <div className="grid grid-cols-3 gap-2 text-center text-xs">
-              {/* Nagłówki */}
-              <div className="text-zinc-500 font-bold col-span-1 text-left">Kategoria</div>
-              <div className="font-black text-zinc-400">{myNick} (Ty)</div>
-              <div className="font-black text-amber-400">{profile.nick}</div>
-
-              {/* Ilość Treningów */}
-              <div className="text-zinc-400 font-medium col-span-1 text-left py-2 border-t border-zinc-800/30">Treningi</div>
-              <div className={`font-bold py-2 border-t border-zinc-800/30 ${myWorkoutsWin ? 'text-gymSuccess' : 'text-zinc-500'}`}>{profile.my_workouts} {myWorkoutsWin && '🏆'}</div>
-              <div className={`font-bold py-2 border-t border-zinc-800/30 ${frWorkoutsWin ? 'text-amber-400' : 'text-zinc-500'}`}>{profile.friend_workouts} {frWorkoutsWin && '🏆'}</div>
-
-              {/* Tonaż */}
-              <div className="text-zinc-400 font-medium col-span-1 text-left py-2 border-t border-zinc-800/30">Tonaż</div>
-              <div className={`font-bold py-2 border-t border-zinc-800/30 ${myVolWin ? 'text-gymSuccess' : 'text-zinc-500'}`}>{myVolTons}t {myVolWin && '🏆'}</div>
-              <div className={`font-bold py-2 border-t border-zinc-800/30 ${frVolWin ? 'text-amber-400' : 'text-zinc-500'}`}>{frVolTons}t {frVolWin && '🏆'}</div>
-            </div>
-          </div>
-
-          {/* HISTORIA ZNAJOMEGO */}
-          <div>
-            <h3 className="text-sm font-bold text-white mb-3">Ostatnie bitwy (5 sesji) ⚔️</h3>
-            {profile.recent_workouts.length === 0 ? (
-              <div className="text-zinc-500 italic text-xs bg-zinc-900/40 p-4 rounded-xl text-center border border-zinc-800/40">Ten użytkownik jeszcze nic nie zalogował.</div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {profile.recent_workouts.map(w => (
-                  <div key={w.id} className="bg-zinc-800/30 border border-zinc-800/60 p-3 rounded-xl flex justify-between items-center">
-                    <span className="text-sm font-bold text-zinc-200 truncate pr-3">{w.name}</span>
-                    <span className="text-[10px] text-zinc-500 font-mono shrink-0 bg-zinc-900 px-2 py-1 rounded">
-                      {new Date(w.started_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          
-          <button 
-            onClick={onClose} 
-            className="w-full mt-6 py-3.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl text-sm transition-colors"
-          >
-            Zamknij podgląd
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 </file>
 
 <file path="frontend/src/components/NotificationBell.jsx">
@@ -898,6 +907,145 @@ export default function LoginView({ onLoginSuccess }) {
 }
 </file>
 
+<file path="frontend/src/views/Settings.jsx">
+// frontend/src/views/Settings.jsx
+import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
+
+// Funkcja pomocnicza dekodująca klucz VAPID z Base64
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+export default function Settings({ token, showToast }) {
+  const [isPushSupported, setIsPushSupported] = useState(false);
+  const [permissionState, setPermissionState] = useState('default');
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    // Sprawdzamy wsparcie dla Push API w przeglądarce/urządzeniu
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      setIsPushSupported(true);
+      setPermissionState(Notification.permission);
+    }
+  }, []);
+
+  const handleSubscribePush = async () => {
+    setIsLoading(true);
+    try {
+      // 1. Prośba o uprawnienia systemowe
+      const permission = await Notification.requestPermission();
+      setPermissionState(permission);
+
+      if (permission !== 'granted') {
+        throw new Error('Odmówiono dostępu do powiadomień.');
+      }
+
+      // 2. Pobranie aktywnego Service Workera
+      const registration = await navigator.serviceWorker.ready;
+      
+      // 3. Pobranie i konwersja klucza VAPID
+      const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+      if (!vapidPublicKey) {
+        throw new Error('Brak klucza VAPID w konfiguracji aplikacji.');
+      }
+      const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+
+      // 4. Subskrypcja w przeglądarce
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey
+      });
+
+      // 5. Wysłanie subskrypcji na backend (endpoint zapisany w routes/friends.js)
+      const res = await fetch(`${API_BASE_URL}/api/friends/subscribe`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify(subscription)
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Błąd zapisu na serwerze.');
+      }
+
+      showToast('Powiadomienia Push zostały aktywowane! 🔔', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast(err.message, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-300">
+      
+      <div className="border-b border-zinc-800/80 pb-4">
+        <h2 className="text-2xl font-black text-white">⚙️ Ustawienia</h2>
+        <p className="text-zinc-400 text-sm mt-1">Zarządzaj swoim kontem i preferencjami.</p>
+      </div>
+
+      {/* KAFELEK 1: POWIADOMIENIA PUSH */}
+      <div className="bg-[#161920] border border-zinc-800 rounded-2xl p-5 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              Powiadomienia Push 🔔
+            </h3>
+            <p className="text-sm text-zinc-400 mt-1">
+              Otrzymuj alerty o zaproszeniach do Gangu i nowych reakcjach (🔥) pod Twoimi treningami, nawet gdy apka jest zamknięta.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 border-t border-zinc-800/60 pt-5">
+          {!isPushSupported ? (
+            <div className="text-sm text-amber-500 bg-amber-500/10 p-4 rounded-xl border border-amber-500/20">
+              <strong>Brak wsparcia:</strong> Twoja przeglądarka lub urządzenie nie obsługuje powiadomień. <br/>
+              <em>Jeśli jesteś na iPhone/iOS, musisz najpierw dodać tę stronę do ekranu głównego (Dodaj do ekranu początkowego).</em>
+            </div>
+          ) : permissionState === 'granted' ? (
+            <div className="text-sm text-emerald-500 bg-emerald-500/10 p-4 rounded-xl border border-emerald-500/20 font-bold flex items-center gap-2">
+              ✅ Powiadomienia są włączone dla tego urządzenia!
+            </div>
+          ) : permissionState === 'denied' ? (
+            <div className="text-sm text-red-500 bg-red-500/10 p-4 rounded-xl border border-red-500/20">
+              ❌ Zablokowałeś powiadomienia w przeglądarce. Zmień uprawnienia w ustawieniach strony (ikonka kłódki przy pasku adresu URL), aby je włączyć.
+            </div>
+          ) : (
+            <button 
+              onClick={handleSubscribePush}
+              disabled={isLoading}
+              className="w-full md:w-auto px-6 py-3 bg-gymRed hover:bg-red-600 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoading ? 'Aktywowanie...' : 'Włącz powiadomienia na tym urządzeniu'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* MIEJSCE NA PRZYSZŁE KAFELKI */}
+      <div className="bg-[#161920]/50 border border-zinc-800 border-dashed rounded-2xl p-5 flex flex-col items-center justify-center text-center text-zinc-500 min-h-[120px]">
+        <span className="text-2xl mb-2">🚧</span>
+        <span className="text-sm font-semibold">Więcej ustawień wkrótce...</span>
+      </div>
+
+    </div>
+  );
+}
+</file>
+
 <file path="frontend/tests/gympatico.spec.js">
 // frontend/tests/gympatico.spec.js
 import { test, expect } from '@playwright/test';
@@ -1313,6 +1461,116 @@ dist-ssr
 /playwright/.auth/
 </file>
 
+<file path="frontend/src/components/FriendProfileModal.jsx">
+// frontend/src/components/FriendProfileModal.jsx
+import React from 'react';
+
+export default function FriendProfileModal({ profile, onClose, myNick, onRemoveFriend }) {
+  if (!profile) return null;
+
+  // Konwersja na tony dla lepszego efektu
+  const myVolTons = (profile.my_volume / 1000).toFixed(1);
+  const frVolTons = (profile.friend_volume / 1000).toFixed(1);
+
+  // Kto wygrywa w poszczególnych kategoriach?
+  const myWorkoutsWin = profile.my_workouts >= profile.friend_workouts;
+  const frWorkoutsWin = profile.friend_workouts >= profile.my_workouts;
+  const myVolWin = profile.my_volume >= profile.friend_volume;
+  const frVolWin = profile.friend_volume >= profile.my_volume;
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex flex-col justify-end animate-in fade-in duration-200">
+      <div onClick={onClose} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+      
+      <div className="bg-gymCard border-t border-zinc-800 w-full max-w-[640px] mx-auto rounded-t-3xl shadow-2xl relative z-10 animate-in slide-in-from-bottom duration-300 max-h-[85vh] overflow-hidden flex flex-col">
+        {/* Uchwyt do zamykania */}
+        <div className="w-12 h-1.5 bg-zinc-700 rounded-full mx-auto mt-3 mb-2 shrink-0" />
+        
+        <div className="overflow-y-auto px-5 pb-8 pt-2">
+          {/* HERO SECTION */}
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="w-20 h-20 rounded-full bg-zinc-800 border-2 border-gymRed flex items-center justify-center text-3xl font-black text-white shadow-[0_0_20px_rgba(239,68,68,0.2)] mb-3 relative">
+              {profile.nick.charAt(0).toUpperCase()}
+              {profile.is_premium && (
+                <div className="absolute -bottom-2 bg-amber-500 border border-amber-300 text-black text-[9px] px-2 py-0.5 rounded-full font-black tracking-widest uppercase shadow-md">
+                  Premium
+                </div>
+              )}
+            </div>
+            <h2 className="text-2xl font-black text-white tracking-tight">{profile.nick}</h2>
+            <p className="text-gymRed font-bold text-sm mt-1">🔥 Utrzymuje cel od {profile.current_streak} tyg.</p>
+          </div>
+
+          {/* HEAD-TO-HEAD RING */}
+          <div className="bg-gymCardSecondary/50 border border-zinc-800/80 rounded-2xl p-4 mb-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+            
+            <h3 className="text-[10px] font-black text-textSecondary uppercase tracking-widest text-center mb-4 border-b border-zinc-800/50 pb-2">
+              Pojedynek 1v1 (Ostatnie 30 dni)
+            </h3>
+            
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              {/* Nagłówki */}
+              <div className="text-zinc-500 font-bold col-span-1 text-left">Kategoria</div>
+              <div className="font-black text-zinc-400">{myNick} (Ty)</div>
+              <div className="font-black text-amber-400">{profile.nick}</div>
+
+              {/* Ilość Treningów */}
+              <div className="text-zinc-400 font-medium col-span-1 text-left py-2 border-t border-zinc-800/30">Treningi</div>
+              <div className={`font-bold py-2 border-t border-zinc-800/30 ${myWorkoutsWin ? 'text-gymSuccess' : 'text-zinc-500'}`}>{profile.my_workouts} {myWorkoutsWin && '🏆'}</div>
+              <div className={`font-bold py-2 border-t border-zinc-800/30 ${frWorkoutsWin ? 'text-amber-400' : 'text-zinc-500'}`}>{profile.friend_workouts} {frWorkoutsWin && '🏆'}</div>
+
+              {/* Tonaż */}
+              <div className="text-zinc-400 font-medium col-span-1 text-left py-2 border-t border-zinc-800/30">Tonaż</div>
+              <div className={`font-bold py-2 border-t border-zinc-800/30 ${myVolWin ? 'text-gymSuccess' : 'text-zinc-500'}`}>{myVolTons}t {myVolWin && '🏆'}</div>
+              <div className={`font-bold py-2 border-t border-zinc-800/30 ${frVolWin ? 'text-amber-400' : 'text-zinc-500'}`}>{frVolTons}t {frVolWin && '🏆'}</div>
+            </div>
+          </div>
+
+          {/* HISTORIA ZNAJOMEGO */}
+          <div>
+            <h3 className="text-sm font-bold text-white mb-3">Ostatnie bitwy (5 sesji) ⚔️</h3>
+            {profile.recent_workouts.length === 0 ? (
+              <div className="text-zinc-500 italic text-xs bg-zinc-900/40 p-4 rounded-xl text-center border border-zinc-800/40">Ten użytkownik jeszcze nic nie zalogował.</div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {profile.recent_workouts.map(w => (
+                  <div key={w.id} className="bg-zinc-800/30 border border-zinc-800/60 p-3 rounded-xl flex justify-between items-center">
+                    <span className="text-sm font-bold text-zinc-200 truncate pr-3">{w.name}</span>
+                    <span className="text-[10px] text-zinc-500 font-mono shrink-0 bg-zinc-900 px-2 py-1 rounded">
+                      {new Date(w.started_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <button 
+            onClick={onClose} 
+            className="w-full mt-6 py-3.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl text-sm transition-colors"
+          >
+            Zamknij podgląd
+          </button>
+
+        {/* 🔴 NOWOŚĆ: Przycisk usuwania znajomego */}
+          <button 
+            onClick={() => {
+              if (window.confirm(`Czy na pewno chcesz wyrzucić użytkownika ${profile.nick} ze swojego Gangu?\nStracisz dostęp do jego statystyk.`)) {
+                onRemoveFriend(profile.id);
+              }
+            }} 
+            className="w-full py-3 bg-transparent hover:bg-red-500/10 text-zinc-500 hover:text-gymDanger font-bold rounded-xl text-xs transition-colors cursor-pointer"
+          >
+            Usuń ze znajomych 💔
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+</file>
+
 <file path="frontend/src/hooks/useWeightLogs.js">
 // frontend/src/hooks/useWeightLogs.js
 import { useState, useCallback } from 'react';
@@ -1654,38 +1912,6 @@ const pool = new Pool(poolConfig);
 module.exports = pool;
 </file>
 
-<file path="backend/package.json">
-{
-  "name": "gympatico",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
-    "test": "node --test --test-concurrency=1 tests/*.test.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "bcrypt": "^6.0.0",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "express-rate-limit": "^8.5.2",
-    "helmet": "^8.2.0",
-    "jsonwebtoken": "^9.0.3",
-    "pg": "^8.21.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.14",
-    "supertest": "^7.2.2"
-  }
-}
-</file>
-
 <file path="frontend/index.html">
 <!doctype html>
 <html lang="pl">
@@ -1854,6 +2080,39 @@ export default function StatsView({ stats, loading }) {
       )}
     </div>
   )
+}
+</file>
+
+<file path="backend/package.json">
+{
+  "name": "gympatico",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.21.0",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14",
+    "supertest": "^7.2.2"
+  }
 }
 </file>
 
@@ -2419,6 +2678,19 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>,
 )
+
+// Rejestracja Service Workera dla powiadomień Push
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(registration => {
+        console.log('✅ Service Worker zarejestrowany pomyślnie. Scope:', registration.scope);
+      })
+      .catch(error => {
+        console.error('❌ Błąd rejestracji Service Workera:', error);
+      });
+  });
+}
 </file>
 
 <file path="backend/routes/auth.js">
@@ -2566,7 +2838,7 @@ router.put('/weekly-target', authenticateToken, async (req, res) => {
   try {
     const query = `
       UPDATE users 
-      SET weekly_target_workouts = $1 
+      SET weekly_target_workouts = $1, target_updated_at = NOW() -- 🔴 DODANO ZNACZNIK CZASU
       WHERE id = $2 
       RETURNING weekly_target_workouts
     `;
@@ -2633,9 +2905,6 @@ export function useFriends(token) {
         fetch(`${API_BASE_URL}/api/friends/notifications`, { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
-      // 🔴 POPRAWKA (Graceful Degradation):
-      // Wywołujemy .json() tylko i wyłącznie wtedy, gdy odpowiedź serwera ma status 200-299.
-      // W przeciwnym razie bezpiecznie zwracamy pustą tablicę, unikając awarii całego komponentu.
       const friendsData = friendsRes.ok ? await friendsRes.json() : [];
       const requestsData = requestsRes.ok ? await requestsRes.json() : [];
       const activityData = activityRes.ok ? await activityRes.json() : [];
@@ -2653,7 +2922,6 @@ export function useFriends(token) {
     }
   }, [token]);
 
-  // Pobieranie profilu do pojedynku Head-to-Head
   const fetchFriendProfile = async (friendId) => {
     setIsProfileLoading(true);
     try {
@@ -2697,43 +2965,69 @@ export function useFriends(token) {
     return data;
   };
 
-  // Optymistyczne aktualizowanie reakcji w locie
+  const handleRemoveFriend = async (friendId) => {
+    const res = await fetch(`${API_BASE_URL}/api/friends/${friendId}`, { 
+      method: 'DELETE', 
+      headers: { 'Authorization': `Bearer ${token}` } 
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Nie udało się usunąć znajomego.');
+    return data;
+  };
+
+  // 🔴 ZAKTUALIZOWANE: Optymistyczne aktualizowanie reakcji w locie z pełnym Rollbackiem
   const handleToggleReaction = useCallback(async (workoutId, emoji) => {
-    setActivityFeed(prevFeed => prevFeed.map(act => {
-      if (act.workout_id !== workoutId) return act;
+    let rollbackFeed = null; // Zmienna do przechwycenia dokładnego stanu przed zmianą
+
+    // 1. Zmień UI natychmiast i zapamiętaj poprzedni stan
+    setActivityFeed(prevFeed => {
+      rollbackFeed = [...prevFeed]; // Zapisujemy kopię zapasową
       
-      let currentReactions = [...(act.reactions || [])];
-      const existingIdx = currentReactions.findIndex(r => r.emoji === emoji);
+      return prevFeed.map(act => {
+        if (act.workout_id !== workoutId) return act;
+        
+        let currentReactions = [...(act.reactions || [])];
+        const existingIdx = currentReactions.findIndex(r => r.emoji === emoji);
 
-      if (existingIdx >= 0) {
-        const r = { ...currentReactions[existingIdx] };
-        if (r.user_reacted) {
-          r.count -= 1;
-          r.user_reacted = false;
+        if (existingIdx >= 0) {
+          const r = { ...currentReactions[existingIdx] };
+          if (r.user_reacted) {
+            r.count -= 1;
+            r.user_reacted = false;
+          } else {
+            r.count += 1;
+            r.user_reacted = true;
+          }
+          currentReactions[existingIdx] = r;
+          if (r.count <= 0) currentReactions.splice(existingIdx, 1);
         } else {
-          r.count += 1;
-          r.user_reacted = true;
+          currentReactions.push({ emoji, count: 1, user_reacted: true });
         }
-        currentReactions[existingIdx] = r;
-        if (r.count <= 0) currentReactions.splice(existingIdx, 1);
-      } else {
-        currentReactions.push({ emoji, count: 1, user_reacted: true });
-      }
-      return { ...act, reactions: currentReactions };
-    }));
+        return { ...act, reactions: currentReactions };
+      });
+    });
 
+    // 2. Wyślij dane do bazy w tle
     try {
-      await fetch(`${API_BASE_URL}/api/friends/activity/reaction`, {
+      const res = await fetch(`${API_BASE_URL}/api/friends/activity/reaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ workoutId, emoji })
       });
+      
+      // Jeśli serwer zwróci błąd (np. 400 lub 500), wymuszamy rzucenie wyjątku
+      if (!res.ok) {
+        throw new Error(`Błąd serwera: ${res.status}`);
+      }
     } catch (err) {
-      console.error("Błąd zapisu reakcji", err);
+      console.error("❌ Błąd zapisu reakcji! Wycofuję zmiany w UI (Rollback).", err);
+      // 3. Wycofaj zmiany w UI w przypadku niepowodzenia
+      if (rollbackFeed) {
+        setActivityFeed(rollbackFeed);
+      }
     }
   }, [token]);
 
-  // Oznaczanie powiadomień jako odczytane
   const markNotificationsAsRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     try {
@@ -2750,7 +3044,7 @@ export function useFriends(token) {
     friends, setFriends, pendingRequests, setPendingRequests, activityFeed, weeklyChallenge,
     friendNickInput, setFriendNickInput, socialMessage, setSocialMessage,
     selectedFriendProfile, setSelectedFriendProfile, isProfileLoading, fetchFriendProfile,
-    handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend, handleToggleReaction,
+    handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend, handleRemoveFriend, handleToggleReaction,
     notifications, markNotificationsAsRead
   };
 }
@@ -3309,6 +3603,166 @@ export function useWorkouts(token, exercises, showToast) {
 }
 </file>
 
+<file path="init.sql">
+-- ==========================================
+-- BAZA DANYCH GYMPATICO - INIT.SQL
+-- Wersja: 2.0 (Zunifikowana z TIMESTAMPTZ + Social & Timers)
+-- ==========================================
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- 1. Tabela Użytkowników
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    nick VARCHAR(55) UNIQUE NOT NULL,
+    weekly_target_workouts INT DEFAULT 3,
+    current_streak INT DEFAULT 0,
+    max_streak INT DEFAULT 0,
+    last_workout_at TIMESTAMPTZ, 
+    is_premium BOOLEAN DEFAULT FALSE,
+    role VARCHAR(20) DEFAULT 'USER' NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Tabela Logów Wagi
+CREATE TABLE IF NOT EXISTS weight_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    weight NUMERIC(5,2) NOT NULL,
+    date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Tabela Ćwiczeń
+CREATE TABLE IF NOT EXISTS exercises (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    muscle_group VARCHAR(100) NOT NULL,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE DEFAULT NULL
+);
+
+-- 4. INDEKSY UNIKALNE DLA ATLASU ĆWICZEŃ
+CREATE UNIQUE INDEX IF NOT EXISTS exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
+
+-- 5. Tabela Znajomości
+CREATE TABLE IF NOT EXISTS friendships (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'PENDING',
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_friendship UNIQUE (sender_id, receiver_id)
+);
+
+-- 6. Tabela Sesji Treningowych
+CREATE TABLE IF NOT EXISTS workout_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    comment TEXT,
+    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 7. Tabela Serii Treningowych
+CREATE TABLE IF NOT EXISTS log_series (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
+    -- 🔴 RESTRICT: Blokada przed cichym usunięciem historii treningów
+    exercise_id UUID REFERENCES exercises(id) ON DELETE RESTRICT,
+    weight NUMERIC NOT NULL,
+    reps INT NOT NULL,
+    series_order INT NOT NULL,
+    estimated_one_rm NUMERIC,
+    is_alternative BOOLEAN DEFAULT FALSE,
+    comment TEXT,
+    series_type VARCHAR(20) DEFAULT 'NORMAL' NOT NULL
+);
+
+-- 8. Tabela Główna Szablonów Treningowych
+CREATE TABLE IF NOT EXISTS workout_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 9. Tabela Serii w Szablonach
+CREATE TABLE IF NOT EXISTS template_series (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
+    -- 🔴 RESTRICT: Zabezpieczamy też szablony przed psuciem konfiguracji po usunięciu ćwiczenia
+    exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE RESTRICT,
+    weight NUMERIC(6,2) NOT NULL,
+    reps INT NOT NULL,
+    series_order INT NOT NULL, -- 🔴 DODANO: Brakujący przecinek, który psuł składnię SQL!
+    series_type VARCHAR(20) DEFAULT 'NORMAL' NOT NULL,
+    rest_seconds INT DEFAULT NULL -- 🔴 DODANO: Inteligentny stoper w szablonach
+);
+
+-- Indeksy wydajnościowe dla klastrowania szablonów
+CREATE INDEX IF NOT EXISTS idx_templates_user ON workout_templates(user_id);
+CREATE INDEX IF NOT EXISTS idx_template_series_template ON template_series(template_id);
+
+-- 10. Tabela Reakcji na treningi 
+CREATE TABLE IF NOT EXISTS workout_reactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workout_id UUID NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    emoji VARCHAR(10) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(workout_id, user_id, emoji) -- Blokuje dawanie 2x tej samej emotki przez jedną osobę
+);
+
+-- 11. Tabela Powiadomień systemowych
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    sender_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    type VARCHAR(50) NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 12. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
+INSERT INTO exercises (name, muscle_group) VALUES
+  -- Klatka piersiowa
+  ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),
+  ('Wyciskanie hantli na ławce skośnej dodatniej', 'Klatka piersiowa'),
+  ('Pompki na poręczach (Dips)', 'Klatka piersiowa'),
+  ('Rozpiętki z hantlami na ławce poziomej', 'Klatka piersiowa'),
+
+  -- Plecy
+  ('Martwy ciąg klasyczny', 'Plecy'),
+  ('Podciąganie na drążku (nachwytem)', 'Plecy'),
+  ('Wiosłowanie sztangą w opadzie tułowia', 'Plecy'),
+  ('Ściąganie drążka wyciągu górnego do klatki', 'Plecy'),
+  ('Wiosłowanie hantlem jednorącz w oparciu o ławkę', 'Plecy'),
+
+  -- Barki
+  ('Wyciskanie żołnierskie (OHP)', 'Barki'),
+  ('Wyciskanie hantli siedząc', 'Barki'),
+  ('Unoszenie hantli bokiem stojąc', 'Barki'),
+  ('Odwrotne rozpiętki na maszynie (Face pulls)', 'Barki'),
+
+  -- Nogi
+  ('Przysiad ze sztangą na plecach (Back squat)', 'Nogi'),
+  ('Wypychanie ciężaru na suwnicy (Leg press)', 'Nogi'),
+  ('Rumuński martwy ciąg (RDL)', 'Nogi'),
+  ('Prostowanie nóg na maszynie siedząc', 'Nogi'),
+  ('Uginanie nóg na maszynie leżąc', 'Nogi'),
+
+  -- Ramiona (Biceps i Triceps)
+  ('Uginanie przedramion ze sztangą łamaną stojąc', 'Biceps'),
+  ('Uginanie przedramion z hantlami z supinacją', 'Biceps'),
+  ('Wyciskanie francuskie ze sztangą łamaną leżąc', 'Triceps'),
+  ('Prostowanie przedramion na wyciągu (linki)', 'Triceps')
+ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
+</file>
+
 <file path="frontend/src/views/Social.jsx">
 // frontend/src/views/Social.jsx
 import React from 'react'
@@ -3342,7 +3796,7 @@ export default function Social({
   pendingRequests, handleAcceptFriend, handleRejectFriend,
   friends, user, activityFeed, onToggleReaction, 
   fetchFriendProfile, selectedFriendProfile, setSelectedFriendProfile, isProfileLoading,
-  weeklyChallenge
+  weeklyChallenge, onRemoveFriend
 }) {
   
   const handleSubmit = (e) => {
@@ -3576,528 +4030,12 @@ export default function Social({
         profile={selectedFriendProfile} 
         myNick={user?.nick || 'Ja'}
         onClose={() => setSelectedFriendProfile(null)} 
+        onRemoveFriend={onRemoveFriend}
       />
 
     </div>
   )
 }
-</file>
-
-<file path="init.sql">
--- ==========================================
--- BAZA DANYCH GYMPATICO - INIT.SQL
--- Wersja: 2.0 (Zunifikowana z TIMESTAMPTZ + Social & Timers)
--- ==========================================
-
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
--- 1. Tabela Użytkowników
-CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    nick VARCHAR(55) UNIQUE NOT NULL,
-    weekly_target_workouts INT DEFAULT 3,
-    current_streak INT DEFAULT 0,
-    max_streak INT DEFAULT 0,
-    last_workout_at TIMESTAMPTZ, 
-    is_premium BOOLEAN DEFAULT FALSE,
-    role VARCHAR(20) DEFAULT 'USER' NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2. Tabela Logów Wagi
-CREATE TABLE IF NOT EXISTS weight_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    weight NUMERIC(5,2) NOT NULL,
-    date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
--- 3. Tabela Ćwiczeń
-CREATE TABLE IF NOT EXISTS exercises (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255) NOT NULL,
-    muscle_group VARCHAR(100) NOT NULL,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE DEFAULT NULL
-);
-
--- 4. INDEKSY UNIKALNE DLA ATLASU ĆWICZEŃ
-CREATE UNIQUE INDEX IF NOT EXISTS exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
-
--- 5. Tabela Znajomości
-CREATE TABLE IF NOT EXISTS friendships (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    status VARCHAR(20) DEFAULT 'PENDING',
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_friendship UNIQUE (sender_id, receiver_id)
-);
-
--- 6. Tabela Sesji Treningowych
-CREATE TABLE IF NOT EXISTS workout_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    comment TEXT,
-    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
--- 7. Tabela Serii Treningowych
-CREATE TABLE IF NOT EXISTS log_series (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
-    -- 🔴 RESTRICT: Blokada przed cichym usunięciem historii treningów
-    exercise_id UUID REFERENCES exercises(id) ON DELETE RESTRICT,
-    weight NUMERIC NOT NULL,
-    reps INT NOT NULL,
-    series_order INT NOT NULL,
-    estimated_one_rm NUMERIC,
-    is_alternative BOOLEAN DEFAULT FALSE,
-    comment TEXT,
-    series_type VARCHAR(20) DEFAULT 'NORMAL' NOT NULL
-);
-
--- 8. Tabela Główna Szablonów Treningowych
-CREATE TABLE IF NOT EXISTS workout_templates (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
--- 9. Tabela Serii w Szablonach
-CREATE TABLE IF NOT EXISTS template_series (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
-    -- 🔴 RESTRICT: Zabezpieczamy też szablony przed psuciem konfiguracji po usunięciu ćwiczenia
-    exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE RESTRICT,
-    weight NUMERIC(6,2) NOT NULL,
-    reps INT NOT NULL,
-    series_order INT NOT NULL, -- 🔴 DODANO: Brakujący przecinek, który psuł składnię SQL!
-    series_type VARCHAR(20) DEFAULT 'NORMAL' NOT NULL,
-    rest_seconds INT DEFAULT NULL -- 🔴 DODANO: Inteligentny stoper w szablonach
-);
-
--- Indeksy wydajnościowe dla klastrowania szablonów
-CREATE INDEX IF NOT EXISTS idx_templates_user ON workout_templates(user_id);
-CREATE INDEX IF NOT EXISTS idx_template_series_template ON template_series(template_id);
-
--- 10. Tabela Reakcji na treningi 
-CREATE TABLE IF NOT EXISTS workout_reactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workout_id UUID NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    emoji VARCHAR(10) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(workout_id, user_id, emoji) -- Blokuje dawanie 2x tej samej emotki przez jedną osobę
-);
-
--- 11. Tabela Powiadomień systemowych
-CREATE TABLE IF NOT EXISTS notifications (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    sender_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    type VARCHAR(50) NOT NULL,
-    message TEXT NOT NULL,
-    is_read BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
--- 12. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
-INSERT INTO exercises (name, muscle_group) VALUES
-  -- Klatka piersiowa
-  ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),
-  ('Wyciskanie hantli na ławce skośnej dodatniej', 'Klatka piersiowa'),
-  ('Pompki na poręczach (Dips)', 'Klatka piersiowa'),
-  ('Rozpiętki z hantlami na ławce poziomej', 'Klatka piersiowa'),
-
-  -- Plecy
-  ('Martwy ciąg klasyczny', 'Plecy'),
-  ('Podciąganie na drążku (nachwytem)', 'Plecy'),
-  ('Wiosłowanie sztangą w opadzie tułowia', 'Plecy'),
-  ('Ściąganie drążka wyciągu górnego do klatki', 'Plecy'),
-  ('Wiosłowanie hantlem jednorącz w oparciu o ławkę', 'Plecy'),
-
-  -- Barki
-  ('Wyciskanie żołnierskie (OHP)', 'Barki'),
-  ('Wyciskanie hantli siedząc', 'Barki'),
-  ('Unoszenie hantli bokiem stojąc', 'Barki'),
-  ('Odwrotne rozpiętki na maszynie (Face pulls)', 'Barki'),
-
-  -- Nogi
-  ('Przysiad ze sztangą na plecach (Back squat)', 'Nogi'),
-  ('Wypychanie ciężaru na suwnicy (Leg press)', 'Nogi'),
-  ('Rumuński martwy ciąg (RDL)', 'Nogi'),
-  ('Prostowanie nóg na maszynie siedząc', 'Nogi'),
-  ('Uginanie nóg na maszynie leżąc', 'Nogi'),
-
-  -- Ramiona (Biceps i Triceps)
-  ('Uginanie przedramion ze sztangą łamaną stojąc', 'Biceps'),
-  ('Uginanie przedramion z hantlami z supinacją', 'Biceps'),
-  ('Wyciskanie francuskie ze sztangą łamaną leżąc', 'Triceps'),
-  ('Prostowanie przedramion na wyciągu (linki)', 'Triceps')
-ON CONFLICT (LOWER(name)) WHERE user_id IS NULL DO NOTHING;
-</file>
-
-<file path="backend/routes/friends.js">
-// backend/routes/friends.js
-const express = require('express');
-const router = express.Router();
-const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
-const checkLimits = require('../middleware/checkLimits');
-const { getUserPlan } = require('../utils/userHelpers'); 
-
-// 1. WYSŁANIE ZAPROSZENIA
-router.post('/request', authenticateToken, checkLimits('friends'), async (req, res) => {
-  const { targetNick } = req.body;
-  const senderId = req.user.userId;
-
-  if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
-
-  try {
-    const userResult = await pool.query('SELECT id FROM users WHERE LOWER(nick) = LOWER($1)', [targetNick.trim()]);
-    if (userResult.rows.length === 0) return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
-
-    const receiverId = userResult.rows[0].id;
-    if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
-
-    const checkResult = await pool.query(
-      `SELECT * FROM friendships WHERE (sender_id = $1::uuid AND receiver_id = $2::uuid) OR (sender_id = $2::uuid AND receiver_id = $1::uuid)`,
-      [senderId, receiverId]
-    );
-    if (checkResult.rows.length > 0) return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
-
-    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1::uuid, $2::uuid, \'PENDING\')', [senderId, receiverId]);
-    res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
-  }
-});
-
-// 2. RANKING ZNAJOMYCH
-router.get('/', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    const query = `
-      SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
-        CASE WHEN u.last_workout_at < NOW() - INTERVAL '12 days' THEN 0 ELSE u.current_streak END as "current_streak"
-      FROM friendships f
-      JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1::uuid) OR (f.receiver_id = u.id AND f.sender_id = $1::uuid)
-      WHERE f.status = 'ACCEPTED' AND u.id != $1::uuid
-      UNION
-      SELECT id, nick, last_workout_at, is_premium,
-        CASE WHEN last_workout_at < NOW() - INTERVAL '12 days' THEN 0 ELSE current_streak END as "current_streak"
-      FROM users WHERE id = $1::uuid
-      ORDER BY "current_streak" DESC, nick ASC
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd pobierania rankingu", details: error.message });
-  }
-});
-
-// 3. SKRZYNKA ODBIORCZA ZAPROSZEŃ
-router.get('/requests', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    const result = await pool.query(
-      `SELECT f.id as friendship_id, u.id as sender_id, u.nick FROM friendships f JOIN users u ON f.sender_id = u.id WHERE f.receiver_id = $1::uuid AND f.status = 'PENDING'`, 
-      [userId]
-    );
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd ładowania skrzynki", details: error.message });
-  }
-});
-
-// 4. AKCEPTACJA ZAPROSZENIA
-router.post('/accept', authenticateToken, async (req, res) => {
-  const { friendshipId } = req.body;
-  const userId = req.user.userId; 
-  if (!friendshipId) return res.status(400).json({ error: "Brak identyfikatora." });
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const friendshipRes = await client.query(`SELECT sender_id, receiver_id FROM friendships WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING' FOR UPDATE`, [friendshipId, userId]);
-    if (friendshipRes.rowCount === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: "Zaproszenie nie istnieje lub zostało przetworzone." });
-    }
-
-    const senderId = friendshipRes.rows[0].sender_id;
-    const firstId = userId < senderId ? userId : senderId;
-    const secondId = userId < senderId ? senderId : userId;
-
-    await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [firstId]);
-    await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [secondId]);
-
-    const receiverPlan = await getUserPlan(userId, client);
-    if (receiverPlan && !receiverPlan.is_premium && receiverPlan.role !== 'TRAINER') {
-      const countRes = await client.query(`SELECT COUNT(*) FROM friendships WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`, [userId]);
-      if (parseInt(countRes.rows[0].count, 10) >= 5) {
-        await client.query('ROLLBACK');
-        return res.status(403).json({ error: "Osiągnięto limit (5 znajomych)." });
-      }
-    }
-
-    const senderPlan = await getUserPlan(senderId, client);
-    if (senderPlan && !senderPlan.is_premium && senderPlan.role !== 'TRAINER') {
-      const countRes = await client.query(`SELECT COUNT(*) FROM friendships WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`, [senderId]);
-      if (parseInt(countRes.rows[0].count, 10) >= 5) {
-        await client.query('ROLLBACK');
-        return res.status(403).json({ error: "Nadawca osiągnął już maksymalny limit znajomych!" });
-      }
-    }
-
-    await client.query("UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1::uuid", [friendshipId]);
-    await client.query(
-      "INSERT INTO notifications (user_id, sender_id, type, message) VALUES ($1::uuid, $2::uuid, 'FRIEND_ACCEPT', 'Zaakceptował(a) Twoje zaproszenie do Gangu!')",
-      [senderId, userId]
-    );
-    await client.query('COMMIT');
-    res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    res.status(500).json({ error: "Błąd akceptacji", details: error.message });
-  } finally {
-    client.release();
-  }
-});
-
-// 5. ODRZUCENIE ZAPROSZENIA
-router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
-  const { friendshipId } = req.params;
-  const userId = req.user.userId;
-  try {
-    const result = await pool.query("DELETE FROM friendships WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING'", [friendshipId, userId]);
-    if (result.rowCount === 0) return res.status(404).json({ error: "Nie znaleziono zaproszenia." });
-    res.json({ message: "Zaproszenie odrzucone." });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd odrzucania", details: error.message });
-  }
-});
-
-// =========================================================================
-// 6. FEED AKTYWNOŚCI ZNAJOMYCH (Agregacja Reakcji)
-// =========================================================================
-router.get('/activity', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    const query = `
-      SELECT 
-          u.id as user_id, u.nick, u.is_premium, 
-          ws.id as workout_id, ws.name as workout_name, 
-          COALESCE(ws.ended_at, ws.started_at, NOW()) as started_at, -- 🔴 ZABEZPIECZENIE DATY
-          COALESCE(
-            (SELECT json_agg(json_build_object('emoji', r.emoji, 'count', r.count, 'user_reacted', r.user_reacted))
-             FROM (
-                SELECT emoji, count(*) as count, bool_or(user_id = $1::uuid) as user_reacted
-                FROM workout_reactions
-                WHERE workout_id = ws.id
-                GROUP BY emoji
-             ) r
-            ), '[]'::json
-          ) as reactions
-      FROM workout_sessions ws
-      JOIN users u ON ws.user_id = u.id
-      WHERE ws.user_id IN (
-          SELECT CASE WHEN sender_id = $1::uuid THEN receiver_id ELSE sender_id END
-          FROM friendships
-          WHERE (sender_id = $1::uuid OR receiver_id = $1::uuid) AND status = 'ACCEPTED'
-      )
-      ORDER BY COALESCE(ws.ended_at, ws.started_at, NOW()) DESC -- 🔴 POPRAWIONE SORTOWANIE
-      LIMIT 30;
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd pobierania feedu", details: error.message });
-  }
-});
-
-// =========================================================================
-// 7. PRZEŁĄCZANIE REAKCJI (Dodaj / Usuń)
-// =========================================================================
-router.post('/activity/reaction', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { workoutId, emoji } = req.body;
-  
-  if (!workoutId || !emoji) return res.status(400).json({ error: "Brak danych reakcji." });
-
-  try {
-    const checkRes = await pool.query(
-      "SELECT id FROM workout_reactions WHERE workout_id = $1::uuid AND user_id = $2::uuid AND emoji = $3",
-      [workoutId, userId, emoji]
-    );
-
-    if (checkRes.rowCount > 0) {
-      await pool.query("DELETE FROM workout_reactions WHERE id = $1::uuid", [checkRes.rows[0].id]);
-      return res.json({ message: "Reakcja usunięta" });
-    } else {
-      await pool.query(
-        "INSERT INTO workout_reactions (workout_id, user_id, emoji) VALUES ($1::uuid, $2::uuid, $3)",
-        [workoutId, userId, emoji]
-      );
-
-      // 🔴 NOWOŚĆ: Powiadomienie dla autora treningu (tylko jeśli to nie jest jego własna reakcja)
-      const workoutRes = await pool.query("SELECT user_id FROM workout_sessions WHERE id = $1::uuid", [workoutId]);
-      const ownerId = workoutRes.rows[0].user_id;
-
-      if (ownerId !== userId) {
-        await pool.query(
-          "INSERT INTO notifications (user_id, sender_id, type, message) VALUES ($1::uuid, $2::uuid, 'REACTION', $3)",
-          [ownerId, userId, `Zareagował(a) ${emoji} na Twój trening!`]
-        );
-      }
-
-      return res.json({ message: "Reakcja dodana" });
-    }
-  } catch (error) {
-    res.status(500).json({ error: "Błąd podczas przełączania reakcji", details: error.message });
-  }
-});
-
-// =========================================================================
-// 8. WYZWANIA TYGODNIA (Dynamiczny Ranking Tonażu i Treningów)
-// =========================================================================
-router.get('/challenges/weekly', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    const query = `
-      WITH gang_members AS (
-        -- Ty i Twoi zaakceptowani znajomi
-        SELECT receiver_id as user_id FROM friendships WHERE sender_id = $1::uuid AND status = 'ACCEPTED'
-        UNION
-        SELECT sender_id as user_id FROM friendships WHERE receiver_id = $1::uuid AND status = 'ACCEPTED'
-        UNION
-        SELECT $1::uuid as user_id
-      ),
-      weekly_stats AS (
-        SELECT 
-          ws.user_id,
-          COUNT(DISTINCT ws.id) as workouts_count,
-          COALESCE(SUM(ls.weight * ls.reps), 0) as total_volume
-        FROM workout_sessions ws
-        LEFT JOIN log_series ls ON ws.id = ls.workout_session_id
-        WHERE ws.user_id IN (SELECT user_id FROM gang_members)
-          -- Zliczamy tylko od początku obecnego tygodnia (Poniedziałek 00:00)
-          AND ws.started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'
-        GROUP BY ws.user_id
-      )
-      SELECT 
-        u.id, 
-        u.nick, 
-        u.is_premium,
-        COALESCE(s.workouts_count, 0) as workouts_count,
-        COALESCE(s.total_volume, 0) as total_volume
-      FROM gang_members gm
-      JOIN users u ON gm.user_id = u.id
-      LEFT JOIN weekly_stats s ON u.id = s.user_id
-      ORDER BY total_volume DESC, workouts_count DESC;
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd pobierania wyzwań tygodnia", details: error.message });
-  }
-});
-
-// =========================================================================
-// 9. PODGLĄD PROFILU ZNAJOMEGO (Weryfikacja 1v1 - Head-to-Head)
-// =========================================================================
-router.get('/profile/:friendId', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { friendId } = req.params;
-
-  try {
-    const query = `
-      WITH is_friend AS (
-        SELECT 1 FROM friendships 
-        WHERE status = 'ACCEPTED' 
-        AND ((sender_id = $1::uuid AND receiver_id = $2::uuid) OR (sender_id = $2::uuid AND receiver_id = $1::uuid))
-      ),
-      stats_30d AS (
-        SELECT 
-          user_id,
-          COUNT(DISTINCT ws.id) as workouts_count,
-          COALESCE(SUM(ls.weight * ls.reps), 0) as total_volume
-        FROM workout_sessions ws
-        LEFT JOIN log_series ls ON ws.id = ls.workout_session_id
-        WHERE ws.user_id IN ($1::uuid, $2::uuid)
-          AND ws.started_at >= NOW() - INTERVAL '30 days'
-        GROUP BY user_id
-      ),
-      friend_recent AS (
-        SELECT id, name, started_at
-        FROM workout_sessions
-        WHERE user_id = $2::uuid
-        ORDER BY started_at DESC
-        LIMIT 5
-      )
-      SELECT 
-        u.id, u.nick, u.current_streak, u.is_premium,
-        COALESCE((SELECT workouts_count FROM stats_30d WHERE user_id = $2::uuid), 0) as friend_workouts,
-        COALESCE((SELECT total_volume FROM stats_30d WHERE user_id = $2::uuid), 0) as friend_volume,
-        COALESCE((SELECT workouts_count FROM stats_30d WHERE user_id = $1::uuid), 0) as my_workouts,
-        COALESCE((SELECT total_volume FROM stats_30d WHERE user_id = $1::uuid), 0) as my_volume,
-        COALESCE((SELECT json_agg(json_build_object('id', id, 'name', name, 'started_at', started_at)) FROM friend_recent), '[]'::json) as recent_workouts
-      FROM users u
-      WHERE u.id = $2::uuid AND EXISTS (SELECT 1 FROM is_friend);
-    `;
-    const result = await pool.query(query, [userId, friendId]);
-    
-    if (result.rowCount === 0) {
-      return res.status(403).json({ error: "Brak dostępu lub znajomy nie istnieje." });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd ładowania profilu", details: error.message });
-  }
-});
-
-// =========================================================================
-// 10. POWIADOMIENIA (Pobieranie)
-// =========================================================================
-router.get('/notifications', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    const query = `
-      SELECT n.id, n.type, n.message, n.is_read, n.created_at, u.nick as sender_nick
-      FROM notifications n
-      LEFT JOIN users u ON n.sender_id = u.id
-      WHERE n.user_id = $1::uuid
-      ORDER BY n.created_at DESC
-      LIMIT 20
-    `;
-    const result = await pool.query(query, [userId]);
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Błąd pobierania powiadomień", details: error.message });
-  }
-});
-
-// =========================================================================
-// 11. POWIADOMIENIA (Oznacz jako przeczytane)
-// =========================================================================
-router.patch('/notifications/read', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  try {
-    await pool.query("UPDATE notifications SET is_read = TRUE WHERE user_id = $1::uuid AND is_read = FALSE", [userId]);
-    res.json({ message: "Powiadomienia odczytane." });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd aktualizacji powiadomień", details: error.message });
-  }
-});
-
-module.exports = router;
 </file>
 
 <file path="frontend/src/views/Dashboard.jsx">
@@ -4518,6 +4456,502 @@ export default function Dashboard({
 }
 </file>
 
+<file path="backend/routes/friends.js">
+// backend/routes/friends.js
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+const checkLimits = require('../middleware/checkLimits');
+const { getUserPlan } = require('../utils/userHelpers'); 
+const webpush = require('web-push');
+
+// =========================================================================
+// KONFIGURACJA WEB PUSH (VAPID)
+// =========================================================================
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:kontakt@gympatico.pl',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+}
+
+// Funkcja pomocnicza do bezpiecznego wysyłania powiadomień i czyszczenia bazy
+const sendPushNotification = async (targetUserId, payloadObj) => {
+  if (!process.env.VAPID_PUBLIC_KEY) return; // Pomija, jeśli nie skonfigurowano VAPID w .env
+
+  try {
+    const subsRes = await pool.query(
+      "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1::uuid", 
+      [targetUserId]
+    );
+
+    if (subsRes.rowCount === 0) return;
+
+    const payload = JSON.stringify(payloadObj);
+
+    const pushPromises = subsRes.rows.map(sub => {
+      const pushSubscription = { 
+        endpoint: sub.endpoint, 
+        keys: { auth: sub.auth, p256dh: sub.p256dh } 
+      };
+      
+      return webpush.sendNotification(pushSubscription, payload).catch(err => {
+        // 410 (Gone) lub 404 (Not Found) oznaczają, że użytkownik cofnął uprawnienia w przeglądarce
+        if (err.statusCode === 410 || err.statusCode === 404) {
+          return pool.query("DELETE FROM push_subscriptions WHERE endpoint = $1", [sub.endpoint]);
+        }
+      });
+    });
+
+    await Promise.all(pushPromises);
+  } catch (e) {
+    console.error("Błąd systemowy podczas wysyłania powiadomienia Push:", e.message);
+  }
+};
+
+// =========================================================================
+// 1. WYSŁANIE ZAPROSZENIA
+// =========================================================================
+router.post('/request', authenticateToken, checkLimits('friends'), async (req, res) => {
+  const { targetNick } = req.body;
+  const senderId = req.user.userId;
+
+  if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
+
+  try {
+    const userResult = await pool.query('SELECT id FROM users WHERE LOWER(nick) = LOWER($1)', [targetNick.trim()]);
+    if (userResult.rows.length === 0) return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
+
+    const receiverId = userResult.rows[0].id;
+    if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
+
+    const checkResult = await pool.query(
+      `SELECT * FROM friendships WHERE (sender_id = $1::uuid AND receiver_id = $2::uuid) OR (sender_id = $2::uuid AND receiver_id = $1::uuid)`,
+      [senderId, receiverId]
+    );
+    if (checkResult.rows.length > 0) return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
+
+    await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1::uuid, $2::uuid, \'PENDING\')', [senderId, receiverId]);
+    
+    // Opcjonalnie: Wyślij push do odbiorcy (jeśli chcesz powiadamiać o nowych zaproszeniach)
+    await sendPushNotification(receiverId, {
+      title: "Nowe zaproszenie! ✉️",
+      body: `${req.user.nick} chce dołączyć do Twojego Gangu!`,
+      url: "/social"
+    });
+
+    res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd wysyłania zaproszenia", details: error.message });
+  }
+});
+
+// =========================================================================
+// 2. RANKING ZNAJOMYCH
+// =========================================================================
+router.get('/', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const query = `
+      SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
+        CASE WHEN u.last_workout_at < NOW() - INTERVAL '12 days' THEN 0 ELSE u.current_streak END as "current_streak"
+      FROM friendships f
+      JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1::uuid) OR (f.receiver_id = u.id AND f.sender_id = $1::uuid)
+      WHERE f.status = 'ACCEPTED' AND u.id != $1::uuid
+      UNION
+      SELECT id, nick, last_workout_at, is_premium,
+        CASE WHEN last_workout_at < NOW() - INTERVAL '12 days' THEN 0 ELSE current_streak END as "current_streak"
+      FROM users WHERE id = $1::uuid
+      ORDER BY "current_streak" DESC, nick ASC
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania rankingu", details: error.message });
+  }
+});
+
+// =========================================================================
+// 3. SKRZYNKA ODBIORCZA ZAPROSZEŃ
+// =========================================================================
+router.get('/requests', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const result = await pool.query(
+      `SELECT f.id as friendship_id, u.id as sender_id, u.nick FROM friendships f JOIN users u ON f.sender_id = u.id WHERE f.receiver_id = $1::uuid AND f.status = 'PENDING'`, 
+      [userId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd ładowania skrzynki", details: error.message });
+  }
+});
+
+// =========================================================================
+// 4. AKCEPTACJA ZAPROSZENIA
+// =========================================================================
+router.post('/accept', authenticateToken, async (req, res) => {
+  const { friendshipId } = req.body;
+  const userId = req.user.userId; 
+  if (!friendshipId) return res.status(400).json({ error: "Brak identyfikatora." });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const friendshipRes = await client.query(`SELECT sender_id, receiver_id FROM friendships WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING' FOR UPDATE`, [friendshipId, userId]);
+    if (friendshipRes.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: "Zaproszenie nie istnieje lub zostało przetworzone." });
+    }
+
+    const senderId = friendshipRes.rows[0].sender_id;
+    const firstId = userId < senderId ? userId : senderId;
+    const secondId = userId < senderId ? senderId : userId;
+
+    await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [firstId]);
+    await client.query('SELECT id FROM users WHERE id = $1::uuid FOR UPDATE', [secondId]);
+
+    const receiverPlan = await getUserPlan(userId, client);
+    if (receiverPlan && !receiverPlan.is_premium && receiverPlan.role !== 'TRAINER') {
+      const countRes = await client.query(`SELECT COUNT(*) FROM friendships WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`, [userId]);
+      if (parseInt(countRes.rows[0].count, 10) >= 5) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: "Osiągnięto limit (5 znajomych)." });
+      }
+    }
+
+    const senderPlan = await getUserPlan(senderId, client);
+    if (senderPlan && !senderPlan.is_premium && senderPlan.role !== 'TRAINER') {
+      const countRes = await client.query(`SELECT COUNT(*) FROM friendships WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`, [senderId]);
+      if (parseInt(countRes.rows[0].count, 10) >= 5) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: "Nadawca osiągnął już maksymalny limit znajomych!" });
+      }
+    }
+
+    await client.query("UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1::uuid", [friendshipId]);
+    
+    // Zapis powiadomienia w bazie dla in-app UI
+    await client.query(
+      "INSERT INTO notifications (user_id, sender_id, type, message) VALUES ($1::uuid, $2::uuid, 'FRIEND_ACCEPT', 'Zaakceptował(a) Twoje zaproszenie do Gangu!')",
+      [senderId, userId]
+    );
+
+    await client.query('COMMIT');
+
+    // 🔴 Wysłanie powiadomienia Web Push do nadawcy
+    await sendPushNotification(senderId, {
+      title: "Zaproszenie zaakceptowane! 🤝",
+      body: `${req.user.nick} dołączył(a) do Twojego Gangu!`,
+      url: "/social"
+    });
+
+    res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: "Błąd akceptacji", details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// =========================================================================
+// 5. ODRZUCENIE ZAPROSZENIA
+// =========================================================================
+router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
+  const { friendshipId } = req.params;
+  const userId = req.user.userId;
+  try {
+    const result = await pool.query("DELETE FROM friendships WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING'", [friendshipId, userId]);
+    if (result.rowCount === 0) return res.status(404).json({ error: "Nie znaleziono zaproszenia." });
+    res.json({ message: "Zaproszenie odrzucone." });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd odrzucania", details: error.message });
+  }
+});
+
+// =========================================================================
+// 6. FEED AKTYWNOŚCI ZNAJOMYCH
+// =========================================================================
+router.get('/activity', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const query = `
+      SELECT 
+          u.id as user_id, u.nick, u.is_premium, 
+          ws.id as workout_id, ws.name as workout_name, 
+          COALESCE(ws.ended_at, ws.started_at, NOW()) as started_at,
+          COALESCE(
+            (SELECT json_agg(json_build_object('emoji', r.emoji, 'count', r.count, 'user_reacted', r.user_reacted))
+             FROM (
+                SELECT emoji, count(*) as count, bool_or(user_id = $1::uuid) as user_reacted
+                FROM workout_reactions
+                WHERE workout_id = ws.id
+                GROUP BY emoji
+             ) r
+            ), '[]'::json
+          ) as reactions
+      FROM workout_sessions ws
+      JOIN users u ON ws.user_id = u.id
+      WHERE ws.user_id IN (
+          SELECT CASE WHEN sender_id = $1::uuid THEN receiver_id ELSE sender_id END
+          FROM friendships
+          WHERE (sender_id = $1::uuid OR receiver_id = $1::uuid) AND status = 'ACCEPTED'
+      )
+      ORDER BY COALESCE(ws.ended_at, ws.started_at, NOW()) DESC
+      LIMIT 30;
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania feedu", details: error.message });
+  }
+});
+
+// =========================================================================
+// 7. PRZEŁĄCZANIE REAKCJI (Dodaj / Usuń) + Powiadomienia
+// =========================================================================
+const ALLOWED_EMOJIS = ['🔥', '💪', '👑', '👏'];
+
+router.post('/activity/reaction', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { workoutId, emoji } = req.body;
+  
+  if (!workoutId || !emoji) {
+    return res.status(400).json({ error: "Brak danych reakcji." });
+  }
+
+  if (!ALLOWED_EMOJIS.includes(emoji)) {
+    return res.status(400).json({ error: "Niedozwolona reakcja." });
+  }
+
+  try {
+    const checkRes = await pool.query(
+      "SELECT id FROM workout_reactions WHERE workout_id = $1::uuid AND user_id = $2::uuid AND emoji = $3",
+      [workoutId, userId, emoji]
+    );
+
+    if (checkRes.rowCount > 0) {
+      await pool.query("DELETE FROM workout_reactions WHERE id = $1::uuid", [checkRes.rows[0].id]);
+      return res.json({ message: "Reakcja usunięta" });
+    } else {
+      await pool.query(
+        "INSERT INTO workout_reactions (workout_id, user_id, emoji) VALUES ($1::uuid, $2::uuid, $3)",
+        [workoutId, userId, emoji]
+      );
+
+      const workoutRes = await pool.query("SELECT user_id FROM workout_sessions WHERE id = $1::uuid", [workoutId]);
+      
+      if (workoutRes.rowCount > 0) {
+        const ownerId = workoutRes.rows[0].user_id;
+        
+        if (ownerId !== userId) {
+          // Zapis w bazie
+          await pool.query(
+            "INSERT INTO notifications (user_id, sender_id, type, message) VALUES ($1::uuid, $2::uuid, 'REACTION', $3)",
+            [ownerId, userId, `Zareagował(a) ${emoji} na Twój trening!`]
+          );
+
+          // 🔴 Wysłanie powiadomienia Web Push do autora treningu
+          await sendPushNotification(ownerId, {
+            title: "Nowa reakcja! 🔥",
+            body: `${req.user.nick} zareagował(a) ${emoji} na Twój trening!`,
+            url: "/social"
+          });
+        }
+      }
+
+      return res.json({ message: "Reakcja dodana" });
+    }
+  } catch (error) {
+    res.status(500).json({ error: "Błąd podczas przełączania reakcji", details: error.message });
+  }
+});
+
+// =========================================================================
+// 8. WYZWANIA TYGODNIA
+// =========================================================================
+router.get('/challenges/weekly', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const query = `
+      WITH gang_members AS (
+        SELECT receiver_id as user_id FROM friendships WHERE sender_id = $1::uuid AND status = 'ACCEPTED'
+        UNION
+        SELECT sender_id as user_id FROM friendships WHERE receiver_id = $1::uuid AND status = 'ACCEPTED'
+        UNION
+        SELECT $1::uuid as user_id
+      ),
+      weekly_stats AS (
+        SELECT 
+          ws.user_id,
+          COUNT(DISTINCT ws.id) as workouts_count,
+          COALESCE(SUM(ls.weight * ls.reps), 0) as total_volume
+        FROM workout_sessions ws
+        LEFT JOIN log_series ls ON ws.id = ls.workout_session_id
+        WHERE ws.user_id IN (SELECT user_id FROM gang_members)
+          AND ws.started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'
+        GROUP BY ws.user_id
+      )
+      SELECT 
+        u.id, 
+        u.nick, 
+        u.is_premium,
+        COALESCE(s.workouts_count, 0) as workouts_count,
+        COALESCE(s.total_volume, 0) as total_volume
+      FROM gang_members gm
+      JOIN users u ON gm.user_id = u.id
+      LEFT JOIN weekly_stats s ON u.id = s.user_id
+      ORDER BY total_volume DESC, workouts_count DESC;
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania wyzwań tygodnia", details: error.message });
+  }
+});
+
+// =========================================================================
+// 9. PODGLĄD PROFILU ZNAJOMEGO
+// =========================================================================
+router.get('/profile/:friendId', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { friendId } = req.params;
+
+  try {
+    const query = `
+      WITH is_friend AS (
+        SELECT 1 FROM friendships 
+        WHERE status = 'ACCEPTED' 
+        AND ((sender_id = $1::uuid AND receiver_id = $2::uuid) OR (sender_id = $2::uuid AND receiver_id = $1::uuid))
+      ),
+      stats_30d AS (
+        SELECT 
+          user_id,
+          COUNT(DISTINCT ws.id) as workouts_count,
+          COALESCE(SUM(ls.weight * ls.reps), 0) as total_volume
+        FROM workout_sessions ws
+        LEFT JOIN log_series ls ON ws.id = ls.workout_session_id
+        WHERE ws.user_id IN ($1::uuid, $2::uuid)
+          AND ws.started_at >= NOW() - INTERVAL '30 days'
+        GROUP BY user_id
+      ),
+      friend_recent AS (
+        SELECT id, name, started_at
+        FROM workout_sessions
+        WHERE user_id = $2::uuid
+        ORDER BY started_at DESC
+        LIMIT 5
+      )
+      SELECT 
+        u.id, u.nick, u.current_streak, u.is_premium,
+        COALESCE((SELECT workouts_count FROM stats_30d WHERE user_id = $2::uuid), 0) as friend_workouts,
+        COALESCE((SELECT total_volume FROM stats_30d WHERE user_id = $2::uuid), 0) as friend_volume,
+        COALESCE((SELECT workouts_count FROM stats_30d WHERE user_id = $1::uuid), 0) as my_workouts,
+        COALESCE((SELECT total_volume FROM stats_30d WHERE user_id = $1::uuid), 0) as my_volume,
+        COALESCE((SELECT json_agg(json_build_object('id', id, 'name', name, 'started_at', started_at)) FROM friend_recent), '[]'::json) as recent_workouts
+      FROM users u
+      WHERE u.id = $2::uuid AND EXISTS (SELECT 1 FROM is_friend);
+    `;
+    const result = await pool.query(query, [userId, friendId]);
+    
+    if (result.rowCount === 0) {
+      return res.status(403).json({ error: "Brak dostępu lub znajomy nie istnieje." });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd ładowania profilu", details: error.message });
+  }
+});
+
+// =========================================================================
+// 10. POWIADOMIENIA (Pobieranie)
+// =========================================================================
+router.get('/notifications', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const query = `
+      SELECT n.id, n.type, n.message, n.is_read, n.created_at, u.nick as sender_nick
+      FROM notifications n
+      LEFT JOIN users u ON n.sender_id = u.id
+      WHERE n.user_id = $1::uuid
+      ORDER BY n.created_at DESC
+      LIMIT 20
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania powiadomień", details: error.message });
+  }
+});
+
+// =========================================================================
+// 11. POWIADOMIENIA (Oznacz jako przeczytane)
+// =========================================================================
+router.patch('/notifications/read', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    await pool.query("UPDATE notifications SET is_read = TRUE WHERE user_id = $1::uuid AND is_read = FALSE", [userId]);
+    res.json({ message: "Powiadomienia odczytane." });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd aktualizacji powiadomień", details: error.message });
+  }
+});
+
+// =========================================================================
+// 12. USUWANIE ZNAJOMEGO
+// =========================================================================
+router.delete('/:friendId', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { friendId } = req.params;
+
+  try {
+    const result = await pool.query(`
+      DELETE FROM friendships 
+      WHERE status = 'ACCEPTED' 
+      AND ((sender_id = $1::uuid AND receiver_id = $2::uuid) OR (sender_id = $2::uuid AND receiver_id = $1::uuid))
+    `, [userId, friendId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Nie znaleziono takiej znajomości." });
+    }
+
+    res.json({ message: "Użytkownik został usunięty ze znajomych. 💔" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd podczas usuwania znajomego", details: error.message });
+  }
+});
+
+// =========================================================================
+// 13. REJESTRACJA SUBSKRYPCJI PUSH (PWA)
+// =========================================================================
+router.post('/subscribe', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const subscription = req.body;
+
+  if (!subscription || !subscription.endpoint || !subscription.keys) {
+    return res.status(400).json({ error: "Brak poprawnych danych subskrypcji." });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) 
+       VALUES ($1::uuid, $2, $3, $4) 
+       ON CONFLICT (user_id, endpoint) DO NOTHING`,
+      [userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth]
+    );
+    res.status(201).json({ message: "Subskrypcja Push zapisana poprawnie!" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd zapisu subskrypcji Push", details: error.message });
+  }
+});
+
+module.exports = router;
+</file>
+
 <file path="backend/routes/workouts.js">
 // backend/routes/workouts.js
 const express = require('express');
@@ -4530,7 +4964,7 @@ const { getUserPlan } = require('../utils/userHelpers');
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // =========================================================================
-// 1. ZAPISANIE TRENINGU (Zabezpieczone transakcyjnie + Blokada FOR UPDATE + Progi Streaka)
+// 1. ZAPISANIE TRENINGU (Zabezpieczone transakcyjnie + Blokada FOR UPDATE + Progi Streaka + Amnestia)
 // =========================================================================
 router.post('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
@@ -4541,7 +4975,7 @@ router.post('/', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: "Nazwa treningu oraz zestaw serii są wymagane!" });
   }
 
-  // 2. 🔴 NOWOŚĆ: Rygorystyczna walidacja każdego exerciseId
+  // 2. Rygorystyczna walidacja każdego exerciseId
   for (let i = 0; i < series.length; i++) {
     const exId = series[i].exerciseId;
     
@@ -4557,9 +4991,9 @@ router.post('/', authenticateToken, async (req, res) => {
     await client.query('BEGIN');
 
     // Blokada pesymistyczna (Pessimistic Locking) na wierszu użytkownika.
-    // Zapobiega wyścigom żądań (Race Conditions) przy jednoczesnych requestach sieciowych.
+    // Pobieramy target_updated_at niezbędne do logiki amnestii streaka.
     const userResult = await client.query(
-      'SELECT current_streak, weekly_target_workouts, last_workout_at FROM users WHERE id = $1 FOR UPDATE', 
+      'SELECT current_streak, weekly_target_workouts, last_workout_at, target_updated_at FROM users WHERE id = $1 FOR UPDATE', 
       [userId]
     );
     
@@ -4567,22 +5001,21 @@ router.post('/', authenticateToken, async (req, res) => {
       throw new Error("Użytkownik nie istnieje w systemie.");
     }
 
-    const { current_streak, weekly_target_workouts, last_workout_at } = userResult.rows[0];
+    const { current_streak, weekly_target_workouts, last_workout_at, target_updated_at } = userResult.rows[0];
     const target = weekly_target_workouts ?? 3;
 
     // Symetryczne pobieranie stanu licznika tygodniowego PRZED zapisem nowej sesji
     const lastWeekResult = await client.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
+      `SELECT COUNT(*) as count FROM workout_sessions WHERE user_id = $1 
       AND started_at >= (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw' 
       AND started_at < date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
     );
     const workoutsLastWeek = parseInt(lastWeekResult.rows[0].count, 10);
 
     const thisWeekResult = await client.query(
-      `SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1 
+      `SELECT COUNT(*) as count FROM workout_sessions WHERE user_id = $1 
       AND started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'`, [userId]
     );
-    // Liczba sesji przed wstawieniem aktualnej
     const workoutsBeforeThisOne = parseInt(thisWeekResult.rows[0].count, 10);
 
     // --- BEZPIECZNE WSTAWIENIE NAGŁÓWKA SESJI ---
@@ -4606,7 +5039,6 @@ router.post('/', authenticateToken, async (req, res) => {
       const s = series[i];
       let estimatedOneRM = null;
       
-      // Wyliczenie 1RM wg sprawdzonego wzoru Epleya (dla serii od 1 do 12 powtórzeń)
       if (s.reps >= 1 && s.reps <= 12) {
         estimatedOneRM = s.weight * (1 + s.reps / 30);
       }
@@ -4621,7 +5053,6 @@ router.post('/', authenticateToken, async (req, res) => {
       seriesTypes.push(s.seriesType || 'NORMAL');
     }
 
-    // Błyskawiczny zapis wielowierszowy (0 marnowania round-tripów sieciowych do bazy)
     const bulkInsertSeriesQuery = `
       INSERT INTO log_series (workout_session_id, exercise_id, weight, reps, series_order, estimated_one_rm, is_alternative, comment, series_type)
       SELECT $1, * FROM UNNEST($2::uuid[], $3::numeric[], $4::int[], $5::int[], $6::numeric[], $7::boolean[], $8::text[], $9::varchar[])
@@ -4631,20 +5062,32 @@ router.post('/', authenticateToken, async (req, res) => {
       sessionId, exerciseIds, weights, reps, orders, estimatedOneRMs, isAlternatives, seriesComments, seriesTypes
     ]);
 
-    // --- ANALIZA I AKTUALIZACJA CIĄGŁOŚCI TRENINGOWEJ (STREAK) ---
+    // --- ANALIZA I AKTUALIZACJA CIĄGŁOŚCI TRENINGOWEJ (STREAK Z AMNESTIĄ) ---
     let effectiveStreak = current_streak;
 
+    // Pobranie idealnych granic czasowych z bazy w odpowiedniej strefie
+    const datesResult = await client.query(`
+      SELECT 
+        (date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw') as start_of_this_week,
+        ((date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') - INTERVAL '1 week') AT TIME ZONE 'Europe/Warsaw') as start_of_last_week
+    `);
+    const startOfThisWeek = new Date(datesResult.rows[0].start_of_this_week);
+    const startOfLastWeek = new Date(datesResult.rows[0].start_of_last_week);
+    const targetUpdatedAt = target_updated_at ? new Date(target_updated_at) : new Date(0);
+
     if (last_workout_at) {
-      const startOfThisWeekResult = await client.query(
-        `SELECT date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw' as start_of_week`
-      );
-      const startOfThisWeek = new Date(startOfThisWeekResult.rows[0].start_of_week);
       const lastWorkoutDate = new Date(last_workout_at);
 
-      // Jeśli ostatni trening odbył się przed bieżącym tygodniem, weryfikujemy czy cel został domknięty
+      // Jeśli ostatni trening odbył się przed bieżącym tygodniem, oceniamy zeszły tydzień
       if (lastWorkoutDate < startOfThisWeek) {
         if (workoutsLastWeek < target) {
-          effectiveStreak = 0; // Przerwana ciągłość -> reset streaka
+          
+          // 🔴 KLAUZULA AMNESTII: Czy użytkownik zmienił cel w trakcie zeszłego tygodnia (lub później)?
+          const isAmnestyActive = targetUpdatedAt >= startOfLastWeek;
+
+          if (!isAmnestyActive) {
+            effectiveStreak = 0; // Przerwana ciągłość i brak amnestii -> reset streaka
+          }
         }
       }
     }
@@ -4653,13 +5096,12 @@ router.post('/', authenticateToken, async (req, res) => {
     const workoutsWithThisOne = workoutsBeforeThisOne + 1;
     let newStreak = effectiveStreak;
 
-    // Próg bezpieczeństwa (Threshold Guard). Streak rośnie tylko wtedy,
-    // gdy ten konkretny trening przebija barierę celu, chroniąc przed "farmowaniem" streaka.
+    // Próg bezpieczeństwa (Threshold Guard)
     if (workoutsWithThisOne >= target && workoutsBeforeThisOne < target) {
       newStreak = effectiveStreak + 1;
     }
 
-    // Aktualizacja rekordu użytkownika przy użyciu GREATEST dla bezpiecznego max_streak
+    // Aktualizacja rekordu użytkownika
     await client.query(
       'UPDATE users SET current_streak = $1, last_workout_at = NOW(), max_streak = GREATEST(max_streak, $1) WHERE id = $2',
       [newStreak, userId]
@@ -4691,7 +5133,7 @@ router.get('/', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "Użytkownik nie istnieje." });
     }
 
-    const countQuery = 'SELECT COUNT(*) FROM workout_sessions WHERE user_id = $1';
+    const countQuery = 'SELECT COUNT(*) as count FROM workout_sessions WHERE user_id = $1';
     const countResult = await pool.query(countQuery, [userId]);
     let totalCount = parseInt(countResult.rows[0].count, 10);
 
@@ -4720,7 +5162,6 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const sessionIds = sessions.map(s => s.id);
 
-    // Pobranie powiązanych serii z uwzględnieniem mapowania camelCase klucza seriesType
     const seriesQuery = `
       SELECT 
         ls.id, 
@@ -4795,7 +5236,6 @@ router.get('/export', authenticateToken, async (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename=gympatico_historia_treningow.csv');
     
-    // Wstrzyknięcie znacznika BOM dla prawidłowego kodowania polskich znaków w MS Excel
     res.write('\uFEFF');
 
     const headers = ["Data", "Nazwa treningu", "Komentarz do treningu", "Ćwiczenie", "Grupa mięśniowa", "Numer serii", "Typ serii", "Ciężar (kg)", "Powtórzenia", "Estymowane 1RM"];
@@ -4872,14 +5312,11 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // Jedno, atomowe zapytanie do bazy danych:
     const result = await pool.query(
       "DELETE FROM workout_sessions WHERE id = $1::uuid AND user_id = $2::uuid RETURNING id",
       [sessionId, userId]
     );
 
-    // Jeśli rowCount wynosi 0, oznacza to, że albo trening nie istnieje, 
-    // albo należy do kogoś innego (user_id się nie zgadza).
     if (result.rowCount === 0) {
       return res.status(404).json({ 
         error: "Trening nie istnieje lub nie masz uprawnień do jego usunięcia." 
@@ -4896,7 +5333,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 });
 
 // =========================================================================
-// 6. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz z walidacją długości znaków)
+// 6. EDYCJA METADANYCH TRENINGU (Nazwa i Komentarz)
 // =========================================================================
 router.patch('/:sessionId', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
@@ -4925,7 +5362,6 @@ router.patch('/:sessionId', authenticateToken, async (req, res) => {
       WHERE id = $3::uuid AND user_id = $4::uuid 
       RETURNING id, name, comment
     `;
-    // 🔴 POPRAWKA: Usunięto nadmiarowe wywołania .trim() z parametrów tablicy SQL
     const result = await pool.query(updateQuery, [name, comment, sessionId, userId]);
 
     if (result.rowCount === 0) {
@@ -4945,6 +5381,7 @@ module.exports = router;
 // frontend/src/App.jsx
 import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import Settings from './views/Settings';
 
 import LoginView from './views/LoginView'
 import Dashboard from './views/Dashboard'
@@ -4966,7 +5403,7 @@ import NotificationBell from './components/NotificationBell';
 const getJwtExpiry = (token) => {
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.exp * 1000; // Zwracamy w milisekundach
+    return payload.exp * 1000;
   } catch (e) {
     return null;
   }
@@ -5003,7 +5440,7 @@ function AppContent() {
   
   const { 
     friends, pendingRequests, friendNickInput, setFriendNickInput, selectedFriendProfile, setSelectedFriendProfile, isProfileLoading, fetchFriendProfile, 
-    handleSendFriendRequest, handleAcceptFriend, handleRejectFriend, fetchFriendsData, activityFeed, handleToggleReaction, weeklyChallenge, notifications, markNotificationsAsRead
+    handleSendFriendRequest, handleAcceptFriend, handleRejectFriend, fetchFriendsData, activityFeed, handleToggleReaction, weeklyChallenge, notifications, markNotificationsAsRead, handleRemoveFriend
   } = useFriends(token)
 
   const { templates, fetchTemplates, handleSaveTemplate, handleDeleteTemplate } = useTemplates(token, showToast);
@@ -5106,10 +5543,13 @@ function AppContent() {
     }
   }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates]);
 
+  // 🔴 ZABEZPIECZENIE PRZED INFINITE LOOP (wywołanie tylko przy zmianie tokena)
   useEffect(() => {
     fetchAllData()
-  }, [token, fetchAllData])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
 
+  // 🔴 SILENT REFRESH: Automatyczne przedłużanie sesji
   useEffect(() => {
     if (!token) return;
 
@@ -5120,7 +5560,6 @@ function AppContent() {
       const timeUntilExpiry = expiryTime - Date.now();
       const SEVEN_DAYS_IN_MS = 7 * 24 * 60 * 60 * 1000;
 
-      // Jeśli do wygaśnięcia tokena zostało mniej niż 7 dni, odnawiamy go w tle
       if (timeUntilExpiry > 0 && timeUntilExpiry < SEVEN_DAYS_IN_MS) {
         try {
           const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
@@ -5183,7 +5622,7 @@ function AppContent() {
       await handleAddWeight(e);
       await fetchAllData();
     } catch (err) {
-      // Błąd został obsłużony wewnątrz hooka
+      // Błąd obsługiwany w hooku
     }
   };
 
@@ -5233,6 +5672,18 @@ function AppContent() {
       await handleRejectFriend(friendshipId);
       showToast('Zaproszenie zostało odrzucone.', 'success');
       await fetchAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // 🔴 NOWOŚĆ: Wrapper usuwania znajomego
+  const onRemoveFriend = async (friendId) => {
+    try {
+      await handleRemoveFriend(friendId);
+      showToast('Użytkownik został usunięty z Gangu 💔', 'success');
+      setSelectedFriendProfile(null); // Zamykamy modal profilu
+      await fetchAllData(); // Odświeżamy rankingi i feed
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -5292,14 +5743,14 @@ function AppContent() {
     try {
       await handleUpdateWorkout(sessionId, name, comment);
       showToast('Trening został zaktualizowany! ✏️', 'success');
-      return true; // Sukces
+      return true; 
     } catch (err) {
       showToast(err.message, 'error');
-      return false; // Porażka
+      return false; 
     }
   };
 
-  const isMoreRouteActive = location.pathname === '/exercises' || location.pathname === '/social'
+  const isMoreRouteActive = location.pathname === '/exercises' || location.pathname === '/social' || location.pathname === '/settings';
 
   return (
     <div className="p-4 md:p-6 font-sans bg-gymDark text-white min-h-screen relative">
@@ -5314,7 +5765,6 @@ function AppContent() {
             </div>
             
             <div className="flex items-center gap-3 md:gap-4 shrink-0">
-              {/* 🔴 KOMPONENT DZWONKA */}
               <NotificationBell 
                 notifications={notifications} 
                 markAsRead={markNotificationsAsRead} 
@@ -5327,6 +5777,7 @@ function AppContent() {
                 <button onClick={() => navigate('/new-workout')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/new-workout' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>+ Nowy Trening</button>
                 <button onClick={() => navigate('/history')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/history' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Historia</button>
                 <button onClick={() => navigate('/social')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/social' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Społeczność 👥</button>
+                <button onClick={() => navigate('/settings')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/settings' ? 'bg-zinc-700 text-white' : 'bg-transparent text-zinc-400 hover:text-white hover:bg-zinc-800'}`}>⚙️</button>
                 <button onClick={handleLogout} className="px-4 py-2 text-xs font-semibold rounded-lg bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer transition-all ml-2">Wyloguj</button>
               </nav>
 
@@ -5375,6 +5826,13 @@ function AppContent() {
                   <div>
                     <div>Gang GymPatico</div>
                     <div className="text-[11px] text-zinc-500 font-normal mt-0.5">Ranking streaków, zaproszenia i społeczność</div>
+                  </div>
+                </button>
+                <button onClick={() => { navigate('/settings'); setIsMoreMenuOpen(false); }} className={`flex items-center gap-3.5 p-3.5 rounded-xl border text-left font-bold text-sm transition-all cursor-pointer ${location.pathname === '/settings' ? 'border-zinc-600 bg-zinc-800 text-white' : 'border-zinc-800 bg-zinc-900/50 text-zinc-300'}`}>
+                  <span className="text-xl">⚙️</span>
+                  <div>
+                    <div>Ustawienia</div>
+                    <div className="text-[11px] text-zinc-500 font-normal mt-0.5">Powiadomienia i preferencje konta</div>
                   </div>
                 </button>
               </div>
@@ -5428,8 +5886,9 @@ function AppContent() {
             />
           ) : <Navigate to="/login" />} />
           
-          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} activityFeed={activityFeed} onToggleReaction={handleToggleReaction} weeklyChallenge={weeklyChallenge} fetchFriendProfile={fetchFriendProfile} selectedFriendProfile={selectedFriendProfile} setSelectedFriendProfile={setSelectedFriendProfile} isProfileLoading={isProfileLoading} /> : <Navigate to="/login" />} />
+          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} activityFeed={activityFeed} onToggleReaction={handleToggleReaction} weeklyChallenge={weeklyChallenge} fetchFriendProfile={fetchFriendProfile} selectedFriendProfile={selectedFriendProfile} setSelectedFriendProfile={setSelectedFriendProfile} isProfileLoading={isProfileLoading} onRemoveFriend={onRemoveFriend} /> : <Navigate to="/login" />} />
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
+          <Route path="/settings" element={token ? <Settings token={token} showToast={showToast} /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>
       </main>

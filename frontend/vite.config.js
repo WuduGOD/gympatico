@@ -13,9 +13,10 @@ export default defineConfig({
       injectRegister: 'auto',
       includeAssets: ['favicon.svg'],
       
-      // JAWNA KONFIGURACJA WORKBOX (Eliminacja ostrzeżenia o braku .wasm i poprawne cache'owanie)
+      // 🔴 POPRAWKA: Wstrzyknięcie naszego pliku z logiką Push do wygenerowanego SW
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico}']
+        globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        importScripts: ['/gym-push.js'] 
       },
       
       manifest: {
