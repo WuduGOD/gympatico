@@ -6,19 +6,32 @@ const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
 const { getUserPlan } = require('../utils/userHelpers');
 
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // =========================================================================
 // 1. ZAPISANIE TRENINGU (Zabezpieczone transakcyjnie + Blokada FOR UPDATE + Progi Streaka)
 // =========================================================================
-router.post('/', authenticateToken, checkLimits('workouts'), async (req, res) => {
-  const { name, comment, series } = req.body;
+router.post('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
+  const { name, comment, series } = req.body;
 
-  if (!name || !series || !Array.isArray(series) || series.length === 0) {
-    return res.status(400).json({ error: "Nazwa treningu oraz serie są wymagane!" });
+  // 1. Podstawowa walidacja struktury
+  if (!name || !name.trim() || !Array.isArray(series) || series.length === 0) {
+    return res.status(400).json({ error: "Nazwa treningu oraz zestaw serii są wymagane!" });
+  }
+
+  // 2. 🔴 NOWOŚĆ: Rygorystyczna walidacja każdego exerciseId
+  for (let i = 0; i < series.length; i++) {
+    const exId = series[i].exerciseId;
+    
+    if (!exId || !uuidRegex.test(exId)) {
+      return res.status(400).json({ 
+        error: `Błąd walidacji: Odrzucono zapis. Przekazano nieprawidłowy lub uszkodzony identyfikator ćwiczenia w serii ${i + 1}.` 
+      });
+    }
   }
 
   const client = await pool.connect();
-
   try {
     await client.query('BEGIN');
 
@@ -333,22 +346,31 @@ router.get('/progression/:exerciseId', authenticateToken, async (req, res) => {
 // =========================================================================
 // 5. USUNIĘCIE TRENINGU (Z weryfikacją uprawnień właściciela)
 // =========================================================================
-router.delete('/:sessionId', authenticateToken, async (req, res) => {
-  const { sessionId } = req.params;
+router.delete('/:id', authenticateToken, async (req, res) => {
+  const sessionId = req.params.id;
   const userId = req.user.userId;
 
   try {
-    const checkQuery = 'SELECT id FROM workout_sessions WHERE id = $1::uuid AND user_id = $2::uuid';
-    const checkResult = await pool.query(checkQuery, [sessionId, userId]);
+    // Jedno, atomowe zapytanie do bazy danych:
+    const result = await pool.query(
+      "DELETE FROM workout_sessions WHERE id = $1::uuid AND user_id = $2::uuid RETURNING id",
+      [sessionId, userId]
+    );
 
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: "Nie znaleziono treningu lub nie masz uprawnień do jego usunięcia." });
+    // Jeśli rowCount wynosi 0, oznacza to, że albo trening nie istnieje, 
+    // albo należy do kogoś innego (user_id się nie zgadza).
+    if (result.rowCount === 0) {
+      return res.status(404).json({ 
+        error: "Trening nie istnieje lub nie masz uprawnień do jego usunięcia." 
+      });
     }
 
-    await pool.query('DELETE FROM workout_sessions WHERE id = $1::uuid', [sessionId]);
-    res.json({ message: "Trening został pomyślnie usunięty z historii. ✕" });
+    res.json({ message: "Trening został usunięty pomyślnie. 🗑️" });
   } catch (error) {
-    res.status(500).json({ error: "Błąd serwera podczas usunięcia treningu", details: error.message });
+    res.status(500).json({ 
+      error: "Błąd podczas usuwania treningu", 
+      details: error.message 
+    });
   }
 });
 

@@ -18,6 +18,16 @@ import StatsView from './views/StatsView'
 
 import NotificationBell from './components/NotificationBell';
 
+// Prosty dekoder weryfikujący czas życia JWT
+const getJwtExpiry = (token) => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp * 1000; // Zwracamy w milisekundach
+  } catch (e) {
+    return null;
+  }
+};
+
 function AppContent() {
   const [token, setToken] = useState(() => localStorage.getItem('gp_token') || null);
   const [user, setUser] = useState(() => {
@@ -155,6 +165,40 @@ function AppContent() {
   useEffect(() => {
     fetchAllData()
   }, [token, fetchAllData])
+
+  useEffect(() => {
+    if (!token) return;
+
+    const checkAndRefreshToken = async () => {
+      const expiryTime = getJwtExpiry(token);
+      if (!expiryTime) return;
+
+      const timeUntilExpiry = expiryTime - Date.now();
+      const SEVEN_DAYS_IN_MS = 7 * 24 * 60 * 60 * 1000;
+
+      // Jeśli do wygaśnięcia tokena zostało mniej niż 7 dni, odnawiamy go w tle
+      if (timeUntilExpiry > 0 && timeUntilExpiry < SEVEN_DAYS_IN_MS) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            if (data.token) {
+              localStorage.setItem('gp_token', data.token);
+              setToken(data.token);
+              console.log('🔄 Sesja GymPatico została dyskretnie przedłużona.');
+            }
+          }
+        } catch (err) {
+          console.error("Błąd podczas odnawiania sesji w tle:", err);
+        }
+      }
+    };
+
+    checkAndRefreshToken();
+  }, [token]);
 
   useEffect(() => {
     const handleSessionExpired = () => {

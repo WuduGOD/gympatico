@@ -1,9 +1,12 @@
--- init.sql - Zunifikowana struktura bazy danych GymPatico z obsługą stref czasowych (TIMESTAMPTZ)
+-- ==========================================
+-- BAZA DANYCH GYMPATICO - INIT.SQL
+-- Wersja: 2.0 (Zunifikowana z TIMESTAMPTZ + Social & Timers)
+-- ==========================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- 1. Tabela Użytkowników
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -13,12 +16,12 @@ CREATE TABLE users (
     max_streak INT DEFAULT 0,
     last_workout_at TIMESTAMPTZ, 
     is_premium BOOLEAN DEFAULT FALSE,
-    role VARCHAR(20) DEFAULT 'USER' NOT NULL, -- <--- POPRAWKA: Kolumna roli zabezpieczająca bezstanowe JWT i moduł TRAINER
+    role VARCHAR(20) DEFAULT 'USER' NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 2. Tabela Logów Wagi
-CREATE TABLE weight_logs (
+CREATE TABLE IF NOT EXISTS weight_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     weight NUMERIC(5,2) NOT NULL,
@@ -26,7 +29,7 @@ CREATE TABLE weight_logs (
 );
 
 -- 3. Tabela Ćwiczeń
-CREATE TABLE exercises (
+CREATE TABLE IF NOT EXISTS exercises (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     muscle_group VARCHAR(100) NOT NULL,
@@ -34,14 +37,11 @@ CREATE TABLE exercises (
 );
 
 -- 4. INDEKSY UNIKALNE DLA ATLASU ĆWICZEŃ
--- Zabezpieczenie ćwiczeń globalnych (brak duplikatów o tej samej nazwie w bazie systemowej)
-CREATE UNIQUE INDEX exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
-
--- Zabezpieczenie ćwiczeń prywatnych (użytkownik nie doda u siebie dwóch tak samo nazwanych pozycji)
-CREATE UNIQUE INDEX exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
 
 -- 5. Tabela Znajomości
-CREATE TABLE friendships (
+CREATE TABLE IF NOT EXISTS friendships (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
     receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -51,7 +51,7 @@ CREATE TABLE friendships (
 );
 
 -- 6. Tabela Sesji Treningowych
-CREATE TABLE workout_sessions (
+CREATE TABLE IF NOT EXISTS workout_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -61,9 +61,10 @@ CREATE TABLE workout_sessions (
 );
 
 -- 7. Tabela Serii Treningowych
-CREATE TABLE log_series (
+CREATE TABLE IF NOT EXISTS log_series (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
+    -- 🔴 RESTRICT: Blokada przed cichym usunięciem historii treningów
     exercise_id UUID REFERENCES exercises(id) ON DELETE RESTRICT,
     weight NUMERIC NOT NULL,
     reps INT NOT NULL,
@@ -75,29 +76,52 @@ CREATE TABLE log_series (
 );
 
 -- 8. Tabela Główna Szablonów Treningowych
-CREATE TABLE workout_templates (
+CREATE TABLE IF NOT EXISTS workout_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 9. Tabela Serii w Szablonach
-CREATE TABLE template_series (
+CREATE TABLE IF NOT EXISTS template_series (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
-    exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+    -- 🔴 RESTRICT: Zabezpieczamy też szablony przed psuciem konfiguracji po usunięciu ćwiczenia
+    exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE RESTRICT,
     weight NUMERIC(6,2) NOT NULL,
     reps INT NOT NULL,
-    series_order INT NOT NULL
-    series_type VARCHAR(20) DEFAULT 'NORMAL' NOT NULL
+    series_order INT NOT NULL, -- 🔴 DODANO: Brakujący przecinek, który psuł składnię SQL!
+    series_type VARCHAR(20) DEFAULT 'NORMAL' NOT NULL,
+    rest_seconds INT DEFAULT NULL -- 🔴 DODANO: Inteligentny stoper w szablonach
 );
 
 -- Indeksy wydajnościowe dla klastrowania szablonów
-CREATE INDEX idx_templates_user ON workout_templates(user_id);
-CREATE INDEX idx_template_series_template ON template_series(template_id);
+CREATE INDEX IF NOT EXISTS idx_templates_user ON workout_templates(user_id);
+CREATE INDEX IF NOT EXISTS idx_template_series_template ON template_series(template_id);
 
--- 10. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
+-- 10. Tabela Reakcji na treningi 
+CREATE TABLE IF NOT EXISTS workout_reactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workout_id UUID NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    emoji VARCHAR(10) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(workout_id, user_id, emoji) -- Blokuje dawanie 2x tej samej emotki przez jedną osobę
+);
+
+-- 11. Tabela Powiadomień systemowych
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    sender_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    type VARCHAR(50) NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 12. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
 INSERT INTO exercises (name, muscle_group) VALUES
   -- Klatka piersiowa
   ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),

@@ -5,8 +5,17 @@ import FriendProfileModal from '../components/FriendProfileModal'
 const ALLOWED_EMOJIS = ['🔥', '💪', '👑', '👏'];
 
 const getTimeAgo = (dateStr) => {
-  const diff = Date.now() - new Date(dateStr).getTime();
+  // 🔴 ZABEZPIECZENIE: Jeśli nie ma daty, zwróć pusty string lub komunikat
+  if (!dateStr) return ''; 
+
+  const date = new Date(dateStr);
+  // Sprawdzenie czy data jest poprawna
+  if (isNaN(date.getTime())) return '';
+
+  const diff = Date.now() - date.getTime();
   const mins = Math.floor(diff / 60000);
+  
+  if (mins < 0) return 'przed chwilą'; // Zapobieganie błędom przy różnicach stref czasowych
   if (mins < 1) return 'przed chwilą';
   if (mins < 60) return `${mins} min temu`;
   const hours = Math.floor(mins / 60);

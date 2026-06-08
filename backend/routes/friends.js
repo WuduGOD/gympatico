@@ -147,7 +147,8 @@ router.get('/activity', authenticateToken, async (req, res) => {
     const query = `
       SELECT 
           u.id as user_id, u.nick, u.is_premium, 
-          ws.id as workout_id, ws.name as workout_name, ws.started_at,
+          ws.id as workout_id, ws.name as workout_name, 
+          COALESCE(ws.ended_at, ws.started_at, NOW()) as started_at, -- 🔴 ZABEZPIECZENIE DATY
           COALESCE(
             (SELECT json_agg(json_build_object('emoji', r.emoji, 'count', r.count, 'user_reacted', r.user_reacted))
              FROM (
@@ -165,7 +166,7 @@ router.get('/activity', authenticateToken, async (req, res) => {
           FROM friendships
           WHERE (sender_id = $1::uuid OR receiver_id = $1::uuid) AND status = 'ACCEPTED'
       )
-      ORDER BY ws.started_at DESC
+      ORDER BY COALESCE(ws.ended_at, ws.started_at, NOW()) DESC -- 🔴 POPRAWIONE SORTOWANIE
       LIMIT 30;
     `;
     const result = await pool.query(query, [userId]);

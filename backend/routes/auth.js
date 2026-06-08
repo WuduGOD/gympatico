@@ -1,3 +1,4 @@
+// backend/routes/auth.js
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
@@ -153,6 +154,28 @@ router.put('/weekly-target', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Błąd serwera podczas aktualizacji celu", details: error.message });
+  }
+});
+
+// 🔴 NOWOŚĆ: SILENT REFRESH (Automatyczne przedłużanie ważności sesji o kolejne 30 dni)
+router.get('/refresh', authenticateToken, (req, res) => {
+  try {
+    // Dane przesyłane w payloadzie dopasowane są do struktury z endpointu /login
+    const payload = { 
+      userId: req.user.userId, 
+      nick: req.user.nick, 
+      role: req.user.role 
+    };
+    
+    const token = jwt.sign(
+      payload, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '30d' }
+    );
+    
+    res.json({ token });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd podczas odnawiania tokenu", details: error.message });
   }
 });
 

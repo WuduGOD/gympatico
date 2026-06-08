@@ -76,6 +76,8 @@ frontend/src/App.jsx
 frontend/src/assets/hero.png
 frontend/src/assets/react.svg
 frontend/src/assets/vite.svg
+frontend/src/components/FriendProfileModal.jsx
+frontend/src/components/NotificationBell.jsx
 frontend/src/components/WeightChart.jsx
 frontend/src/components/WorkoutCalendar.jsx
 frontend/src/config/api.js
@@ -262,6 +264,205 @@ body {
 
 <file path="frontend/src/assets/vite.svg">
 <svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
+</file>
+
+<file path="frontend/src/components/FriendProfileModal.jsx">
+// frontend/src/components/FriendProfileModal.jsx
+import React from 'react';
+
+export default function FriendProfileModal({ profile, onClose, myNick }) {
+  if (!profile) return null;
+
+  // Konwersja na tony dla lepszego efektu
+  const myVolTons = (profile.my_volume / 1000).toFixed(1);
+  const frVolTons = (profile.friend_volume / 1000).toFixed(1);
+
+  // Kto wygrywa w poszczególnych kategoriach?
+  const myWorkoutsWin = profile.my_workouts >= profile.friend_workouts;
+  const frWorkoutsWin = profile.friend_workouts >= profile.my_workouts;
+  const myVolWin = profile.my_volume >= profile.friend_volume;
+  const frVolWin = profile.friend_volume >= profile.my_volume;
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex flex-col justify-end animate-in fade-in duration-200">
+      <div onClick={onClose} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+      
+      <div className="bg-gymCard border-t border-zinc-800 w-full max-w-[640px] mx-auto rounded-t-3xl shadow-2xl relative z-10 animate-in slide-in-from-bottom duration-300 max-h-[85vh] overflow-hidden flex flex-col">
+        {/* Uchwyt do zamykania */}
+        <div className="w-12 h-1.5 bg-zinc-700 rounded-full mx-auto mt-3 mb-2 shrink-0" />
+        
+        <div className="overflow-y-auto px-5 pb-8 pt-2">
+          {/* HERO SECTION */}
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="w-20 h-20 rounded-full bg-zinc-800 border-2 border-gymRed flex items-center justify-center text-3xl font-black text-white shadow-[0_0_20px_rgba(239,68,68,0.2)] mb-3 relative">
+              {profile.nick.charAt(0).toUpperCase()}
+              {profile.is_premium && (
+                <div className="absolute -bottom-2 bg-amber-500 border border-amber-300 text-black text-[9px] px-2 py-0.5 rounded-full font-black tracking-widest uppercase shadow-md">
+                  Premium
+                </div>
+              )}
+            </div>
+            <h2 className="text-2xl font-black text-white tracking-tight">{profile.nick}</h2>
+            <p className="text-gymRed font-bold text-sm mt-1">🔥 Utrzymuje cel od {profile.current_streak} tyg.</p>
+          </div>
+
+          {/* HEAD-TO-HEAD RING */}
+          <div className="bg-gymCardSecondary/50 border border-zinc-800/80 rounded-2xl p-4 mb-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+            
+            <h3 className="text-[10px] font-black text-textSecondary uppercase tracking-widest text-center mb-4 border-b border-zinc-800/50 pb-2">
+              Pojedynek 1v1 (Ostatnie 30 dni)
+            </h3>
+            
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              {/* Nagłówki */}
+              <div className="text-zinc-500 font-bold col-span-1 text-left">Kategoria</div>
+              <div className="font-black text-zinc-400">{myNick} (Ty)</div>
+              <div className="font-black text-amber-400">{profile.nick}</div>
+
+              {/* Ilość Treningów */}
+              <div className="text-zinc-400 font-medium col-span-1 text-left py-2 border-t border-zinc-800/30">Treningi</div>
+              <div className={`font-bold py-2 border-t border-zinc-800/30 ${myWorkoutsWin ? 'text-gymSuccess' : 'text-zinc-500'}`}>{profile.my_workouts} {myWorkoutsWin && '🏆'}</div>
+              <div className={`font-bold py-2 border-t border-zinc-800/30 ${frWorkoutsWin ? 'text-amber-400' : 'text-zinc-500'}`}>{profile.friend_workouts} {frWorkoutsWin && '🏆'}</div>
+
+              {/* Tonaż */}
+              <div className="text-zinc-400 font-medium col-span-1 text-left py-2 border-t border-zinc-800/30">Tonaż</div>
+              <div className={`font-bold py-2 border-t border-zinc-800/30 ${myVolWin ? 'text-gymSuccess' : 'text-zinc-500'}`}>{myVolTons}t {myVolWin && '🏆'}</div>
+              <div className={`font-bold py-2 border-t border-zinc-800/30 ${frVolWin ? 'text-amber-400' : 'text-zinc-500'}`}>{frVolTons}t {frVolWin && '🏆'}</div>
+            </div>
+          </div>
+
+          {/* HISTORIA ZNAJOMEGO */}
+          <div>
+            <h3 className="text-sm font-bold text-white mb-3">Ostatnie bitwy (5 sesji) ⚔️</h3>
+            {profile.recent_workouts.length === 0 ? (
+              <div className="text-zinc-500 italic text-xs bg-zinc-900/40 p-4 rounded-xl text-center border border-zinc-800/40">Ten użytkownik jeszcze nic nie zalogował.</div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {profile.recent_workouts.map(w => (
+                  <div key={w.id} className="bg-zinc-800/30 border border-zinc-800/60 p-3 rounded-xl flex justify-between items-center">
+                    <span className="text-sm font-bold text-zinc-200 truncate pr-3">{w.name}</span>
+                    <span className="text-[10px] text-zinc-500 font-mono shrink-0 bg-zinc-900 px-2 py-1 rounded">
+                      {new Date(w.started_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <button 
+            onClick={onClose} 
+            className="w-full mt-6 py-3.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl text-sm transition-colors"
+          >
+            Zamknij podgląd
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/components/NotificationBell.jsx">
+// frontend/src/components/NotificationBell.jsx
+import React, { useState, useRef, useEffect } from 'react';
+
+const getTimeAgo = (dateStr) => {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'teraz';
+  if (mins < 60) return `${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} h`;
+  return `${Math.floor(hours / 24)} d`;
+}
+
+export default function NotificationBell({ notifications = [], markAsRead }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleToggle = () => {
+    setIsOpen(!isOpen);
+    if (!isOpen && unreadCount > 0) {
+      markAsRead(); // Oznaczamy jako przeczytane od razu po otwarciu
+    }
+  };
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      {/* IKONA DZWONKA */}
+      <button 
+        onClick={handleToggle}
+        className="w-10 h-10 rounded-full bg-gymCardSecondary/60 border border-zinc-800/60 flex items-center justify-center text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer relative"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6" />
+          <path d="M9 17v1a3 3 0 0 0 6 0v-1" />
+        </svg>
+        
+        {/* CZERWONA KROPKA / LICZNIK */}
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 bg-gymRed text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full border-2 border-[#15181f] shadow-sm animate-in zoom-in">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {/* DROPDOWN POWIADOMIEŃ */}
+      {isOpen && (
+        <div className="absolute top-12 right-0 w-80 bg-[#1a1f27] border border-zinc-800/80 rounded-xl shadow-2xl z-50 overflow-hidden animate-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/60 bg-[#222833]/40">
+            <h3 className="font-bold text-white text-sm">Powiadomienia 🔔</h3>
+            <span className="text-[10px] text-zinc-500 font-bold uppercase">Najnowsze</span>
+          </div>
+          
+          <div className="max-h-[350px] overflow-y-auto">
+            {notifications.length === 0 ? (
+              <div className="p-6 text-center text-zinc-500 text-xs italic">
+                Brak nowych powiadomień.
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                {notifications.map((n) => (
+                  <div 
+                    key={n.id} 
+                    className={`flex items-start gap-3 p-3 border-b border-zinc-800/40 transition-colors ${!n.is_read ? 'bg-gymRed/5' : 'hover:bg-zinc-800/30'}`}
+                  >
+                    <div className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-300 flex items-center justify-center font-bold text-xs shrink-0 border border-zinc-700">
+                      {n.sender_nick ? n.sender_nick.charAt(0).toUpperCase() : '🤖'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-zinc-300 leading-tight">
+                        <strong className="text-white">{n.sender_nick}</strong> {n.message}
+                      </p>
+                      <span className="text-[9px] text-zinc-500 font-mono mt-1 block">
+                        {getTimeAgo(n.created_at)}
+                      </span>
+                    </div>
+                    {!n.is_read && <div className="w-2 h-2 rounded-full bg-gymRed shrink-0 mt-1 shadow-[0_0_5px_rgba(239,68,68,0.5)]" />}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 </file>
 
 <file path="frontend/src/components/WeightChart.jsx">
@@ -1862,97 +2063,6 @@ router.delete('/:logId', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
-<file path="frontend/src/hooks/useFriends.js">
-// frontend/src/hooks/useFriends.js
-import { useState, useCallback } from 'react';
-import { API_BASE_URL } from '../config/api';
-
-export function useFriends(token) {
-  const [friends, setFriends] = useState([]);
-  const [pendingRequests, setPendingRequests] = useState([]);
-  const [friendNickInput, setFriendNickInput] = useState('');
-  const [socialMessage, setSocialMessage] = useState('');
-
-  // 🔴 POPRAWKA: Kompleksowe pobieranie modułu społecznościowego (Ranking + Skrzynka odbiorcza zaproszeń)
-  const fetchFriendsData = useCallback(async () => {
-    if (!token) return;
-    try {
-      const [friendsRes, requestsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/friends`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`${API_BASE_URL}/api/friends/requests`, { headers: { 'Authorization': `Bearer ${token}` } })
-      ]);
-
-      if (!friendsRes.ok) throw new Error('Błąd pobierania rankingu gangu');
-      if (!requestsRes.ok) throw new Error('Błąd pobierania skrzynki odbiorczej');
-
-      const friendsData = await friendsRes.json();
-      const requestsData = await requestsRes.json();
-
-      // 🔴 POPRAWKA (ANTI-CRASH): Upewniamy się, że to na pewno są tablice.
-      // Jeśli serwer zwymiotuje kodem HTML (np. przez router Vercel/Render), React nie wywali się na metodzie .map()!
-      const safeFriends = Array.isArray(friendsData) ? friendsData : [];
-      const safeRequests = Array.isArray(requestsData) ? requestsData : [];
-
-      const normalizedFriends = safeFriends.map(friend => ({
-        ...friend,
-        isPremium: friend.is_premium === true || friend.isPremium === true
-      }));
-
-      setFriends(normalizedFriends);
-      setPendingRequests(safeRequests); 
-    } catch (err) {
-      console.error("❌ Błąd synchronizacji społecznościowej:", err.message);
-    }
-  }, [token]);
-
-  const handleSendFriendRequest = async (targetNick) => {
-    if (!targetNick) throw new Error('Wpisz nick znajomego!');
-
-    const res = await fetch(`${API_BASE_URL}/api/friends/request`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ targetNick })
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Nie udało się wysłać zaproszenia.');
-
-    // Czyszczenie inputu po pomyślnym wysłaniu
-    setFriendNickInput('');
-    return data;
-  };
-
-  const handleAcceptFriend = async (friendshipId) => {
-    const res = await fetch(`${API_BASE_URL}/api/friends/accept`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ friendshipId })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Nie udało się zaakceptować zaproszenia.');
-    return data;
-  };
-
-  const handleRejectFriend = async (friendshipId) => {
-    const res = await fetch(`${API_BASE_URL}/api/friends/requests/${friendshipId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Nie udało się odrzucić zaproszenia.');
-
-    return data;
-  };
-
-  return {
-    friends, setFriends, pendingRequests, setPendingRequests,
-    friendNickInput, setFriendNickInput, socialMessage, setSocialMessage,
-    handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend
-  };
-}
-</file>
-
 <file path="frontend/src/index.css">
 @import "tailwindcss";
 
@@ -2424,6 +2534,153 @@ router.put('/weekly-target', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
+<file path="frontend/src/hooks/useFriends.js">
+// frontend/src/hooks/useFriends.js
+import { useState, useCallback } from 'react';
+import { API_BASE_URL } from '../config/api';
+
+export function useFriends(token) {
+  const [friends, setFriends] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [activityFeed, setActivityFeed] = useState([]);
+  const [friendNickInput, setFriendNickInput] = useState('');
+  const [socialMessage, setSocialMessage] = useState('');
+  const [weeklyChallenge, setWeeklyChallenge] = useState([]);
+  const [selectedFriendProfile, setSelectedFriendProfile] = useState(null);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [notifications, setNotifications] = useState([]); // 🔴 STAN POWIADOMIEŃ
+
+  const fetchFriendsData = useCallback(async () => {
+    if (!token) return;
+    try {
+      // 🔴 POPRAWKA: Pobieramy 5 endpointów naraz (dodano notifRes)
+      const [friendsRes, requestsRes, activityRes, challengeRes, notifRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/friends`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/friends/requests`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/friends/activity`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/friends/challenges/weekly`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_BASE_URL}/api/friends/notifications`, { headers: { 'Authorization': `Bearer ${token}` } }) // <-- NOWE
+      ]);
+
+      const friendsData = await friendsRes.json();
+      const requestsData = await requestsRes.json();
+      const activityData = await activityRes.json();
+      const challengeData = await challengeRes.json();
+      const notifData = await notifRes.json(); // <-- NOWE
+
+      setFriends(Array.isArray(friendsData) ? friendsData.map(f => ({ ...f, isPremium: f.is_premium || f.isPremium })) : []);
+      setPendingRequests(Array.isArray(requestsData) ? requestsData : []); 
+      setActivityFeed(Array.isArray(activityData) ? activityData : []);
+      setWeeklyChallenge(Array.isArray(challengeData) ? challengeData : []);
+      setNotifications(Array.isArray(notifData) ? notifData : []); // <-- Zapis powiadomień do stanu
+    } catch (err) {
+      console.error("❌ Błąd synchronizacji społecznościowej:", err.message);
+    }
+  }, [token]);
+
+  // Pobieranie profilu do pojedynku Head-to-Head
+  const fetchFriendProfile = async (friendId) => {
+    setIsProfileLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/friends/profile/${friendId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Błąd ładowania profilu');
+      const data = await res.json();
+      setSelectedFriendProfile(data);
+    } catch (err) {
+      console.error(err.message);
+    } finally {
+      setIsProfileLoading(false);
+    }
+  };
+
+  const handleSendFriendRequest = async (targetNick) => {
+    if (!targetNick) throw new Error('Wpisz nick znajomego!');
+    const res = await fetch(`${API_BASE_URL}/api/friends/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ targetNick })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Nie udało się wysłać zaproszenia.');
+    setFriendNickInput('');
+    return data;
+  };
+
+  const handleAcceptFriend = async (friendshipId) => {
+    const res = await fetch(`${API_BASE_URL}/api/friends/accept`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ friendshipId }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Nie udało się zaakceptować zaproszenia.');
+    return data;
+  };
+
+  const handleRejectFriend = async (friendshipId) => {
+    const res = await fetch(`${API_BASE_URL}/api/friends/requests/${friendshipId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Nie udało się odrzucić zaproszenia.');
+    return data;
+  };
+
+  // Optymistyczne aktualizowanie reakcji w locie
+  const handleToggleReaction = useCallback(async (workoutId, emoji) => {
+    setActivityFeed(prevFeed => prevFeed.map(act => {
+      if (act.workout_id !== workoutId) return act;
+      
+      let currentReactions = [...(act.reactions || [])];
+      const existingIdx = currentReactions.findIndex(r => r.emoji === emoji);
+
+      if (existingIdx >= 0) {
+        const r = { ...currentReactions[existingIdx] };
+        if (r.user_reacted) {
+          r.count -= 1;
+          r.user_reacted = false;
+        } else {
+          r.count += 1;
+          r.user_reacted = true;
+        }
+        currentReactions[existingIdx] = r;
+        if (r.count <= 0) currentReactions.splice(existingIdx, 1);
+      } else {
+        currentReactions.push({ emoji, count: 1, user_reacted: true });
+      }
+      return { ...act, reactions: currentReactions };
+    }));
+
+    try {
+      await fetch(`${API_BASE_URL}/api/friends/activity/reaction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ workoutId, emoji })
+      });
+    } catch (err) {
+      console.error("Błąd zapisu reakcji", err);
+    }
+  }, [token]);
+
+  // 🔴 NOWOŚĆ: Oznaczanie powiadomień jako odczytane
+  const markNotificationsAsRead = async () => {
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    try {
+      await fetch(`${API_BASE_URL}/api/friends/notifications/read`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+    } catch (err) { 
+      console.error("Błąd oznaczania powiadomień", err); 
+    }
+  };
+
+  return {
+    friends, setFriends, pendingRequests, setPendingRequests, activityFeed, weeklyChallenge,
+    friendNickInput, setFriendNickInput, socialMessage, setSocialMessage,
+    selectedFriendProfile, setSelectedFriendProfile, isProfileLoading, fetchFriendProfile,
+    handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend, handleToggleReaction,
+    notifications, markNotificationsAsRead // 🔴 WYEKSPORTOWANO
+  };
+}
+</file>
+
 <file path="frontend/src/main.jsx">
 // frontend/src/main.jsx
 import { StrictMode } from 'react'
@@ -2471,166 +2728,6 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>,
 )
-</file>
-
-<file path="frontend/src/views/Social.jsx">
-// frontend/src/views/Social.jsx
-import React from 'react'
-
-export default function Social({
-  friendNickInput, 
-  setFriendNickInput,
-  onSendFriendRequest, // 🔴 POPRAWKA: Czytelna nazwa callbacku zamiast mylącego handleSendFriendRequest
-  pendingRequests, 
-  handleAcceptFriend, 
-  handleRejectFriend,
-  friends,
-  user
-}) {
-  
-  // 🔴 POPRAWKA: Lokalny handler izolujący zarządzanie zdarzeniami DOM (e.preventDefault)
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onSendFriendRequest(); // Wywołujemy czystą akcję biznesową bez brudzenia jej obiektem eventu
-  };
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
-      
-      {/* LEWA STRONA: WYSZUKIWARKA + OCZEKUJĄCE */}
-      <div className="lg:col-span-1 flex flex-col gap-6">
-        
-        {/* SEKCJA 1: WYSZUKAJ ZNAJOMYCH */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">Szukaj znajomych 🔍</h2>
-          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangu.</p>
-          
-          {/* 🔴 POPRAWKA: Podpięcie dedykowanego, lokalnego handlera */}
-          <form onSubmit={handleSubmit} className="flex gap-2">
-            <input 
-              type="text" 
-              placeholder="np. MarekWorkout" 
-              value={friendNickInput} 
-              onChange={e => setFriendNickInput(e.target.value)} 
-              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-            />
-            <button 
-              type="submit" 
-              className="bg-gymRed hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer"
-            >
-              Zaproś
-            </button>
-          </form>
-        </section>
-
-        {/* SEKCJA 2: OCZEKUJĄCE ZAPROSZENIA */}
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-4">Oczekujące zaproszenia ✉️</h2>
-          
-          {pendingRequests.length === 0 ? (
-            <p className="text-zinc-500 italic text-sm text-center py-4">Brak nowych zaproszeń.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {pendingRequests.map(req => (
-                <div key={req.friendship_id} className="flex justify-between items-center bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800 shadow-sm">
-                  <span className="text-sm">Od: <strong className="text-zinc-200">{req.nick}</strong></span>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => handleAcceptFriend(req.friendship_id)} 
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
-                    >
-                      Akceptuj
-                    </button>
-                    <button 
-                      onClick={() => handleRejectFriend(req.friendship_id)} 
-                      className="border border-gymRed text-gymRed hover:bg-gymRed/10 font-bold px-3 py-1.5 rounded text-xs transition-all active:scale-95 cursor-pointer"
-                    >
-                      Odrzuć
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
-      {/* PRAWA STRONA: RANKING STREAKÓW GANGU */}
-      <section className="lg:col-span-2 bg-gymCard p-4 md:p-6 rounded-xl shadow-lg border border-zinc-800/40">
-        <div className="border-b border-zinc-800 pb-4 mb-4">
-          <h2 className="text-xl md:text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-gymRed">
-            Ranking Streaków Gangu GymPatico 🔥
-          </h2>
-          <p className="text-zinc-400 text-xs md:text-sm mt-1">Utrzymuj cel tygodniowy, aby piąć się w górę tabeli!</p>
-        </div>
-
-        {friends.length === 0 ? (
-          <p className="text-zinc-500 italic text-center py-12">Brak znajomych w rankingu. Zaproś kogoś!</p>
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            {friends.map((f, idx) => {
-              const isFirst = idx === 0;
-              const isSecond = idx === 1;
-              const isThird = idx === 2;
-              const isMe = f.id === user?.id;
-              const isPremium = f.isPremium;
-
-              return (
-                <div 
-                  key={f.id} 
-                  className={`flex justify-between items-center p-3.5 rounded-lg shadow-sm transition-all duration-200 ${
-                    isMe
-                      ? 'bg-gymRed/10 border-2 border-gymRed/40 shadow-[0_0_15px_rgba(255,71,87,0.03)]' 
-                      : isFirst 
-                        ? 'bg-amber-500/5 border border-amber-500/20 shadow-[0_0_12px_rgba(245,158,11,0.02)]' 
-                        : 'bg-[#2d2d2d] border border-zinc-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className={`text-lg font-black w-8 text-center shrink-0 ${
-                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : isSecond ? 'text-zinc-300' : isThird ? 'text-amber-600' : 'text-zinc-500'
-                    }`}>
-                      #{idx + 1}
-                    </span>
-                    
-                    <div className="flex items-center gap-2 min-w-0 truncate">
-                      <strong className={`text-sm md:text-base truncate ${
-                        isMe ? 'text-gymRed font-black' : isFirst ? 'text-amber-200 font-bold' : 'text-zinc-100'
-                      }`}>
-                        {f.nick} {isMe ? '(Ty)' : ''}
-                      </strong>
-
-                      {/* WARUNKOWY BADGE PREMIUM DLA WYRÓŻNIONYCH KONT */}
-                      {isPremium && (
-                        <span 
-                          className="inline-flex items-center bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider uppercase shrink-0 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
-                          title="Użytkownik pakietu GymPatico Premium 🦾"
-                        >
-                          ⭐ PREMIUM
-                        </span>
-                      )}
-
-                      {isFirst && !isMe && <span className="text-base shrink-0">👑</span>}
-                    </div>
-                  </div>
-                  
-                  <div className="text-right shrink-0 ml-2">
-                    <span className={`font-black text-sm md:text-lg tracking-tight ${
-                      isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : 'text-zinc-300'
-                    }`}>
-                      🔥 {f.current_streak} tyg.
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-    </div>
-  )
-}
 </file>
 
 <file path="frontend/src/views/History.jsx">
@@ -2932,13 +3029,281 @@ export default function History({
 }
 </file>
 
+<file path="frontend/src/views/Social.jsx">
+// frontend/src/views/Social.jsx
+import React from 'react'
+import FriendProfileModal from '../components/FriendProfileModal'
+
+const ALLOWED_EMOJIS = ['🔥', '💪', '👑', '👏'];
+
+const getTimeAgo = (dateStr) => {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'przed chwilą';
+  if (mins < 60) return `${mins} min temu`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} godz. temu`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'wczoraj';
+  return `${days} dni temu`;
+}
+
+export default function Social({
+  friendNickInput, setFriendNickInput, onSendFriendRequest,
+  pendingRequests, handleAcceptFriend, handleRejectFriend,
+  friends, user, activityFeed, onToggleReaction, 
+  fetchFriendProfile, selectedFriendProfile, setSelectedFriendProfile, isProfileLoading,
+  weeklyChallenge
+}) {
+  
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSendFriendRequest();
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left pb-16">
+      
+      {/* LEWA STRONA: WYSZUKIWARKA + OCZEKUJĄCE */}
+      <div className="lg:col-span-1 flex flex-col gap-6">
+        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
+          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2 text-white">Szukaj znajomych 🔍</h2>
+          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangu.</p>
+          <form onSubmit={handleSubmit} className="flex gap-2">
+            <input 
+              type="text" placeholder="np. MarekWorkout" value={friendNickInput} onChange={e => setFriendNickInput(e.target.value)} 
+              className="flex-1 p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
+            />
+            <button type="submit" className="bg-gymRed hover:bg-red-600 text-white font-bold px-4 py-2 rounded-lg text-sm transition-all active:scale-95 cursor-pointer">
+              Zaproś
+            </button>
+          </form>
+        </section>
+
+        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
+          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-4 text-white">Oczekujące zaproszenia ✉️</h2>
+          {pendingRequests.length === 0 ? (
+            <p className="text-zinc-500 italic text-sm text-center py-4">Brak nowych zaproszeń.</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {pendingRequests.map(req => (
+                <div key={req.friendship_id} className="flex flex-col gap-3 bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800 shadow-sm">
+                  <span className="text-sm text-zinc-400">Zaproszenie od: <strong className="text-white">{req.nick}</strong></span>
+                  <div className="flex gap-2 w-full">
+                    <button onClick={() => handleAcceptFriend(req.friendship_id)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded text-xs transition-all active:scale-95 cursor-pointer">Akceptuj ✓</button>
+                    <button onClick={() => handleRejectFriend(req.friendship_id)} className="flex-1 border border-zinc-700 hover:border-gymDanger text-zinc-400 hover:text-gymDanger font-bold px-3 py-2 rounded text-xs transition-all active:scale-95 cursor-pointer">Odrzuć ✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* PRAWA STRONA: RANKING + WYZWANIA + FEED Z REAKCJAMI */}
+      <div className="lg:col-span-2 flex flex-col gap-6">
+        
+        {/* RANKING STREAKÓW */}
+        <section className="bg-gymCard p-4 md:p-6 rounded-xl shadow-lg border border-zinc-800/40">
+          <div className="border-b border-zinc-800 pb-4 mb-4">
+            <h2 className="text-xl md:text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-gymRed">
+              Ranking Streaków Gangu GymPatico 🔥
+            </h2>
+            <p className="text-zinc-400 text-xs md:text-sm mt-1">Utrzymuj cel tygodniowy, aby piąć się w górę tabeli!</p>
+          </div>
+          {friends.length === 0 ? (
+            <p className="text-zinc-500 italic text-center py-8">Brak znajomych w rankingu. Zaproś kogoś!</p>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {friends.map((f, idx) => {
+                const isFirst = idx === 0, isSecond = idx === 1, isThird = idx === 2, isMe = f.id === user?.id;
+                return (
+                  <div key={f.id} className={`flex justify-between items-center p-3.5 rounded-lg shadow-sm transition-all duration-200 ${isMe ? 'bg-gymRed/10 border-2 border-gymRed/40' : isFirst ? 'bg-amber-500/5 border border-amber-500/20' : 'bg-[#2d2d2d] border border-zinc-800/50'}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className={`text-lg font-black w-8 text-center shrink-0 ${isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : isSecond ? 'text-zinc-300' : isThird ? 'text-amber-600' : 'text-zinc-500'}`}>#{idx + 1}</span>
+                      <div className="flex items-center gap-2 min-w-0 truncate">
+                        {/* 🔴 KLIKALNY NICK (PROFIL ZNAJOMEGO) */}
+                        <strong 
+                          onClick={() => !isMe && fetchFriendProfile(f.id)} 
+                          className={`text-sm md:text-base truncate ${!isMe ? 'cursor-pointer hover:underline' : ''} ${isMe ? 'text-gymRed font-black' : isFirst ? 'text-amber-200 font-bold' : 'text-zinc-100'}`}
+                        >
+                          {f.nick} {isMe ? '(Ty)' : ''}
+                        </strong>
+                        {f.isPremium && <span className="inline-flex items-center bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider uppercase shrink-0">⭐ PREMIUM</span>}
+                        {isFirst && !isMe && <span className="text-base shrink-0">👑</span>}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0 ml-2">
+                      <span className={`font-black text-sm md:text-lg tracking-tight ${isMe ? 'text-gymRed' : isFirst ? 'text-amber-400' : 'text-zinc-300'}`}>🔥 {f.current_streak} tyg.</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* WYZWANIE TYGODNIA: KRÓL TONAŻU */}
+        <section className="bg-gradient-to-br from-[#1a1f27] to-[#15181f] p-4 md:p-6 rounded-xl shadow-2xl border border-zinc-800/60 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="border-b border-zinc-800/80 pb-4 mb-5 relative z-10">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="bg-amber-500/20 text-amber-400 text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-sm border border-amber-500/30">
+                Wyzwanie Tygodnia ⚔️
+              </span>
+              <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Reset w poniedziałek</span>
+            </div>
+            <h2 className="text-xl md:text-2xl font-black tracking-tight text-white">
+              Król Tonażu (Total Volume)
+            </h2>
+            <p className="text-zinc-400 text-xs md:text-sm mt-1">Kto przerzucił najwięcej kilogramów w tym tygodniu?</p>
+          </div>
+
+          {!weeklyChallenge || weeklyChallenge.length === 0 ? (
+            <p className="text-zinc-500 italic text-center py-6 text-sm">Brak danych w tym tygodniu.</p>
+          ) : (
+            <div className="flex flex-col gap-3 relative z-10">
+              {weeklyChallenge.map((member, idx) => {
+                const isFirst = idx === 0 && member.total_volume > 0;
+                const isMe = member.id === user?.id;
+                const volumeInTons = (member.total_volume / 1000).toFixed(1); 
+                const maxVolume = weeklyChallenge[0]?.total_volume || 1;
+                const progressWidth = `${Math.min((member.total_volume / maxVolume) * 100, 100)}%`;
+
+                return (
+                  <div key={member.id} className="relative">
+                    <div className="flex justify-between items-center mb-1 text-sm font-bold">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-5 text-center ${isFirst ? 'text-amber-400' : 'text-zinc-500'}`}>
+                          {idx + 1}.
+                        </span>
+                        {/* 🔴 KLIKALNY NICK */}
+                        <span 
+                          onClick={() => !isMe && fetchFriendProfile(member.id)}
+                          className={`${isMe ? 'text-gymRed' : 'text-zinc-200 cursor-pointer hover:underline'}`}
+                        >
+                          {member.nick} {isMe && '(Ty)'}
+                        </span>
+                        {isFirst && <span className="text-xs">👑</span>}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-zinc-500 font-medium">{member.workouts_count} tren.</span>
+                        <span className={`font-black font-mono ${isFirst ? 'text-amber-400' : 'text-white'}`}>
+                          {volumeInTons}t
+                        </span>
+                      </div>
+                    </div>
+                    <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-1000 ${isFirst ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]' : isMe ? 'bg-gymRed' : 'bg-zinc-600'}`} 
+                        style={{ width: member.total_volume === 0 ? '0%' : progressWidth }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* FEED Z REAKCJAMI */}
+        <section className="bg-gymCard p-4 md:p-6 rounded-xl shadow-lg border border-zinc-800/40">
+          <div className="border-b border-zinc-800 pb-4 mb-4">
+            <h2 className="text-xl md:text-2xl font-bold tracking-tight text-white">Aktywność Gangu ⚡</h2>
+            <p className="text-zinc-400 text-xs md:text-sm mt-1">Zostaw "okejkę", aby zmotywować innych.</p>
+          </div>
+
+          {!activityFeed || activityFeed.length === 0 ? (
+            <div className="text-center py-12 px-4 border border-dashed border-zinc-800 rounded-lg">
+              <span className="text-4xl mb-3 block opacity-20">📭</span>
+              <p className="text-zinc-500 italic text-sm">Nikt z Twoich znajomych nie trenował w ostatnim czasie.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {activityFeed.map(act => (
+                <div key={act.workout_id} className="bg-[#2d2d2d]/30 hover:bg-[#2d2d2d]/60 p-4 rounded-lg border border-zinc-800/50 transition-colors flex flex-col gap-3">
+                  
+                  {/* Wiersz z autorem i czasem */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-full bg-gymRed/10 text-gymRed flex items-center justify-center font-black text-base shrink-0 border border-gymRed/20 shadow-inner">
+                        {act.nick.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          {/* 🔴 KLIKALNY NICK */}
+                          <span 
+                            onClick={() => act.user_id !== user?.id && fetchFriendProfile(act.user_id)}
+                            className={`font-bold text-zinc-100 text-sm truncate ${act.user_id !== user?.id ? 'cursor-pointer hover:underline' : ''}`}
+                          >
+                            {act.nick}
+                          </span>
+                          {act.is_premium && <span className="text-[8px] text-amber-400 border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 rounded uppercase font-bold tracking-wider">Premium</span>}
+                        </div>
+                        <div className="text-xs text-zinc-400 mt-0.5 truncate">
+                          Ukończył/a: <strong className="text-zinc-200">{act.workout_name}</strong>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-zinc-500 font-mono font-bold shrink-0 bg-zinc-800/40 px-2 py-1 rounded">
+                      {getTimeAgo(act.started_at)}
+                    </div>
+                  </div>
+
+                  {/* Wiersz z przyciskami reakcji */}
+                  <div className="flex items-center gap-2 pt-3 border-t border-zinc-800/40">
+                    {ALLOWED_EMOJIS.map(emoji => {
+                      const reactionData = act.reactions?.find(r => r.emoji === emoji);
+                      const count = reactionData ? reactionData.count : 0;
+                      const hasReacted = reactionData ? reactionData.user_reacted : false;
+
+                      return (
+                        <button
+                          key={emoji}
+                          onClick={() => onToggleReaction(act.workout_id, emoji)}
+                          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border cursor-pointer select-none active:scale-90 ${
+                            hasReacted
+                              ? 'bg-gymRed/15 border-gymRed/40 text-gymRed shadow-[0_0_10px_rgba(239,68,68,0.1)]'
+                              : 'bg-zinc-800/40 border-zinc-700/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                          }`}
+                        >
+                          <span className="text-sm">{emoji}</span>
+                          {count > 0 && <span>{count}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* MODAL Z PROFILEM ZNAJOMEGO */}
+      <FriendProfileModal 
+        profile={selectedFriendProfile} 
+        myNick={user?.nick || 'Ja'}
+        onClose={() => setSelectedFriendProfile(null)} 
+      />
+
+    </div>
+  )
+}
+</file>
+
 <file path="init.sql">
--- init.sql - Zunifikowana struktura bazy danych GymPatico z obsługą stref czasowych (TIMESTAMPTZ)
+-- ==========================================
+-- BAZA DANYCH GYMPATICO - INIT.SQL
+-- Wersja: 2.0 (Zunifikowana z TIMESTAMPTZ + Social & Timers)
+-- ==========================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- 1. Tabela Użytkowników
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -2948,12 +3313,12 @@ CREATE TABLE users (
     max_streak INT DEFAULT 0,
     last_workout_at TIMESTAMPTZ, 
     is_premium BOOLEAN DEFAULT FALSE,
-    role VARCHAR(20) DEFAULT 'USER' NOT NULL, -- <--- POPRAWKA: Kolumna roli zabezpieczająca bezstanowe JWT i moduł TRAINER
+    role VARCHAR(20) DEFAULT 'USER' NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 2. Tabela Logów Wagi
-CREATE TABLE weight_logs (
+CREATE TABLE IF NOT EXISTS weight_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     weight NUMERIC(5,2) NOT NULL,
@@ -2961,7 +3326,7 @@ CREATE TABLE weight_logs (
 );
 
 -- 3. Tabela Ćwiczeń
-CREATE TABLE exercises (
+CREATE TABLE IF NOT EXISTS exercises (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     muscle_group VARCHAR(100) NOT NULL,
@@ -2969,14 +3334,11 @@ CREATE TABLE exercises (
 );
 
 -- 4. INDEKSY UNIKALNE DLA ATLASU ĆWICZEŃ
--- Zabezpieczenie ćwiczeń globalnych (brak duplikatów o tej samej nazwie w bazie systemowej)
-CREATE UNIQUE INDEX exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
-
--- Zabezpieczenie ćwiczeń prywatnych (użytkownik nie doda u siebie dwóch tak samo nazwanych pozycji)
-CREATE UNIQUE INDEX exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS exercises_global_name_idx ON exercises (LOWER(name)) WHERE user_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS exercises_user_name_idx ON exercises (LOWER(name), user_id) WHERE user_id IS NOT NULL;
 
 -- 5. Tabela Znajomości
-CREATE TABLE friendships (
+CREATE TABLE IF NOT EXISTS friendships (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
     receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -2986,7 +3348,7 @@ CREATE TABLE friendships (
 );
 
 -- 6. Tabela Sesji Treningowych
-CREATE TABLE workout_sessions (
+CREATE TABLE IF NOT EXISTS workout_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -2996,9 +3358,10 @@ CREATE TABLE workout_sessions (
 );
 
 -- 7. Tabela Serii Treningowych
-CREATE TABLE log_series (
+CREATE TABLE IF NOT EXISTS log_series (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workout_session_id UUID REFERENCES workout_sessions(id) ON DELETE CASCADE,
+    -- 🔴 RESTRICT: Blokada przed cichym usunięciem historii treningów
     exercise_id UUID REFERENCES exercises(id) ON DELETE RESTRICT,
     weight NUMERIC NOT NULL,
     reps INT NOT NULL,
@@ -3010,29 +3373,52 @@ CREATE TABLE log_series (
 );
 
 -- 8. Tabela Główna Szablonów Treningowych
-CREATE TABLE workout_templates (
+CREATE TABLE IF NOT EXISTS workout_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 9. Tabela Serii w Szablonach
-CREATE TABLE template_series (
+CREATE TABLE IF NOT EXISTS template_series (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     template_id UUID NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
-    exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+    -- 🔴 RESTRICT: Zabezpieczamy też szablony przed psuciem konfiguracji po usunięciu ćwiczenia
+    exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE RESTRICT,
     weight NUMERIC(6,2) NOT NULL,
     reps INT NOT NULL,
-    series_order INT NOT NULL
-    series_type VARCHAR(20) DEFAULT 'NORMAL' NOT NULL
+    series_order INT NOT NULL, -- 🔴 DODANO: Brakujący przecinek, który psuł składnię SQL!
+    series_type VARCHAR(20) DEFAULT 'NORMAL' NOT NULL,
+    rest_seconds INT DEFAULT NULL -- 🔴 DODANO: Inteligentny stoper w szablonach
 );
 
 -- Indeksy wydajnościowe dla klastrowania szablonów
-CREATE INDEX idx_templates_user ON workout_templates(user_id);
-CREATE INDEX idx_template_series_template ON template_series(template_id);
+CREATE INDEX IF NOT EXISTS idx_templates_user ON workout_templates(user_id);
+CREATE INDEX IF NOT EXISTS idx_template_series_template ON template_series(template_id);
 
--- 10. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
+-- 10. Tabela Reakcji na treningi 
+CREATE TABLE IF NOT EXISTS workout_reactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workout_id UUID NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    emoji VARCHAR(10) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(workout_id, user_id, emoji) -- Blokuje dawanie 2x tej samej emotki przez jedną osobę
+);
+
+-- 11. Tabela Powiadomień systemowych
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    sender_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    type VARCHAR(50) NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 12. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
 INSERT INTO exercises (name, muscle_group) VALUES
   -- Klatka piersiowa
   ('Wyciskanie sztangi na ławce poziomej', 'Klatka piersiowa'),
@@ -3331,7 +3717,7 @@ const authenticateToken = require('../middleware/auth');
 const checkLimits = require('../middleware/checkLimits');
 const { getUserPlan } = require('../utils/userHelpers'); 
 
-// 1. WYSŁANIE ZAPROSZENIA DO ZNAJOMYCH
+// 1. WYSŁANIE ZAPROSZENIA
 router.post('/request', authenticateToken, checkLimits('friends'), async (req, res) => {
   const { targetNick } = req.body;
   const senderId = req.user.userId;
@@ -3339,24 +3725,17 @@ router.post('/request', authenticateToken, checkLimits('friends'), async (req, r
   if (!targetNick) return res.status(400).json({ error: "Musisz podać nick!" });
 
   try {
-    // 🔴 POPRAWKA: Wyszukiwanie niewrażliwe na wielkość liter (Case-Insensitive)
     const userResult = await pool.query('SELECT id FROM users WHERE LOWER(nick) = LOWER($1)', [targetNick.trim()]);
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
-    }
+    if (userResult.rows.length === 0) return res.status(404).json({ error: "Nie znaleziono użytkownika o takim nicku!" });
 
     const receiverId = userResult.rows[0].id;
     if (senderId === receiverId) return res.status(400).json({ error: "Nie możesz zaprosić samego siebie!" });
 
     const checkResult = await pool.query(
-      `SELECT * FROM friendships 
-       WHERE (sender_id = $1::uuid AND receiver_id = $2::uuid) 
-          OR (sender_id = $2::uuid AND receiver_id = $1::uuid)`,
+      `SELECT * FROM friendships WHERE (sender_id = $1::uuid AND receiver_id = $2::uuid) OR (sender_id = $2::uuid AND receiver_id = $1::uuid)`,
       [senderId, receiverId]
     );
-    if (checkResult.rows.length > 0) {
-      return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
-    }
+    if (checkResult.rows.length > 0) return res.status(400).json({ error: "Zaproszenie między Wami już istnieje lub jest oczekujące!" });
 
     await pool.query('INSERT INTO friendships (sender_id, receiver_id, status) VALUES ($1::uuid, $2::uuid, \'PENDING\')', [senderId, receiverId]);
     res.status(201).json({ message: `Zaproszenie do użytkownika ${targetNick} zostało wysłane!` });
@@ -3365,36 +3744,26 @@ router.post('/request', authenticateToken, checkLimits('friends'), async (req, r
   }
 });
 
-// 2. POBRANIE RANKINGU ZNAJOMYCH
+// 2. RANKING ZNAJOMYCH
 router.get('/', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
     const query = `
       SELECT u.id, u.nick, u.last_workout_at, u.is_premium,
-        CASE 
-          WHEN u.last_workout_at < NOW() - INTERVAL '12 days' THEN 0
-          ELSE u.current_streak
-        END as "current_streak"
+        CASE WHEN u.last_workout_at < NOW() - INTERVAL '12 days' THEN 0 ELSE u.current_streak END as "current_streak"
       FROM friendships f
       JOIN users u ON (f.sender_id = u.id AND f.receiver_id = $1::uuid) OR (f.receiver_id = u.id AND f.sender_id = $1::uuid)
       WHERE f.status = 'ACCEPTED' AND u.id != $1::uuid
-
       UNION
-
       SELECT id, nick, last_workout_at, is_premium,
-        CASE 
-          WHEN last_workout_at < NOW() - INTERVAL '12 days' THEN 0
-          ELSE current_streak
-        END as "current_streak"
-      FROM users
-      WHERE id = $1::uuid
-
+        CASE WHEN last_workout_at < NOW() - INTERVAL '12 days' THEN 0 ELSE current_streak END as "current_streak"
+      FROM users WHERE id = $1::uuid
       ORDER BY "current_streak" DESC, nick ASC
     `;
     const result = await pool.query(query, [userId]);
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: "Błąd pobierania rankingu znajomych", details: error.message });
+    res.status(500).json({ error: "Błąd pobierania rankingu", details: error.message });
   }
 });
 
@@ -3402,13 +3771,10 @@ router.get('/', authenticateToken, async (req, res) => {
 router.get('/requests', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
-    const query = `
-      SELECT f.id as friendship_id, u.id as sender_id, u.nick 
-      FROM friendships f 
-      JOIN users u ON f.sender_id = u.id
-      WHERE f.receiver_id = $1::uuid AND f.status = 'PENDING'
-    `;
-    const result = await pool.query(query, [userId]);
+    const result = await pool.query(
+      `SELECT f.id as friendship_id, u.id as sender_id, u.nick FROM friendships f JOIN users u ON f.sender_id = u.id WHERE f.receiver_id = $1::uuid AND f.status = 'PENDING'`, 
+      [userId]
+    );
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: "Błąd ładowania skrzynki", details: error.message });
@@ -3419,27 +3785,18 @@ router.get('/requests', authenticateToken, async (req, res) => {
 router.post('/accept', authenticateToken, async (req, res) => {
   const { friendshipId } = req.body;
   const userId = req.user.userId; 
-
-  if (!friendshipId) return res.status(400).json({ error: "Brak identyfikatora zaproszenia." });
+  if (!friendshipId) return res.status(400).json({ error: "Brak identyfikatora." });
 
   const client = await pool.connect();
-
   try {
     await client.query('BEGIN');
-
-    const friendshipRes = await client.query(
-      `SELECT sender_id, receiver_id FROM friendships 
-       WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING' FOR UPDATE`,
-      [friendshipId, userId]
-    );
-
+    const friendshipRes = await client.query(`SELECT sender_id, receiver_id FROM friendships WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING' FOR UPDATE`, [friendshipId, userId]);
     if (friendshipRes.rowCount === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: "Zaproszenie nie istnieje lub zostało przetworzone." });
     }
 
     const senderId = friendshipRes.rows[0].sender_id;
-
     const firstId = userId < senderId ? userId : senderId;
     const secondId = userId < senderId ? senderId : userId;
 
@@ -3448,36 +3805,32 @@ router.post('/accept', authenticateToken, async (req, res) => {
 
     const receiverPlan = await getUserPlan(userId, client);
     if (receiverPlan && !receiverPlan.is_premium && receiverPlan.role !== 'TRAINER') {
-      const countRes = await client.query(
-        `SELECT COUNT(*) FROM friendships 
-         WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`,
-        [userId]
-      );
+      const countRes = await client.query(`SELECT COUNT(*) FROM friendships WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`, [userId]);
       if (parseInt(countRes.rows[0].count, 10) >= 5) {
         await client.query('ROLLBACK');
-        return res.status(403).json({ error: "Osiągnięto limit planu darmowego (5 znajomych w gangu). Odblokuj Premium!" });
+        return res.status(403).json({ error: "Osiągnięto limit (5 znajomych)." });
       }
     }
 
     const senderPlan = await getUserPlan(senderId, client);
     if (senderPlan && !senderPlan.is_premium && senderPlan.role !== 'TRAINER') {
-      const countRes = await client.query(
-        `SELECT COUNT(*) FROM friendships 
-         WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`,
-        [senderId]
-      );
+      const countRes = await client.query(`SELECT COUNT(*) FROM friendships WHERE status = 'ACCEPTED' AND (sender_id = $1::uuid OR receiver_id = $1::uuid)`, [senderId]);
       if (parseInt(countRes.rows[0].count, 10) >= 5) {
         await client.query('ROLLBACK');
-        return res.status(403).json({ error: "Nadawca osiągnął już maksymalny limit 5 znajomych w swoim darmowym gangu!" });
+        return res.status(403).json({ error: "Nadawca osiągnął już maksymalny limit znajomych!" });
       }
     }
 
     await client.query("UPDATE friendships SET status = 'ACCEPTED' WHERE id = $1::uuid", [friendshipId]);
+    await client.query(
+      "INSERT INTO notifications (user_id, sender_id, type, message) VALUES ($1::uuid, $2::uuid, 'FRIEND_ACCEPT', 'Zaakceptował(a) Twoje zaproszenie do Gangu!')",
+      [senderId, userId]
+    );
     await client.query('COMMIT');
     res.json({ message: "Zaproszenie zaakceptowane! 🤝" });
   } catch (error) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: "Błąd serwera podczas akceptacji", details: error.message });
+    res.status(500).json({ error: "Błąd akceptacji", details: error.message });
   } finally {
     client.release();
   }
@@ -3487,18 +3840,224 @@ router.post('/accept', authenticateToken, async (req, res) => {
 router.delete('/requests/:friendshipId', authenticateToken, async (req, res) => {
   const { friendshipId } = req.params;
   const userId = req.user.userId;
+  try {
+    const result = await pool.query("DELETE FROM friendships WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING'", [friendshipId, userId]);
+    if (result.rowCount === 0) return res.status(404).json({ error: "Nie znaleziono zaproszenia." });
+    res.json({ message: "Zaproszenie odrzucone." });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd odrzucania", details: error.message });
+  }
+});
+
+// =========================================================================
+// 6. FEED AKTYWNOŚCI ZNAJOMYCH (Agregacja Reakcji)
+// =========================================================================
+router.get('/activity', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const query = `
+      SELECT 
+          u.id as user_id, u.nick, u.is_premium, 
+          ws.id as workout_id, ws.name as workout_name, ws.started_at,
+          COALESCE(
+            (SELECT json_agg(json_build_object('emoji', r.emoji, 'count', r.count, 'user_reacted', r.user_reacted))
+             FROM (
+                SELECT emoji, count(*) as count, bool_or(user_id = $1::uuid) as user_reacted
+                FROM workout_reactions
+                WHERE workout_id = ws.id
+                GROUP BY emoji
+             ) r
+            ), '[]'::json
+          ) as reactions
+      FROM workout_sessions ws
+      JOIN users u ON ws.user_id = u.id
+      WHERE ws.user_id IN (
+          SELECT CASE WHEN sender_id = $1::uuid THEN receiver_id ELSE sender_id END
+          FROM friendships
+          WHERE (sender_id = $1::uuid OR receiver_id = $1::uuid) AND status = 'ACCEPTED'
+      )
+      ORDER BY ws.started_at DESC
+      LIMIT 30;
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania feedu", details: error.message });
+  }
+});
+
+// =========================================================================
+// 7. PRZEŁĄCZANIE REAKCJI (Dodaj / Usuń)
+// =========================================================================
+router.post('/activity/reaction', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { workoutId, emoji } = req.body;
+  
+  if (!workoutId || !emoji) return res.status(400).json({ error: "Brak danych reakcji." });
 
   try {
-    const result = await pool.query(
-      "DELETE FROM friendships WHERE id = $1::uuid AND receiver_id = $2::uuid AND status = 'PENDING'", 
-      [friendshipId, userId]
+    const checkRes = await pool.query(
+      "SELECT id FROM workout_reactions WHERE workout_id = $1::uuid AND user_id = $2::uuid AND emoji = $3",
+      [workoutId, userId, emoji]
     );
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Nie znaleziono zaproszenia." });
+
+    if (checkRes.rowCount > 0) {
+      await pool.query("DELETE FROM workout_reactions WHERE id = $1::uuid", [checkRes.rows[0].id]);
+      return res.json({ message: "Reakcja usunięta" });
+    } else {
+      await pool.query(
+        "INSERT INTO workout_reactions (workout_id, user_id, emoji) VALUES ($1::uuid, $2::uuid, $3)",
+        [workoutId, userId, emoji]
+      );
+
+      // 🔴 NOWOŚĆ: Powiadomienie dla autora treningu (tylko jeśli to nie jest jego własna reakcja)
+      const workoutRes = await pool.query("SELECT user_id FROM workout_sessions WHERE id = $1::uuid", [workoutId]);
+      const ownerId = workoutRes.rows[0].user_id;
+
+      if (ownerId !== userId) {
+        await pool.query(
+          "INSERT INTO notifications (user_id, sender_id, type, message) VALUES ($1::uuid, $2::uuid, 'REACTION', $3)",
+          [ownerId, userId, `Zareagował(a) ${emoji} na Twój trening!`]
+        );
+      }
+
+      return res.json({ message: "Reakcja dodana" });
     }
-    res.json({ message: "Zaproszenie zostało odrzucone. ✕" });
   } catch (error) {
-    res.status(500).json({ error: "Błąd odrzucania zaproszenia", details: error.message });
+    res.status(500).json({ error: "Błąd podczas przełączania reakcji", details: error.message });
+  }
+});
+
+// =========================================================================
+// 8. WYZWANIA TYGODNIA (Dynamiczny Ranking Tonażu i Treningów)
+// =========================================================================
+router.get('/challenges/weekly', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const query = `
+      WITH gang_members AS (
+        -- Ty i Twoi zaakceptowani znajomi
+        SELECT receiver_id as user_id FROM friendships WHERE sender_id = $1::uuid AND status = 'ACCEPTED'
+        UNION
+        SELECT sender_id as user_id FROM friendships WHERE receiver_id = $1::uuid AND status = 'ACCEPTED'
+        UNION
+        SELECT $1::uuid as user_id
+      ),
+      weekly_stats AS (
+        SELECT 
+          ws.user_id,
+          COUNT(DISTINCT ws.id) as workouts_count,
+          COALESCE(SUM(ls.weight * ls.reps), 0) as total_volume
+        FROM workout_sessions ws
+        LEFT JOIN log_series ls ON ws.id = ls.workout_session_id
+        WHERE ws.user_id IN (SELECT user_id FROM gang_members)
+          -- Zliczamy tylko od początku obecnego tygodnia (Poniedziałek 00:00)
+          AND ws.started_at >= date_trunc('week', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw'
+        GROUP BY ws.user_id
+      )
+      SELECT 
+        u.id, 
+        u.nick, 
+        u.is_premium,
+        COALESCE(s.workouts_count, 0) as workouts_count,
+        COALESCE(s.total_volume, 0) as total_volume
+      FROM gang_members gm
+      JOIN users u ON gm.user_id = u.id
+      LEFT JOIN weekly_stats s ON u.id = s.user_id
+      ORDER BY total_volume DESC, workouts_count DESC;
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania wyzwań tygodnia", details: error.message });
+  }
+});
+
+// =========================================================================
+// 9. PODGLĄD PROFILU ZNAJOMEGO (Weryfikacja 1v1 - Head-to-Head)
+// =========================================================================
+router.get('/profile/:friendId', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { friendId } = req.params;
+
+  try {
+    const query = `
+      WITH is_friend AS (
+        SELECT 1 FROM friendships 
+        WHERE status = 'ACCEPTED' 
+        AND ((sender_id = $1::uuid AND receiver_id = $2::uuid) OR (sender_id = $2::uuid AND receiver_id = $1::uuid))
+      ),
+      stats_30d AS (
+        SELECT 
+          user_id,
+          COUNT(DISTINCT ws.id) as workouts_count,
+          COALESCE(SUM(ls.weight * ls.reps), 0) as total_volume
+        FROM workout_sessions ws
+        LEFT JOIN log_series ls ON ws.id = ls.workout_session_id
+        WHERE ws.user_id IN ($1::uuid, $2::uuid)
+          AND ws.started_at >= NOW() - INTERVAL '30 days'
+        GROUP BY user_id
+      ),
+      friend_recent AS (
+        SELECT id, name, started_at
+        FROM workout_sessions
+        WHERE user_id = $2::uuid
+        ORDER BY started_at DESC
+        LIMIT 5
+      )
+      SELECT 
+        u.id, u.nick, u.current_streak, u.is_premium,
+        COALESCE((SELECT workouts_count FROM stats_30d WHERE user_id = $2::uuid), 0) as friend_workouts,
+        COALESCE((SELECT total_volume FROM stats_30d WHERE user_id = $2::uuid), 0) as friend_volume,
+        COALESCE((SELECT workouts_count FROM stats_30d WHERE user_id = $1::uuid), 0) as my_workouts,
+        COALESCE((SELECT total_volume FROM stats_30d WHERE user_id = $1::uuid), 0) as my_volume,
+        COALESCE((SELECT json_agg(json_build_object('id', id, 'name', name, 'started_at', started_at)) FROM friend_recent), '[]'::json) as recent_workouts
+      FROM users u
+      WHERE u.id = $2::uuid AND EXISTS (SELECT 1 FROM is_friend);
+    `;
+    const result = await pool.query(query, [userId, friendId]);
+    
+    if (result.rowCount === 0) {
+      return res.status(403).json({ error: "Brak dostępu lub znajomy nie istnieje." });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd ładowania profilu", details: error.message });
+  }
+});
+
+// =========================================================================
+// 10. POWIADOMIENIA (Pobieranie)
+// =========================================================================
+router.get('/notifications', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const query = `
+      SELECT n.id, n.type, n.message, n.is_read, n.created_at, u.nick as sender_nick
+      FROM notifications n
+      LEFT JOIN users u ON n.sender_id = u.id
+      WHERE n.user_id = $1::uuid
+      ORDER BY n.created_at DESC
+      LIMIT 20
+    `;
+    const result = await pool.query(query, [userId]);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Błąd pobierania powiadomień", details: error.message });
+  }
+});
+
+// =========================================================================
+// 11. POWIADOMIENIA (Oznacz jako przeczytane)
+// =========================================================================
+router.patch('/notifications/read', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    await pool.query("UPDATE notifications SET is_read = TRUE WHERE user_id = $1::uuid AND is_read = FALSE", [userId]);
+    res.json({ message: "Powiadomienia odczytane." });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd aktualizacji powiadomień", details: error.message });
   }
 });
 
@@ -4343,6 +4902,8 @@ import { useTemplates } from './hooks/useTemplates';
 import { API_BASE_URL } from './config/api'
 import StatsView from './views/StatsView'
 
+import NotificationBell from './components/NotificationBell';
+
 function AppContent() {
   const [token, setToken] = useState(() => localStorage.getItem('gp_token') || null);
   const [user, setUser] = useState(() => {
@@ -4371,9 +4932,10 @@ function AppContent() {
   }
 
   const { weightLogs, weightInput, setWeightInput, handleAddWeight, fetchWeightLogs, handleDeleteWeight } = useWeightLogs(token, showToast)
+  
   const { 
-    friends, pendingRequests, friendNickInput, setFriendNickInput, 
-    handleSendFriendRequest, handleAcceptFriend, handleRejectFriend, fetchFriendsData 
+    friends, pendingRequests, friendNickInput, setFriendNickInput, selectedFriendProfile, setSelectedFriendProfile, isProfileLoading, fetchFriendProfile, 
+    handleSendFriendRequest, handleAcceptFriend, handleRejectFriend, fetchFriendsData, activityFeed, handleToggleReaction, weeklyChallenge, notifications, markNotificationsAsRead
   } = useFriends(token)
 
   const { templates, fetchTemplates, handleSaveTemplate, handleDeleteTemplate } = useTemplates(token, showToast);
@@ -4513,12 +5075,11 @@ function AppContent() {
     }
   };
 
-  // 🔴 NOWOŚĆ: Dedykowany wrapper dla zapisu wagi synchronizujący całą aplikację w tle
   const onAddWeight = async (e) => {
     if (e) e.preventDefault();
     try {
       await handleAddWeight(e);
-      await fetchAllData(); // Błyskawiczne odświeżenie wykresów, trendów i KPI
+      await fetchAllData();
     } catch (err) {
       // Błąd został obsłużony wewnątrz hooka
     }
@@ -4643,26 +5204,34 @@ function AppContent() {
 
       {token && (
         <>
-          {/* HEADER DESKTOP */}
+          {/* HEADER DESKTOP / MOBILE */}
           <header className="flex justify-between items-center border-b border-zinc-800/80 pb-4 mb-6 md:mb-8 gap-4">
             <div className="text-left">
               <h1 className="text-xl md:text-2xl font-black text-gymRed tracking-tight">🏋️‍♂️ GymPatico</h1>
               <p className="hidden md:block text-zinc-400 text-xs mt-0.5">Witaj, <strong className="text-zinc-200">{user?.nick}</strong>!</p>
             </div>
             
-            <nav className="hidden md:flex items-center gap-2">
-              <button onClick={() => navigate('/')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Panel</button>
-              <button onClick={() => navigate('/stats')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/stats' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Statystyki 📊</button>
-              <button onClick={() => navigate('/exercises')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/exercises' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Atlas 📚</button>
-              <button onClick={() => navigate('/new-workout')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/new-workout' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>+ Nowy Trening</button>
-              <button onClick={() => navigate('/history')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/history' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Historia</button>
-              <button onClick={() => navigate('/social')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/social' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Społeczność 👥</button>
-              <button onClick={handleLogout} className="px-4 py-2 text-xs font-semibold rounded-lg bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer transition-all ml-2">Wyloguj</button>
-            </nav>
+            <div className="flex items-center gap-3 md:gap-4 shrink-0">
+              {/* 🔴 KOMPONENT DZWONKA */}
+              <NotificationBell 
+                notifications={notifications} 
+                markAsRead={markNotificationsAsRead} 
+              />
+              
+              <nav className="hidden md:flex items-center gap-2">
+                <button onClick={() => navigate('/')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Panel</button>
+                <button onClick={() => navigate('/stats')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/stats' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Statystyki 📊</button>
+                <button onClick={() => navigate('/exercises')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/exercises' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Atlas 📚</button>
+                <button onClick={() => navigate('/new-workout')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/new-workout' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>+ Nowy Trening</button>
+                <button onClick={() => navigate('/history')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/history' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Historia</button>
+                <button onClick={() => navigate('/social')} className={`px-4 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${location.pathname === '/social' ? 'bg-gymRed text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>Społeczność 👥</button>
+                <button onClick={handleLogout} className="px-4 py-2 text-xs font-semibold rounded-lg bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer transition-all ml-2">Wyloguj</button>
+              </nav>
 
-            <button onClick={handleLogout} className="block md:hidden px-3 py-1.5 bg-zinc-800 text-white border border-zinc-700 rounded-lg font-bold cursor-pointer text-xs transition-colors hover:bg-zinc-700">
-              Wyjdź 🚪
-            </button>
+              <button onClick={handleLogout} className="block md:hidden px-3 py-2 bg-zinc-800 text-white border border-zinc-700 rounded-lg font-bold cursor-pointer text-xs transition-colors hover:bg-zinc-700 shrink-0">
+                Wyjdź 🚪
+              </button>
+            </div>
           </header>
 
           {/* DOLNA BELKA MOBILNA */}
@@ -4722,7 +5291,6 @@ function AppContent() {
         <Routes>
           <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
           
-          {/* 🔴 POPRAWKA: Przekazujemy onAddWeight jako handleAddWeight do Dashboardu */}
           <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={onAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} workoutsHistory={workoutsHistory} templates={templates} /> : <Navigate to="/login" />} />
           
           <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} onDeleteExercise={onDeleteCustomExercise} /> : <Navigate to="/login" />} />
@@ -4758,7 +5326,7 @@ function AppContent() {
             />
           ) : <Navigate to="/login" />} />
           
-          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} /> : <Navigate to="/login" />} />
+          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} activityFeed={activityFeed} onToggleReaction={handleToggleReaction} weeklyChallenge={weeklyChallenge} fetchFriendProfile={fetchFriendProfile} selectedFriendProfile={selectedFriendProfile} setSelectedFriendProfile={setSelectedFriendProfile} isProfileLoading={isProfileLoading} /> : <Navigate to="/login" />} />
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>

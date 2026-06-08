@@ -11,33 +11,36 @@ export function useFriends(token) {
   const [weeklyChallenge, setWeeklyChallenge] = useState([]);
   const [selectedFriendProfile, setSelectedFriendProfile] = useState(null);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
-  const [notifications, setNotifications] = useState([]); // 🔴 STAN POWIADOMIEŃ
+  const [notifications, setNotifications] = useState([]);
 
   const fetchFriendsData = useCallback(async () => {
     if (!token) return;
     try {
-      // 🔴 POPRAWKA: Pobieramy 5 endpointów naraz (dodano notifRes)
       const [friendsRes, requestsRes, activityRes, challengeRes, notifRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/friends`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_BASE_URL}/api/friends/requests`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_BASE_URL}/api/friends/activity`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${API_BASE_URL}/api/friends/challenges/weekly`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`${API_BASE_URL}/api/friends/notifications`, { headers: { 'Authorization': `Bearer ${token}` } }) // <-- NOWE
+        fetch(`${API_BASE_URL}/api/friends/notifications`, { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
-      const friendsData = await friendsRes.json();
-      const requestsData = await requestsRes.json();
-      const activityData = await activityRes.json();
-      const challengeData = await challengeRes.json();
-      const notifData = await notifRes.json(); // <-- NOWE
+      // 🔴 POPRAWKA (Graceful Degradation):
+      // Wywołujemy .json() tylko i wyłącznie wtedy, gdy odpowiedź serwera ma status 200-299.
+      // W przeciwnym razie bezpiecznie zwracamy pustą tablicę, unikając awarii całego komponentu.
+      const friendsData = friendsRes.ok ? await friendsRes.json() : [];
+      const requestsData = requestsRes.ok ? await requestsRes.json() : [];
+      const activityData = activityRes.ok ? await activityRes.json() : [];
+      const challengeData = challengeRes.ok ? await challengeRes.json() : [];
+      const notifData = notifRes.ok ? await notifRes.json() : [];
 
       setFriends(Array.isArray(friendsData) ? friendsData.map(f => ({ ...f, isPremium: f.is_premium || f.isPremium })) : []);
       setPendingRequests(Array.isArray(requestsData) ? requestsData : []); 
       setActivityFeed(Array.isArray(activityData) ? activityData : []);
       setWeeklyChallenge(Array.isArray(challengeData) ? challengeData : []);
-      setNotifications(Array.isArray(notifData) ? notifData : []); // <-- Zapis powiadomień do stanu
+      setNotifications(Array.isArray(notifData) ? notifData : []);
+      
     } catch (err) {
-      console.error("❌ Błąd synchronizacji społecznościowej:", err.message);
+      console.error("❌ Błąd synchronizacji sieciowej w module społecznościowym:", err.message);
     }
   }, [token]);
 
@@ -121,7 +124,7 @@ export function useFriends(token) {
     }
   }, [token]);
 
-  // 🔴 NOWOŚĆ: Oznaczanie powiadomień jako odczytane
+  // Oznaczanie powiadomień jako odczytane
   const markNotificationsAsRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     try {
@@ -139,6 +142,6 @@ export function useFriends(token) {
     friendNickInput, setFriendNickInput, socialMessage, setSocialMessage,
     selectedFriendProfile, setSelectedFriendProfile, isProfileLoading, fetchFriendProfile,
     handleSendFriendRequest, handleAcceptFriend, fetchFriendsData, handleRejectFriend, handleToggleReaction,
-    notifications, markNotificationsAsRead // 🔴 WYEKSPORTOWANO
+    notifications, markNotificationsAsRead
   };
 }
