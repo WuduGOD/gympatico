@@ -1,5 +1,5 @@
 // frontend/src/components/NotificationsDrawer.jsx
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 
 export default function NotificationsDrawer({
   isOpen,
@@ -10,7 +10,9 @@ export default function NotificationsDrawer({
   onRejectFriend,
   markAsRead
 }) {
-  // Blokowanie scrollowania pod spodem, gdy drawer jest otwarty
+  // 🔴 NOWOŚĆ: Stan przechowujący ID obecnie przetwarzanego zaproszenia
+  const [loadingId, setLoadingId] = useState(null);
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -21,21 +23,25 @@ export default function NotificationsDrawer({
     return () => { document.body.style.overflow = 'unset'; };
   }, [isOpen, markAsRead]);
 
+  // Wrapper do asynchronicznych akcji przycisków
+  const handleAction = async (actionFn, id) => {
+    setLoadingId(id);
+    await actionFn(id);
+    setLoadingId(null);
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[9999] flex justify-end">
       
-      {/* Tło (Backdrop) - kliknięcie zamyka panel */}
       <div 
         onClick={onClose} 
         className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity cursor-pointer" 
       />
 
-      {/* Panel boczny */}
       <div className="relative w-full max-w-md bg-[#0c0e12] border-l border-zinc-800/80 h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         
-        {/* Nagłówek */}
         <div className="flex items-center justify-between p-5 border-b border-zinc-800/80 bg-[#161920]">
           <h2 className="text-lg font-black text-white flex items-center gap-2">
             🔔 Powiadomienia
@@ -48,10 +54,8 @@ export default function NotificationsDrawer({
           </button>
         </div>
 
-        {/* Zawartość scrollowalna */}
         <div className="flex-1 overflow-y-auto p-4 space-y-8">
 
-          {/* SEKCJA 1: ZAPROSZENIA (Zawsze na samej górze) */}
           {pendingRequests && pendingRequests.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-xs font-bold text-gymRed uppercase tracking-wider pl-1 flex items-center gap-2">
@@ -61,11 +65,9 @@ export default function NotificationsDrawer({
               
               <div className="space-y-3">
                 {pendingRequests.map(req => (
-                  // 🔴 POPRAWKA: Używamy friendship_id jako klucza
                   <div key={req.friendship_id} className="bg-[#161920] border border-zinc-700/80 rounded-xl p-4 shadow-lg">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-lg font-bold text-white border border-zinc-700">
-                        {/* 🔴 POPRAWKA: Bezpieczne wyciąganie litery z req.nick */}
                         {req.nick ? req.nick.charAt(0).toUpperCase() : '👤'}
                       </div>
                       <div>
@@ -74,12 +76,19 @@ export default function NotificationsDrawer({
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      {/* 🔴 POPRAWKA: Przekazujemy friendship_id do akcji */}
-                      <button onClick={() => onAcceptFriend(req.friendship_id)} className="flex-1 py-2 bg-gymRed hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.2)]">
-                        Akceptuj
+                      <button 
+                        onClick={() => handleAction(onAcceptFriend, req.friendship_id)} 
+                        disabled={loadingId === req.friendship_id}
+                        className="flex-1 py-2 bg-gymRed hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.2)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center h-8"
+                      >
+                        {loadingId === req.friendship_id ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Akceptuj'}
                       </button>
-                      <button onClick={() => onRejectFriend(req.friendship_id)} className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-lg transition-colors cursor-pointer">
-                        Odrzuć
+                      <button 
+                        onClick={() => handleAction(onRejectFriend, req.friendship_id)} 
+                        disabled={loadingId === req.friendship_id}
+                        className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center h-8"
+                      >
+                        {loadingId === req.friendship_id ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Odrzuć'}
                       </button>
                     </div>
                   </div>
@@ -88,7 +97,6 @@ export default function NotificationsDrawer({
             </div>
           )}
 
-          {/* SEKCJA 2: HISTORIA (Reakcje itp.) */}
           <div className="space-y-3">
             <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider pl-1">Historia</h3>
             
