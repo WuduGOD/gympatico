@@ -94,6 +94,7 @@ frontend/src/main.jsx
 frontend/src/views/Dashboard.jsx
 frontend/src/views/ExercisesList.jsx
 frontend/src/views/History.jsx
+frontend/src/views/Landing.jsx
 frontend/src/views/LoginView.jsx
 frontend/src/views/NewWorkout.jsx
 frontend/src/views/RestTimer.jsx
@@ -146,36 +147,69 @@ module.exports = authenticateToken;
 </file>
 
 <file path="backend/routes/notifications.js">
+// backend/routes/notifications.js
 const express = require('express');
 const router = express.Router();
-const webpush = require('web-push');
 const pool = require('../config/db');
 const authenticateToken = require('../middleware/auth');
+const webpush = require('web-push');
 
 // Konfiguracja VAPID
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT,
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-);
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:kontakt@gympatico.pl',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+}
 
-// 1. ENDPOINT: Rejestracja urządzenia (wywoływana z frontendu)
+// =========================================================================
+// 1. REJESTRACJA SUBSKRYPCJI PUSH (POST /api/notifications/subscribe)
+// =========================================================================
 router.post('/subscribe', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
-  const subscription = req.body; // To jest obiekt z przeglądarki
+  const subscription = req.body;
+
+  if (!subscription || !subscription.endpoint || !subscription.keys) {
+    return res.status(400).json({ error: "Brak poprawnych danych subskrypcji." });
+  }
 
   try {
     await pool.query(
       `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) 
-       VALUES ($1, $2, $3, $4) 
+       VALUES ($1::uuid, $2, $3, $4) 
        ON CONFLICT (user_id, endpoint) DO NOTHING`,
       [userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth]
     );
-    res.status(201).json({ message: "Subskrypcja Push zapisana!" });
+    res.status(201).json({ message: "Subskrypcja Push zapisana poprawnie! 🔔" });
   } catch (error) {
-    res.status(500).json({ error: "Błąd zapisu subskrypcji." });
+    res.status(500).json({ error: "Błąd zapisu subskrypcji Push", details: error.message });
   }
 });
+
+// =========================================================================
+// 2. USUWANIE SUBSKRYPCJI PUSH (DELETE /api/notifications/unsubscribe)
+// =========================================================================
+router.delete('/unsubscribe', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { endpoint } = req.body;
+
+  if (!endpoint) {
+    return res.status(400).json({ error: "Brak endpointu subskrypcji do usunięcia." });
+  }
+
+  try {
+    await pool.query(
+      "DELETE FROM push_subscriptions WHERE user_id = $1::uuid AND endpoint = $2",
+      [userId, endpoint]
+    );
+    res.json({ message: "Subskrypcja Push została wyrejestrowana. 🔕" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd usuwania subskrypcji Push", details: error.message });
+  }
+});
+
+module.exports = router;
 </file>
 
 <file path="backend/schema.sql">
@@ -735,175 +769,66 @@ export function useTemplates(token, showToast) {
 }
 </file>
 
-<file path="frontend/src/views/LoginView.jsx">
-import React, { useState } from 'react'
-import { API_BASE_URL } from '../config/api'
+<file path="frontend/src/views/Landing.jsx">
+// frontend/src/views/Landing.jsx
+import { useNavigate } from 'react-router-dom';
 
-export default function LoginView({ onLoginSuccess }) {
-  // Stan przełączający między logowaniem (false) a rejestracją (true)
-  const [isRegistering, setIsRegistering] = useState(false)
-  
-  // Stany formularza
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [nick, setNick] = useState('')
-  
-  // Stany komunikatów zwrotnych
-  const [error, setError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
-
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    setError('')
-    setSuccessMessage('')
-
-    if (isRegistering) {
-      // --- LOGIKA REJESTRACJI ---
-      if (!nick) return setError('Nick jest wymagany!')
-      
-      // Walidacja siły hasła po stronie frontendu (minimum 8 znaków)
-      if (password.length < 8) {
-        return setError('Hasło musi składać się z co najmniej 8 znaków!')
-      }
-
-      fetch(`${API_BASE_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, nick })
-      })
-        .then(async res => {
-          const data = await res.json()
-          if (!res.ok) throw new Error(data.error || 'Błąd rejestracji!')
-          return data
-        })
-        .then(() => {
-          setSuccessMessage('Konto założone pomyślnie! 🏋️‍♂️ Teraz możesz się zalogować.')
-          setIsRegistering(false) // Powrót do formularza logowania
-          setPassword('')
-          setNick('')
-        })
-        .catch(err => setError(err.message))
-    } else {
-      // --- LOGIKA LOGOWANIA ---
-      fetch(`${API_BASE_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      })
-        .then(async res => {
-          const data = await res.json()
-          if (!res.ok) throw new Error(data.error || 'Nieprawidłowy e-mail lub hasło!')
-          return data
-        })
-        .then(data => {
-          onLoginSuccess(data.token, data.user)
-        })
-        .catch(err => setError(err.message))
-    }
-  }
+export default function Landing() {
+  const navigate = useNavigate();
 
   return (
-    // min-h-screen flex items-center = Perfekcyjne wycentrowanie karty w pionie i poziomie na każdym ekranie
-    <div className="p-4 font-sans bg-gymDark min-h-screen flex items-center justify-center">
+    <div className="min-h-[85vh] flex flex-col items-center justify-center px-4 animate-in fade-in duration-500">
       
-      {/* KARTA LOGOWANIA/REJESTRACJI */}
-      <div className="max-w-md w-full bg-gymCard p-6 md:p-8 rounded-2xl shadow-2xl border border-zinc-800/60 transition-all duration-300">
+      {/* Tło / Element wizualny */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3/4 max-w-lg h-3/4 bg-gymRed/5 rounded-full blur-[100px] -z-10 pointer-events-none" />
+
+      <div className="text-center max-w-3xl mx-auto space-y-8">
         
-        <h1 className="text-3xl font-black text-gymRed text-center mb-1 tracking-tight">
-          🏋️‍♂️ GymPatico
-        </h1>
-        <h3 className="text-center text-zinc-400 text-sm md:text-base font-medium mb-6">
-          {isRegistering ? 'Stwórz nowe konto sportowca' : 'Zaloguj się do panelu treningowego'}
-        </h3>
+        {/* Odznaka / Tagline */}
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-semibold text-zinc-400">
+          <span className="w-2 h-2 rounded-full bg-gymRed animate-pulse" />
+          PWA • Progressive Web App
+        </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {/* Główne 3 zdania (Value Proposition) */}
+        <div className="space-y-4">
+          <h1 className="text-4xl md:text-6xl font-black text-white tracking-tight">
+            Twój trening.<br />
+            <span className="text-gymRed">Bez wymówek.</span>
+          </h1>
           
-          {/* POLE: NICK (Renderowane warunkowo przy rejestracji) */}
-          {isRegistering && (
-            <div className="flex flex-col gap-1.5 text-left">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Twój Nick:</label>
-              <input 
-                type="text" 
-                placeholder="np. Koksik99" 
-                value={nick} 
-                onChange={e => setNick(e.target.value)} 
-                required 
-                className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-              />
-            </div>
-          )}
+          <p className="text-lg md:text-xl text-zinc-400 max-w-xl mx-auto leading-relaxed">
+            Zaawansowany dziennik treningowy stworzony dla tych, którzy traktują ciężary poważnie. Śledź progres, automatyzuj wyniki i rywalizuj ze znajomymi w Gangu.
+          </p>
+        </div>
 
-          {/* POLE: EMAIL */}
-          <div className="flex flex-col gap-1.5 text-left">
-            <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">E-mail:</label>
-            <input 
-              type="email" 
-              placeholder="np. treser@gym.pl" 
-              value={email} 
-              onChange={e => setEmail(e.target.value)} 
-              required 
-              className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-            />
-          </div>
-
-          {/* POLE: HASŁO */}
-          <div className="flex flex-col gap-1.5 text-left">
-            <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Hasło:</label>
-            <input 
-              type="password" 
-              placeholder="••••••••" 
-              value={password} 
-              onChange={e => setPassword(e.target.value)} 
-              required 
-              className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
-            />
-            
-            {/* Dynamiczny wskaźnik walidacji hasła */}
-            {isRegistering && password.length > 0 && password.length < 8 && (
-              <p className="text-gymRed text-xs font-semibold mt-1 flex items-center gap-1 animate-pulse">
-                ⚠️ Za krótkie ({password.length}/8 znaków)
-              </p>
-            )}
-          </div>
-
-          {/* KOMUNIKATY BŁĘDU / SUKCESU */}
-          {error && (
-            <p className="bg-red-500/10 border border-red-500/20 text-gymRed font-bold text-center p-3 rounded-lg text-xs md:text-sm">
-              {error}
-            </p>
-          )}
-          {successMessage && (
-            <p className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold text-center p-3 rounded-lg text-xs md:text-sm">
-              {successMessage}
-            </p>
-          )}
-
-          {/* PRZYCISK ZATWIERDZENIA FORUMULARZA */}
+        {/* Przyciski Call to Action */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
           <button 
-            type="submit" 
-            className="w-full py-3.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm md:text-base tracking-wide transition-all active:scale-[0.98] cursor-pointer shadow-md shadow-red-950/20 mt-2"
+            onClick={() => navigate('/register')}
+            className="w-full sm:w-auto px-8 py-4 bg-gymRed hover:bg-red-600 text-white font-black rounded-xl text-lg transition-all shadow-[0_0_20px_rgba(220,38,38,0.3)] hover:shadow-[0_0_30px_rgba(220,38,38,0.5)] hover:-translate-y-1"
           >
-            {isRegistering ? 'Zarejestruj się 🚀' : 'Zaloguj się 🦾'}
+            Dołącz do Gangu
           </button>
-        </form>
-
-        {/* PRZEŁĄCZNIK TRYBU (LOGOWANIE / REJESTRACJA) */}
-        <div className="text-center mt-6 pt-4 border-t border-zinc-800/60">
+          
           <button 
-            onClick={() => {
-              setIsRegistering(!isRegistering)
-              setError('')
-              setSuccessMessage('')
-              setPassword('')
-            }} 
-            className="text-gymRed hover:text-red-400 bg-transparent border-none cursor-pointer underline text-xs md:text-sm font-semibold transition-colors"
+            onClick={() => navigate('/login')}
+            className="w-full sm:w-auto px-8 py-4 bg-zinc-900 hover:bg-zinc-800 text-white font-bold rounded-xl text-lg border border-zinc-800 transition-all"
           >
-            {isRegistering ? 'Masz już konto? Zaloguj się' : 'Nie masz konta? Zarejestruj się'}
+            Zaloguj się
           </button>
         </div>
+
+        {/* Subtelny Social Proof / Funkcje */}
+        <div className="pt-12 flex flex-wrap justify-center gap-6 text-sm font-semibold text-zinc-500">
+          <div className="flex items-center gap-2">🔥 System Streaków</div>
+          <div className="flex items-center gap-2">📊 Analityka 1RM</div>
+          <div className="flex items-center gap-2">📱 Pełne wsparcie PWA</div>
+        </div>
+
       </div>
     </div>
-  )
+  );
 }
 </file>
 
@@ -1743,12 +1668,185 @@ export default function ExercisesList({ exercises, onAddExercise, onDeleteExerci
 }
 </file>
 
+<file path="frontend/src/views/LoginView.jsx">
+import React, { useState } from 'react'
+import { useLocation } from 'react-router-dom'
+import { API_BASE_URL } from '../config/api'
+
+export default function LoginView({ onLoginSuccess }) {
+  const location = useLocation()
+  // Stan przełączający między logowaniem (false) a rejestracją (true)
+  const [isRegistering, setIsRegistering] = useState(location.pathname === '/register')
+  
+  // Stany formularza
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [nick, setNick] = useState('')
+  
+  // Stany komunikatów zwrotnych
+  const [error, setError] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccessMessage('')
+
+    if (isRegistering) {
+      // --- LOGIKA REJESTRACJI ---
+      if (!nick) return setError('Nick jest wymagany!')
+      
+      // Walidacja siły hasła po stronie frontendu (minimum 8 znaków)
+      if (password.length < 8) {
+        return setError('Hasło musi składać się z co najmniej 8 znaków!')
+      }
+
+      fetch(`${API_BASE_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, nick })
+      })
+        .then(async res => {
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error || 'Błąd rejestracji!')
+          return data
+        })
+        .then(() => {
+          setSuccessMessage('Konto założone pomyślnie! 🏋️‍♂️ Teraz możesz się zalogować.')
+          setIsRegistering(false) // Powrót do formularza logowania
+          setPassword('')
+          setNick('')
+        })
+        .catch(err => setError(err.message))
+    } else {
+      // --- LOGIKA LOGOWANIA ---
+      fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      })
+        .then(async res => {
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error || 'Nieprawidłowy e-mail lub hasło!')
+          return data
+        })
+        .then(data => {
+          onLoginSuccess(data.token, data.user)
+        })
+        .catch(err => setError(err.message))
+    }
+  }
+
+  return (
+    // min-h-screen flex items-center = Perfekcyjne wycentrowanie karty w pionie i poziomie na każdym ekranie
+    <div className="p-4 font-sans bg-gymDark min-h-screen flex items-center justify-center">
+      
+      {/* KARTA LOGOWANIA/REJESTRACJI */}
+      <div className="max-w-md w-full bg-gymCard p-6 md:p-8 rounded-2xl shadow-2xl border border-zinc-800/60 transition-all duration-300">
+        
+        <h1 className="text-3xl font-black text-gymRed text-center mb-1 tracking-tight">
+          🏋️‍♂️ GymPatico
+        </h1>
+        <h3 className="text-center text-zinc-400 text-sm md:text-base font-medium mb-6">
+          {isRegistering ? 'Stwórz nowe konto sportowca' : 'Zaloguj się do panelu treningowego'}
+        </h3>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          
+          {/* POLE: NICK (Renderowane warunkowo przy rejestracji) */}
+          {isRegistering && (
+            <div className="flex flex-col gap-1.5 text-left">
+              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Twój Nick:</label>
+              <input 
+                type="text" 
+                placeholder="np. Koksik99" 
+                value={nick} 
+                onChange={e => setNick(e.target.value)} 
+                required 
+                className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
+              />
+            </div>
+          )}
+
+          {/* POLE: EMAIL */}
+          <div className="flex flex-col gap-1.5 text-left">
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">E-mail:</label>
+            <input 
+              type="email" 
+              placeholder="np. treser@gym.pl" 
+              value={email} 
+              onChange={e => setEmail(e.target.value)} 
+              required 
+              className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
+            />
+          </div>
+
+          {/* POLE: HASŁO */}
+          <div className="flex flex-col gap-1.5 text-left">
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">Hasło:</label>
+            <input 
+              type="password" 
+              placeholder="••••••••" 
+              value={password} 
+              onChange={e => setPassword(e.target.value)} 
+              required 
+              className="p-3 rounded-lg border border-zinc-800 bg-[#2d2d2d] text-white text-sm outline-none transition-all focus:border-gymRed"
+            />
+            
+            {/* Dynamiczny wskaźnik walidacji hasła */}
+            {isRegistering && password.length > 0 && password.length < 8 && (
+              <p className="text-gymRed text-xs font-semibold mt-1 flex items-center gap-1 animate-pulse">
+                ⚠️ Za krótkie ({password.length}/8 znaków)
+              </p>
+            )}
+          </div>
+
+          {/* KOMUNIKATY BŁĘDU / SUKCESU */}
+          {error && (
+            <p className="bg-red-500/10 border border-red-500/20 text-gymRed font-bold text-center p-3 rounded-lg text-xs md:text-sm">
+              {error}
+            </p>
+          )}
+          {successMessage && (
+            <p className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold text-center p-3 rounded-lg text-xs md:text-sm">
+              {successMessage}
+            </p>
+          )}
+
+          {/* PRZYCISK ZATWIERDZENIA FORUMULARZA */}
+          <button 
+            type="submit" 
+            className="w-full py-3.5 bg-gymRed hover:bg-red-600 text-white font-bold rounded-lg text-sm md:text-base tracking-wide transition-all active:scale-[0.98] cursor-pointer shadow-md shadow-red-950/20 mt-2"
+          >
+            {isRegistering ? 'Zarejestruj się 🚀' : 'Zaloguj się 🦾'}
+          </button>
+        </form>
+
+        {/* PRZEŁĄCZNIK TRYBU (LOGOWANIE / REJESTRACJA) */}
+        <div className="text-center mt-6 pt-4 border-t border-zinc-800/60">
+          <button 
+            onClick={() => {
+              setIsRegistering(!isRegistering)
+              setError('')
+              setSuccessMessage('')
+              setPassword('')
+            }} 
+            className="text-gymRed hover:text-red-400 bg-transparent border-none cursor-pointer underline text-xs md:text-sm font-semibold transition-colors"
+          >
+            {isRegistering ? 'Masz już konto? Zaloguj się' : 'Nie masz konta? Zarejestruj się'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+</file>
+
 <file path="frontend/src/views/Settings.jsx">
 // frontend/src/views/Settings.jsx
 import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config/api';
 
-// Dekoder klucza VAPID
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -1766,14 +1864,12 @@ export default function Settings({ token, showToast }) {
   const [currentSubscription, setCurrentSubscription] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 1. Sprawdzamy stan przy ładowaniu strony
   useEffect(() => {
     const checkSubscriptionState = async () => {
       if ('serviceWorker' in navigator && 'PushManager' in window) {
         setIsPushSupported(true);
         try {
           const registration = await navigator.serviceWorker.ready;
-          // Sprawdzamy, czy to urządzenie ma już aktywną subskrypcję w tle
           const sub = await registration.pushManager.getSubscription();
           if (sub) {
             setIsSubscribed(true);
@@ -1789,22 +1885,22 @@ export default function Settings({ token, showToast }) {
     checkSubscriptionState();
   }, []);
 
-  // 2. Obsługa Kliknięcia Suwaka
   const handleTogglePush = async () => {
     setIsLoading(true);
     try {
       const registration = await navigator.serviceWorker.ready;
 
-      // PRZYPADEK A: CHCEMY WYŁĄCZYĆ POWIADOMIENIA
+      // WYŁĄCZENIE POWIADOMIENI
       if (isSubscribed && currentSubscription) {
-        // Usuwamy z serwera
-        await fetch(`${API_BASE_URL}/api/friends/unsubscribe`, {
+        await fetch(`${API_BASE_URL}/api/notifications/unsubscribe`, {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          headers: { 
+            'Content-Type': 'application/json', 
+            'Authorization': `Bearer ${token}` 
+          },
           body: JSON.stringify({ endpoint: currentSubscription.endpoint })
         });
         
-        // Odpinamy z przeglądarki
         await currentSubscription.unsubscribe();
         
         setIsSubscribed(false);
@@ -1812,32 +1908,33 @@ export default function Settings({ token, showToast }) {
         showToast('Powiadomienia zostały wyłączone na tym urządzeniu. 🔕', 'success');
       } 
       
-      // PRZYPADEK B: CHCEMY WŁĄCZYĆ POWIADOMIENIA
+      // WŁĄCZENIE POWIADOMIENI
       else {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-          throw new Error('Musisz odblokować powiadomienia w ustawieniach przeglądarki!');
+          throw new Error('Musisz odblokować powiadomienia v ustawieniach przeglądarki!');
         }
 
         const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-        if (!vapidPublicKey) throw new Error('Brak klucza VAPID!');
+        if (!vapidPublicKey) throw new Error('Brak klucza VAPID w konfiguracji frontendu.');
         
         const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
 
-        // Subskrybujemy urządzenie
         const newSubscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: convertedVapidKey
         });
 
-        // Wysyłamy na backend
-        const res = await fetch(`${API_BASE_URL}/api/friends/subscribe`, {
+        const res = await fetch(`${API_BASE_URL}/api/notifications/subscribe`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          headers: { 
+            'Content-Type': 'application/json', 
+            'Authorization': `Bearer ${token}` 
+          },
           body: JSON.stringify(newSubscription)
         });
 
-        if (!res.ok) throw new Error('Błąd zapisu na serwerze.');
+        if (!res.ok) throw new Error('Błąd zapisu subskrypcji na serwerze.');
 
         setIsSubscribed(true);
         setCurrentSubscription(newSubscription);
@@ -1853,7 +1950,6 @@ export default function Settings({ token, showToast }) {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-300">
-      
       <div className="border-b border-zinc-800/80 pb-4">
         <h2 className="text-2xl font-black text-white">⚙️ Ustawienia</h2>
         <p className="text-zinc-400 text-sm mt-1">Zarządzaj swoim kontem i preferencjami.</p>
@@ -1870,7 +1966,6 @@ export default function Settings({ token, showToast }) {
             </p>
           </div>
           
-          {/* SUWAK (TOGGLE SWITCH) */}
           <div className="shrink-0">
             {!isPushSupported ? (
               <span className="text-xs text-red-400 font-bold bg-red-400/10 px-2 py-1 rounded">Brak wsparcia</span>
@@ -1903,7 +1998,6 @@ export default function Settings({ token, showToast }) {
         <span className="text-2xl mb-2">🚧</span>
         <span className="text-sm font-semibold">Więcej ustawień wkrótce...</span>
       </div>
-
     </div>
   );
 }
@@ -3426,6 +3520,7 @@ app.use('/api/friends', require('./routes/friends'));
 app.use('/api/exercises', require('./routes/exercises'));
 app.use('/api/stats', require('./routes/stats'));
 app.use('/api/templates', templatesRouter);
+app.use('/api/notifications', require('./routes/notifications'));
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
@@ -3741,6 +3836,22 @@ CREATE TABLE IF NOT EXISTS notifications (
     is_read BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ==========================================
+-- TABELA SUBSKRYPCJI WEB PUSH (PWA)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_user_endpoint UNIQUE (user_id, endpoint)
+);
+
+-- Optymalizacja pod szybkie wyszukiwanie urządzeń użytkownika przy wysyłaniu powiadomienia
+CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id);
 
 -- 12. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
 INSERT INTO exercises (name, muscle_group) VALUES
@@ -5342,29 +5453,6 @@ router.patch('/notifications/read', authenticateToken, async (req, res) => {
 });
 
 // =========================================================================
-// 14. USUWANIE SUBSKRYPCJI PUSH (Wyłączenie powiadomień suwakiem)
-// =========================================================================
-router.delete('/unsubscribe', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { endpoint } = req.body;
-
-  if (!endpoint) {
-    return res.status(400).json({ error: "Brak endpointu subskrypcji do usunięcia." });
-  }
-
-  try {
-    await pool.query(
-      "DELETE FROM push_subscriptions WHERE user_id = $1::uuid AND endpoint = $2",
-      [userId, endpoint]
-    );
-    res.json({ message: "Subskrypcja Push usunięta z bazy." });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd usuwania subskrypcji Push", details: error.message });
-  }
-});
-
-
-// =========================================================================
 // 12. USUWANIE ZNAJOMEGO
 // =========================================================================
 router.delete('/:friendId', authenticateToken, async (req, res) => {
@@ -5388,30 +5476,6 @@ router.delete('/:friendId', authenticateToken, async (req, res) => {
   }
 });
 
-// =========================================================================
-// 13. REJESTRACJA SUBSKRYPCJI PUSH (PWA)
-// =========================================================================
-router.post('/subscribe', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const subscription = req.body;
-
-  if (!subscription || !subscription.endpoint || !subscription.keys) {
-    return res.status(400).json({ error: "Brak poprawnych danych subskrypcji." });
-  }
-
-  try {
-    await pool.query(
-      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) 
-       VALUES ($1::uuid, $2, $3, $4) 
-       ON CONFLICT (user_id, endpoint) DO NOTHING`,
-      [userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth]
-    );
-    res.status(201).json({ message: "Subskrypcja Push zapisana poprawnie!" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd zapisu subskrypcji Push", details: error.message });
-  }
-});
-
 module.exports = router;
 </file>
 
@@ -5420,6 +5484,7 @@ module.exports = router;
 import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import Settings from './views/Settings';
+import Landing from './views/Landing';
 
 import LoginView from './views/LoginView'
 import Dashboard from './views/Dashboard'
@@ -5508,21 +5573,33 @@ function AppContent() {
   }
 
   const handleLogout = useCallback(async () => {
-    // 🔴 NOWOŚĆ: Niszczenie subskrypcji Push przed wylogowaniem
+    // 🔴 KLAUZULA CZYSZCZENIA: Usuwamy subskrypcję z bazy i przeglądarki przed wylogowaniem
     try {
       if ('serviceWorker' in navigator && 'PushManager' in window) {
         const registration = await navigator.serviceWorker.ready;
         const subscription = await registration.pushManager.getSubscription();
+        
         if (subscription) {
-          await subscription.unsubscribe(); // Odcina przeglądarkę od serwerów Push
-          console.log("Subskrypcja Push została zniszczona.");
+          // 1. Najpierw usuwamy wpis z bazy przez nasz nowy, dedykowany moduł powiadomień
+          await fetch(`${API_BASE_URL}/api/notifications/unsubscribe`, {
+            method: 'DELETE',
+            headers: { 
+              'Content-Type': 'application/json', 
+              'Authorization': `Bearer ${token}` 
+            },
+            body: JSON.stringify({ endpoint: subscription.endpoint })
+          });
+
+          // 2. Dopiero po sukcesie sieciowym niszczymy subskrypcję lokalnie w urządzeniu
+          await subscription.unsubscribe();
+          console.log("▶ Subskrypcja Web Push została pomyślnie wyrejestrowana globalnie.");
         }
       }
     } catch (e) {
-      console.error("Błąd podczas czyszczenia subskrypcji Push:", e);
+      console.error("⚠️ Ignorowany błąd czyszczenia subskrypcji przy wylogowaniu:", e);
     }
 
-    // Standardowe czyszczenie sesji
+    // Standardowa procedura czyszczenia stanu aplikacji i pamięci lokalnej
     localStorage.removeItem('gp_token');
     localStorage.removeItem('gp_user');
     setToken(null);
@@ -5530,7 +5607,7 @@ function AppContent() {
     setLocalSeriesList([]); 
     setIsMoreMenuOpen(false);
     navigate('/login');
-  }, [navigate, setLocalSeriesList]);
+  }, [navigate, setLocalSeriesList, token]);
 
   const fetchStatsData = useCallback(async () => {
     if (!token) return;
@@ -5902,10 +5979,29 @@ function AppContent() {
 
       <main className="pb-24 md:pb-0">
         <Routes>
+          {/* 1. STRONA GŁÓWNA: Niezalogowany widzi Landing, zalogowany widzi Dashboard */}
+          <Route path="/" element={token ? (
+            <Dashboard 
+              user={user} 
+              weightLogs={weightLogs} 
+              weightInput={weightInput} 
+              setWeightInput={setWeightInput} 
+              handleAddWeight={onAddWeight} 
+              exercises={exercises} 
+              onUpdateWeeklyTarget={onUpdateWeeklyTarget} 
+              progressionData={progressionData} 
+              fetchProgression={fetchProgression} 
+              onDeleteWeight={onDeleteWeightLog} 
+              workoutsHistory={workoutsHistory} 
+              templates={templates} 
+            />
+          ) : <Landing />} />
+
+          {/* 2. AUTORYZACJA: Oba adresy korzystają z komponentu LoginView */}
           <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
+          <Route path="/register" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
           
-          <Route path="/" element={token ? <Dashboard user={user} weightLogs={weightLogs} weightInput={weightInput} setWeightInput={setWeightInput} handleAddWeight={onAddWeight} exercises={exercises} onUpdateWeeklyTarget={onUpdateWeeklyTarget} progressionData={progressionData} fetchProgression={fetchProgression} onDeleteWeight={onDeleteWeightLog} workoutsHistory={workoutsHistory} templates={templates} /> : <Navigate to="/login" />} />
-          
+          {/* 3. ZABLOKOWANE ŚCIEŻKI APLIKACJI */}
           <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} onDeleteExercise={onDeleteCustomExercise} /> : <Navigate to="/login" />} />
           
           <Route path="/new-workout" element={token ? (
@@ -5940,8 +6036,12 @@ function AppContent() {
           ) : <Navigate to="/login" />} />
           
           <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} activityFeed={activityFeed} onToggleReaction={handleToggleReaction} weeklyChallenge={weeklyChallenge} fetchFriendProfile={fetchFriendProfile} selectedFriendProfile={selectedFriendProfile} setSelectedFriendProfile={setSelectedFriendProfile} isProfileLoading={isProfileLoading} onRemoveFriend={onRemoveFriend} /> : <Navigate to="/login" />} />
+          
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
+          
           <Route path="/settings" element={token ? <Settings token={token} showToast={showToast} /> : <Navigate to="/login" />} />
+          
+          {/* 4. FALLBACK: Nieznany adres URL */}
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>
       </main>

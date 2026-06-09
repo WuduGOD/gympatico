@@ -121,6 +121,22 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ==========================================
+-- TABELA SUBSKRYPCJI WEB PUSH (PWA)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_user_endpoint UNIQUE (user_id, endpoint)
+);
+
+-- Optymalizacja pod szybkie wyszukiwanie urządzeń użytkownika przy wysyłaniu powiadomienia
+CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id);
+
 -- 12. SEEDOWANIE GLOBALNEGO ATLASU ĆWICZEŃ
 INSERT INTO exercises (name, muscle_group) VALUES
   -- Klatka piersiowa

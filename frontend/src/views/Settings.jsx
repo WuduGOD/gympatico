@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config/api';
 
-// Dekoder klucza VAPID
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -20,14 +19,12 @@ export default function Settings({ token, showToast }) {
   const [currentSubscription, setCurrentSubscription] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 1. Sprawdzamy stan przy ładowaniu strony
   useEffect(() => {
     const checkSubscriptionState = async () => {
       if ('serviceWorker' in navigator && 'PushManager' in window) {
         setIsPushSupported(true);
         try {
           const registration = await navigator.serviceWorker.ready;
-          // Sprawdzamy, czy to urządzenie ma już aktywną subskrypcję w tle
           const sub = await registration.pushManager.getSubscription();
           if (sub) {
             setIsSubscribed(true);
@@ -43,22 +40,22 @@ export default function Settings({ token, showToast }) {
     checkSubscriptionState();
   }, []);
 
-  // 2. Obsługa Kliknięcia Suwaka
   const handleTogglePush = async () => {
     setIsLoading(true);
     try {
       const registration = await navigator.serviceWorker.ready;
 
-      // PRZYPADEK A: CHCEMY WYŁĄCZYĆ POWIADOMIENIA
+      // WYŁĄCZENIE POWIADOMIENI
       if (isSubscribed && currentSubscription) {
-        // Usuwamy z serwera
-        await fetch(`${API_BASE_URL}/api/friends/unsubscribe`, {
+        await fetch(`${API_BASE_URL}/api/notifications/unsubscribe`, {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          headers: { 
+            'Content-Type': 'application/json', 
+            'Authorization': `Bearer ${token}` 
+          },
           body: JSON.stringify({ endpoint: currentSubscription.endpoint })
         });
         
-        // Odpinamy z przeglądarki
         await currentSubscription.unsubscribe();
         
         setIsSubscribed(false);
@@ -66,32 +63,33 @@ export default function Settings({ token, showToast }) {
         showToast('Powiadomienia zostały wyłączone na tym urządzeniu. 🔕', 'success');
       } 
       
-      // PRZYPADEK B: CHCEMY WŁĄCZYĆ POWIADOMIENIA
+      // WŁĄCZENIE POWIADOMIENI
       else {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-          throw new Error('Musisz odblokować powiadomienia w ustawieniach przeglądarki!');
+          throw new Error('Musisz odblokować powiadomienia v ustawieniach przeglądarki!');
         }
 
         const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-        if (!vapidPublicKey) throw new Error('Brak klucza VAPID!');
+        if (!vapidPublicKey) throw new Error('Brak klucza VAPID w konfiguracji frontendu.');
         
         const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
 
-        // Subskrybujemy urządzenie
         const newSubscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: convertedVapidKey
         });
 
-        // Wysyłamy na backend
-        const res = await fetch(`${API_BASE_URL}/api/friends/subscribe`, {
+        const res = await fetch(`${API_BASE_URL}/api/notifications/subscribe`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          headers: { 
+            'Content-Type': 'application/json', 
+            'Authorization': `Bearer ${token}` 
+          },
           body: JSON.stringify(newSubscription)
         });
 
-        if (!res.ok) throw new Error('Błąd zapisu na serwerze.');
+        if (!res.ok) throw new Error('Błąd zapisu subskrypcji na serwerze.');
 
         setIsSubscribed(true);
         setCurrentSubscription(newSubscription);
@@ -107,7 +105,6 @@ export default function Settings({ token, showToast }) {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-300">
-      
       <div className="border-b border-zinc-800/80 pb-4">
         <h2 className="text-2xl font-black text-white">⚙️ Ustawienia</h2>
         <p className="text-zinc-400 text-sm mt-1">Zarządzaj swoim kontem i preferencjami.</p>
@@ -124,7 +121,6 @@ export default function Settings({ token, showToast }) {
             </p>
           </div>
           
-          {/* SUWAK (TOGGLE SWITCH) */}
           <div className="shrink-0">
             {!isPushSupported ? (
               <span className="text-xs text-red-400 font-bold bg-red-400/10 px-2 py-1 rounded">Brak wsparcia</span>
@@ -157,7 +153,6 @@ export default function Settings({ token, showToast }) {
         <span className="text-2xl mb-2">🚧</span>
         <span className="text-sm font-semibold">Więcej ustawień wkrótce...</span>
       </div>
-
     </div>
   );
 }

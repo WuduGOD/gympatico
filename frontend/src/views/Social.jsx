@@ -27,7 +27,6 @@ const getTimeAgo = (dateStr) => {
 
 export default function Social({
   friendNickInput, setFriendNickInput, onSendFriendRequest,
-  pendingRequests, handleAcceptFriend, handleRejectFriend,
   friends, user, activityFeed, onToggleReaction, 
   fetchFriendProfile, selectedFriendProfile, setSelectedFriendProfile, isProfileLoading,
   weeklyChallenge, onRemoveFriend
@@ -39,13 +38,13 @@ export default function Social({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left pb-16">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left pb-16 animate-in fade-in duration-300">
       
-      {/* LEWA STRONA: WYSZUKIWARKA + OCZEKUJĄCE */}
+      {/* LEWA STRONA: WYSZUKIWARKA */}
       <div className="lg:col-span-1 flex flex-col gap-6">
         <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
           <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2 text-white">Szukaj znajomych 🔍</h2>
-          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangu.</p>
+          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick użytkownika, aby zaprosić go do gangu.</p>
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input 
               type="text" placeholder="np. MarekWorkout" value={friendNickInput} onChange={e => setFriendNickInput(e.target.value)} 
@@ -57,23 +56,15 @@ export default function Social({
           </form>
         </section>
 
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-4 text-white">Oczekujące zaproszenia ✉️</h2>
-          {pendingRequests.length === 0 ? (
-            <p className="text-zinc-500 italic text-sm text-center py-4">Brak nowych zaproszeń.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {pendingRequests.map(req => (
-                <div key={req.friendship_id} className="flex flex-col gap-3 bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800 shadow-sm">
-                  <span className="text-sm text-zinc-400">Zaproszenie od: <strong className="text-white">{req.nick}</strong></span>
-                  <div className="flex gap-2 w-full">
-                    <button onClick={() => handleAcceptFriend(req.friendship_id)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded text-xs transition-all active:scale-95 cursor-pointer">Akceptuj ✓</button>
-                    <button onClick={() => handleRejectFriend(req.friendship_id)} className="flex-1 border border-zinc-700 hover:border-gymDanger text-zinc-400 hover:text-gymDanger font-bold px-3 py-2 rounded text-xs transition-all active:scale-95 cursor-pointer">Odrzuć ✕</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+        {/* INFO WIDGET (Tylko na większych ekranach, żeby wypełnić pustkę po zaproszeniach) */}
+        <section className="hidden lg:block bg-[#161920]/50 border border-zinc-800/40 p-6 rounded-xl text-center shadow-inner">
+          <div className="w-12 h-12 bg-zinc-800 rounded-full flex items-center justify-center text-2xl mx-auto mb-4 border border-zinc-700 shadow-lg">
+            🤝
+          </div>
+          <h3 className="text-white font-bold text-sm mb-2">Siła tkwi w Gangu</h3>
+          <p className="text-xs text-zinc-500 leading-relaxed">
+            Dodawaj znajomych, by śledzić ich aktywność. Wzajemna motywacja, walka o pozycję Króla Tonażu i utrzymywanie płonących streaków to klucz do regularności!
+          </p>
         </section>
       </div>
 
@@ -89,7 +80,7 @@ export default function Social({
             <p className="text-zinc-400 text-xs md:text-sm mt-1">Utrzymuj cel tygodniowy, aby piąć się w górę tabeli!</p>
           </div>
           {friends.length === 0 ? (
-            <p className="text-zinc-500 italic text-center py-8">Brak znajomych w rankingu. Zaproś kogoś!</p>
+            <p className="text-zinc-500 italic text-center py-8 text-sm">Brak znajomych w rankingu. Zaproś kogoś!</p>
           ) : (
             <div className="flex flex-col gap-2.5">
               {friends.map((f, idx) => {

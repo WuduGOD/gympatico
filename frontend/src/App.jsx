@@ -19,6 +19,7 @@ import { API_BASE_URL } from './config/api'
 import StatsView from './views/StatsView'
 
 import NotificationBell from './components/NotificationBell';
+import NotificationsDrawer from './components/NotificationsDrawer';
 
 // Prosty dekoder weryfikujący czas życia JWT
 const getJwtExpiry = (token) => {
@@ -46,6 +47,7 @@ function AppContent() {
   const [loadingData, setLoadingData] = useState(false)
 
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
+  const [isNotificationsDrawerOpen, setIsNotificationsDrawerOpen] = useState(false);
 
   const navigate = useNavigate()
   const location = useLocation()
@@ -91,21 +93,29 @@ function AppContent() {
   }
 
   const handleLogout = useCallback(async () => {
-    // 🔴 NOWOŚĆ: Niszczenie subskrypcji Push przed wylogowaniem
     try {
       if ('serviceWorker' in navigator && 'PushManager' in window) {
         const registration = await navigator.serviceWorker.ready;
         const subscription = await registration.pushManager.getSubscription();
+        
         if (subscription) {
-          await subscription.unsubscribe(); // Odcina przeglądarkę od serwerów Push
-          console.log("Subskrypcja Push została zniszczona.");
+          await fetch(`${API_BASE_URL}/api/notifications/unsubscribe`, {
+            method: 'DELETE',
+            headers: { 
+              'Content-Type': 'application/json', 
+              'Authorization': `Bearer ${token}` 
+            },
+            body: JSON.stringify({ endpoint: subscription.endpoint })
+          });
+
+          await subscription.unsubscribe();
+          console.log("▶ Subskrypcja Web Push została pomyślnie wyrejestrowana globalnie.");
         }
       }
     } catch (e) {
-      console.error("Błąd podczas czyszczenia subskrypcji Push:", e);
+      console.error("⚠️ Ignorowany błąd czyszczenia subskrypcji przy wylogowaniu:", e);
     }
 
-    // Standardowe czyszczenie sesji
     localStorage.removeItem('gp_token');
     localStorage.removeItem('gp_user');
     setToken(null);
@@ -113,7 +123,7 @@ function AppContent() {
     setLocalSeriesList([]); 
     setIsMoreMenuOpen(false);
     navigate('/login');
-  }, [navigate, setLocalSeriesList]);
+  }, [navigate, setLocalSeriesList, token]);
 
   const fetchStatsData = useCallback(async () => {
     if (!token) return;
@@ -179,13 +189,11 @@ function AppContent() {
     }
   }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates]);
 
-  // 🔴 ZABEZPIECZENIE PRZED INFINITE LOOP (wywołanie tylko przy zmianie tokena)
   useEffect(() => {
     fetchAllData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
 
-  // 🔴 SILENT REFRESH: Automatyczne przedłużanie sesji
   useEffect(() => {
     if (!token) return;
 
@@ -313,13 +321,12 @@ function AppContent() {
     }
   };
 
-  // 🔴 NOWOŚĆ: Wrapper usuwania znajomego
   const onRemoveFriend = async (friendId) => {
     try {
       await handleRemoveFriend(friendId);
       showToast('Użytkownik został usunięty z Gangu 💔', 'success');
-      setSelectedFriendProfile(null); // Zamykamy modal profilu
-      await fetchAllData(); // Odświeżamy rankingi i feed
+      setSelectedFriendProfile(null); 
+      await fetchAllData(); 
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -401,9 +408,12 @@ function AppContent() {
             </div>
             
             <div className="flex items-center gap-3 md:gap-4 shrink-0">
+              {/* Przekazanie akcji otwierającej szufladę i danych do zliczenia */}
               <NotificationBell 
                 notifications={notifications} 
+                pendingRequests={pendingRequests}
                 markAsRead={markNotificationsAsRead} 
+                onClick={() => setIsNotificationsDrawerOpen(true)}
               />
               
               <nav className="hidden md:flex items-center gap-2">
@@ -485,7 +495,6 @@ function AppContent() {
 
       <main className="pb-24 md:pb-0">
         <Routes>
-          {/* 1. STRONA GŁÓWNA: Niezalogowany widzi Landing, zalogowany widzi Dashboard */}
           <Route path="/" element={token ? (
             <Dashboard 
               user={user} 
@@ -503,11 +512,9 @@ function AppContent() {
             />
           ) : <Landing />} />
 
-          {/* 2. AUTORYZACJA: Oba adresy korzystają z komponentu LoginView */}
           <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
           <Route path="/register" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
           
-          {/* 3. ZABLOKOWANE ŚCIEŻKI APLIKACJI */}
           <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} onDeleteExercise={onDeleteCustomExercise} /> : <Navigate to="/login" />} />
           
           <Route path="/new-workout" element={token ? (
@@ -541,16 +548,27 @@ function AppContent() {
             />
           ) : <Navigate to="/login" />} />
           
-          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} activityFeed={activityFeed} onToggleReaction={handleToggleReaction} weeklyChallenge={weeklyChallenge} fetchFriendProfile={fetchFriendProfile} selectedFriendProfile={selectedFriendProfile} setSelectedFriendProfile={setSelectedFriendProfile} isProfileLoading={isProfileLoading} onRemoveFriend={onRemoveFriend} /> : <Navigate to="/login" />} />
+          {/* 🔴 ZMODYFIKOWANE: Usunięto oczekujące zaproszenia, akceptacje i odrzucenia - obsługuje je teraz szuflada powiadomień */}
+          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} friends={friends} user={user} activityFeed={activityFeed} onToggleReaction={handleToggleReaction} weeklyChallenge={weeklyChallenge} fetchFriendProfile={fetchFriendProfile} selectedFriendProfile={selectedFriendProfile} setSelectedFriendProfile={setSelectedFriendProfile} isProfileLoading={isProfileLoading} onRemoveFriend={onRemoveFriend} /> : <Navigate to="/login" />} />
           
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
           
           <Route path="/settings" element={token ? <Settings token={token} showToast={showToast} /> : <Navigate to="/login" />} />
           
-          {/* 4. FALLBACK: Nieznany adres URL */}
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>
       </main>
+
+      {/* 🔴 NOWOŚĆ: Wywołanie szuflady powiadomień */}
+      <NotificationsDrawer 
+        isOpen={isNotificationsDrawerOpen}
+        onClose={() => setIsNotificationsDrawerOpen(false)}
+        pendingRequests={pendingRequests}
+        notifications={notifications}
+        onAcceptFriend={onAcceptFriend}
+        onRejectFriend={onRejectFriend}
+        markAsRead={markNotificationsAsRead}
+      />
 
       {toast.message && (
         <div 

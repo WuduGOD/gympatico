@@ -59,6 +59,7 @@ app.use('/api/friends', require('./routes/friends'));
 app.use('/api/exercises', require('./routes/exercises'));
 app.use('/api/stats', require('./routes/stats'));
 app.use('/api/templates', templatesRouter);
+app.use('/api/notifications', require('./routes/notifications'));
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
