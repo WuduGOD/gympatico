@@ -239,6 +239,34 @@ function AppContent() {
     };
   }, [handleLogout]);
 
+  // 🔴 NOWOŚĆ: Nasłuchiwanie na powiadomienia Push w tle (Real-Time Auto Refresh)
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+
+    const handleSWMessage = (event) => {
+      if (event.data && event.data.type === 'PUSH_RECEIVED') {
+        console.log('🔄 Odebrano sygnał Web Push! Ciche odświeżanie danych...');
+        fetchAllData(); 
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleSWMessage);
+    
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+    };
+  }, [fetchAllData]);
+
+  // 🔴 NOWOŚĆ: Ciche odpytywanie (Fallback) co 30 sekund
+  useEffect(() => {
+    if (!token) return;
+    const interval = setInterval(() => {
+      fetchFriendsData(); 
+    }, 30000); 
+    
+    return () => clearInterval(interval);
+  }, [token, fetchFriendsData]);
+
   const onUpdateWeeklyTarget = async (newTarget) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/auth/weekly-target`, {
@@ -305,12 +333,11 @@ function AppContent() {
     try {
       await handleAcceptFriend(friendshipId);
       showToast('Zaproszenie zaakceptowane! 🤝', 'success');
-      return true; // 🔴 DODANO: Zwracamy informację o sukcesie
+      fetchAllData(); // 🔴 BRAK AWAIT! Pobieranie rusza w tle
+      return true; 
     } catch (err) {
       showToast(err.message, 'error');
-      return false; // 🔴 DODANO: Zwracamy informację o błędzie
-    } finally {
-      await fetchAllData();
+      return false; 
     }
   };
 
@@ -318,12 +345,11 @@ function AppContent() {
     try {
       await handleRejectFriend(friendshipId);
       showToast('Zaproszenie zostało odrzucone.', 'success');
-      return true; // 🔴 DODANO
+      fetchAllData(); // 🔴 BRAK AWAIT!
+      return true; 
     } catch (err) {
       showToast(err.message, 'error');
-      return false; // 🔴 DODANO
-    } finally {
-      await fetchAllData();
+      return false; 
     }
   };
 
@@ -414,7 +440,6 @@ function AppContent() {
             </div>
             
             <div className="flex items-center gap-3 md:gap-4 shrink-0">
-              {/* Przekazanie akcji otwierającej szufladę i danych do zliczenia */}
               <NotificationBell 
                 notifications={notifications} 
                 pendingRequests={pendingRequests}
@@ -554,7 +579,6 @@ function AppContent() {
             />
           ) : <Navigate to="/login" />} />
           
-          {/* 🔴 ZMODYFIKOWANE: Usunięto oczekujące zaproszenia, akceptacje i odrzucenia - obsługuje je teraz szuflada powiadomień */}
           <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} friends={friends} user={user} activityFeed={activityFeed} onToggleReaction={handleToggleReaction} weeklyChallenge={weeklyChallenge} fetchFriendProfile={fetchFriendProfile} selectedFriendProfile={selectedFriendProfile} setSelectedFriendProfile={setSelectedFriendProfile} isProfileLoading={isProfileLoading} onRemoveFriend={onRemoveFriend} /> : <Navigate to="/login" />} />
           
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
@@ -565,7 +589,6 @@ function AppContent() {
         </Routes>
       </main>
 
-      {/* 🔴 NOWOŚĆ: Wywołanie szuflady powiadomień */}
       <NotificationsDrawer 
         isOpen={isNotificationsDrawerOpen}
         onClose={() => setIsNotificationsDrawerOpen(false)}
@@ -578,7 +601,7 @@ function AppContent() {
 
       {toast.message && (
         <div 
-          className={`fixed bottom-24 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-xl text-white font-bold text-xs md:text-sm shadow-2xl z-[1000] tracking-wide animate-in fade-in slide-in-from-bottom-4 duration-200
+          className={`fixed bottom-24 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-xl text-white font-bold text-xs md:text-sm shadow-2xl z-[99999] tracking-wide animate-in fade-in slide-in-from-bottom-4 duration-200
             ${toast.type === 'error' ? 'bg-gymRed border border-red-600' : 'bg-emerald-500 border border-emerald-600'}`}
         >
           {toast.message}

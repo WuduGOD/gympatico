@@ -1,4 +1,4 @@
-// frontend/public/sw.js
+// frontend/public/gym-push.js (lub sw.js)
 
 // =========================================================================
 // 1. ODBIÓR POWIADOMIENIA (Zdarzenie 'push')
@@ -14,24 +14,36 @@ self.addEventListener('push', function(event) {
     const options = {
       body: data.body,
       // 'icon' to główne logo, które pojawia się obok tekstu powiadomienia
-      icon: data.icon || '/vite.svg', 
-      // 'badge' to malutka, zazwyczaj biała na przezroczystym tle ikonka (tylko na Androida), 
-      // która pojawia się na górnym pasku statusu telefonu
-      badge: data.badge || '/vite.svg', 
+      icon: data.icon || '/icon-192x192.png', 
+      // 'badge' to malutka, zazwyczaj biała na przezroczystym tle ikonka (tylko na Androida)
+      badge: data.badge || '/badge-72x72.png', 
       // Wibracja: [wibruj, pauza, wibruj] (w milisekundach)
       vibrate: [200, 100, 200], 
       // Przekazujemy ukryte dane (np. URL do otwarcia po kliknięciu)
       data: {
         url: data.url || '/'
       },
-      // Wymusza pokazanie powiadomienia na ekranie telefonu, a nie tylko ciche doręczenie
+      // Wymusza pokazanie powiadomienia na ekranie telefonu
       requireInteraction: false
     };
 
-    // Zmuszamy Service Workera, aby poczekał na wyświetlenie powiadomienia systemu operacyjnego
-    event.waitUntil(
-      self.registration.showNotification(data.title, options)
-    );
+    // AKCJA 1: Wyświetlenie fizycznego powiadomienia przez system
+    const showNotificationPromise = self.registration.showNotification(data.title, options);
+
+    // AKCJA 2: Sygnał do aplikacji React (Auto-odświeżanie w czasie rzeczywistym)
+    const notifyClientsPromise = clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then(function(windowClients) {
+        windowClients.forEach(function(client) {
+          // Jeśli aplikacja jest w miarę aktywna (nie została całkowicie "zabita" przez telefon)
+          if (client.visibilityState === 'visible' || client.focused) {
+            client.postMessage({ type: 'PUSH_RECEIVED' });
+          }
+        });
+      });
+
+    // Zmuszamy Service Workera, aby poczekał na wykonanie OBU operacji naraz
+    event.waitUntil(Promise.all([showNotificationPromise, notifyClientsPromise]));
+    
   } catch (error) {
     console.error('Błąd parsowania danych Push:', error);
   }
