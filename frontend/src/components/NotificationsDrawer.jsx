@@ -14,7 +14,6 @@ export default function NotificationsDrawer({
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
-      // Gdy użytkownik otwiera panel, od razu oznaczamy zwykłe powiadomienia jako przeczytane
       if (markAsRead) markAsRead();
     } else {
       document.body.style.overflow = 'unset';
@@ -62,21 +61,24 @@ export default function NotificationsDrawer({
               
               <div className="space-y-3">
                 {pendingRequests.map(req => (
-                  <div key={req.id} className="bg-[#161920] border border-zinc-700/80 rounded-xl p-4 shadow-lg">
+                  // 🔴 POPRAWKA: Używamy friendship_id jako klucza
+                  <div key={req.friendship_id} className="bg-[#161920] border border-zinc-700/80 rounded-xl p-4 shadow-lg">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-lg font-bold text-white border border-zinc-700">
-                        {req.sender_nick.charAt(0).toUpperCase()}
+                        {/* 🔴 POPRAWKA: Bezpieczne wyciąganie litery z req.nick */}
+                        {req.nick ? req.nick.charAt(0).toUpperCase() : '👤'}
                       </div>
                       <div>
-                        <div className="text-sm font-bold text-white">{req.sender_nick}</div>
+                        <div className="text-sm font-bold text-white">{req.nick}</div>
                         <div className="text-[11px] text-zinc-400">Chce dołączyć do Twojego Gangu</div>
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => onAcceptFriend(req.id)} className="flex-1 py-2 bg-gymRed hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.2)]">
+                      {/* 🔴 POPRAWKA: Przekazujemy friendship_id do akcji */}
+                      <button onClick={() => onAcceptFriend(req.friendship_id)} className="flex-1 py-2 bg-gymRed hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.2)]">
                         Akceptuj
                       </button>
-                      <button onClick={() => onRejectFriend(req.id)} className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-lg transition-colors cursor-pointer">
+                      <button onClick={() => onRejectFriend(req.friendship_id)} className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-lg transition-colors cursor-pointer">
                         Odrzuć
                       </button>
                     </div>
@@ -103,7 +105,7 @@ export default function NotificationsDrawer({
                     </div>
                     <div>
                       <p className="text-sm text-zinc-300 leading-snug">
-                        <span className="font-bold text-white">{notif.sender_nick}</span> {notif.message}
+                        <span className="font-bold text-white">{notif.sender_nick || 'Ktoś'}</span> {notif.message}
                       </p>
                       <span className="text-[10px] text-zinc-500 mt-1.5 block font-medium">
                         {new Date(notif.created_at).toLocaleDateString()}
