@@ -10,8 +10,10 @@ export default function NotificationsDrawer({
   onRejectFriend,
   markAsRead
 }) {
-  // 🔴 NOWOŚĆ: Stan przechowujący ID obecnie przetwarzanego zaproszenia
   const [loadingId, setLoadingId] = useState(null);
+  
+  // 🔴 STAN OPTYMISTYCZNY: Przechowuje ID zaproszeń, które już kliknęliśmy z sukcesem
+  const [handledRequests, setHandledRequests] = useState(new Set());
 
   useEffect(() => {
     if (isOpen) {
@@ -23,11 +25,23 @@ export default function NotificationsDrawer({
     return () => { document.body.style.overflow = 'unset'; };
   }, [isOpen, markAsRead]);
 
-  // Wrapper do asynchronicznych akcji przycisków
+  // 🔴 MAGICZNY FILTR: Wyświetla tylko te zaproszenia, których jeszcze nie kliknęliśmy
+  const visibleRequests = pendingRequests?.filter(req => !handledRequests.has(req.friendship_id)) || [];
+
   const handleAction = async (actionFn, id) => {
-    setLoadingId(id);
-    await actionFn(id);
-    setLoadingId(null);
+    try {
+      setLoadingId(id);
+      const success = await actionFn(id); // Czekamy na odpowiedź z backendu
+      
+      // Jeśli backend zaakceptował, od razu "wyparowujemy" zaproszenie z ekranu!
+      if (success) {
+        setHandledRequests(prev => new Set(prev).add(id));
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoadingId(null);
+    }
   };
 
   if (!isOpen) return null;
@@ -56,7 +70,8 @@ export default function NotificationsDrawer({
 
         <div className="flex-1 overflow-y-auto p-4 space-y-8">
 
-          {pendingRequests && pendingRequests.length > 0 && (
+          {/* 🔴 MAPUJEMY visibleRequests ZAMIAST pendingRequests */}
+          {visibleRequests.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-xs font-bold text-gymRed uppercase tracking-wider pl-1 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-gymRed animate-pulse" />
@@ -64,8 +79,8 @@ export default function NotificationsDrawer({
               </h3>
               
               <div className="space-y-3">
-                {pendingRequests.map(req => (
-                  <div key={req.friendship_id} className="bg-[#161920] border border-zinc-700/80 rounded-xl p-4 shadow-lg">
+                {visibleRequests.map(req => (
+                  <div key={req.friendship_id} className="bg-[#161920] border border-zinc-700/80 rounded-xl p-4 shadow-lg animate-in fade-in zoom-in-95 duration-200">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-lg font-bold text-white border border-zinc-700">
                         {req.nick ? req.nick.charAt(0).toUpperCase() : '👤'}

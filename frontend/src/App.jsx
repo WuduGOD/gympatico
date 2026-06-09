@@ -305,10 +305,12 @@ function AppContent() {
     try {
       await handleAcceptFriend(friendshipId);
       showToast('Zaproszenie zaakceptowane! 🤝', 'success');
+      return true; // 🔴 DODANO: Zwracamy informację o sukcesie
     } catch (err) {
       showToast(err.message, 'error');
+      return false; // 🔴 DODANO: Zwracamy informację o błędzie
     } finally {
-      await fetchAllData(); // 🔴 WYMUSZONE ODŚWIEŻENIE: zawsze czyści widok ze starych danych
+      await fetchAllData();
     }
   };
 
@@ -316,10 +318,12 @@ function AppContent() {
     try {
       await handleRejectFriend(friendshipId);
       showToast('Zaproszenie zostało odrzucone.', 'success');
+      return true; // 🔴 DODANO
     } catch (err) {
       showToast(err.message, 'error');
+      return false; // 🔴 DODANO
     } finally {
-      await fetchAllData(); 
+      await fetchAllData();
     }
   };
 
