@@ -10,7 +10,8 @@ export default function NotificationsDrawer({
   onRejectFriend,
   markAsRead
 }) {
-  // Stan przechowujący ID zaproszeń, z którymi weszliśmy w interakcję
+  // 🔴 Przywracamy stan ładowania, żeby chronić request przed "ubiciem" przez telefon
+  const [loadingId, setLoadingId] = useState(null);
   const [handledRequests, setHandledRequests] = useState(new Set());
 
   useEffect(() => {
@@ -23,17 +24,22 @@ export default function NotificationsDrawer({
     return () => { document.body.style.overflow = 'unset'; };
   }, [isOpen, markAsRead]);
 
-  // Wyświetlamy tylko te zaproszenia, których jeszcze nie kliknęliśmy
   const visibleRequests = pendingRequests?.filter(req => !handledRequests.has(req.friendship_id)) || [];
 
-  // 🔴 PRAWDZIWE OPTYMISTYCZNE UI
-  const handleAction = (actionFn, id) => {
-    // 1. NATYCHMIAST (0 ms opóźnienia) ukrywamy zaproszenie z ekranu 
-    setHandledRequests(prev => new Set(prev).add(id));
-
-    // 2. Po cichu, w tle wysyłamy żądanie do backendu. 
-    // Użytkownik już poszedł dalej i nie musi patrzeć na żaden spinner!
-    actionFn(id).catch(err => console.error("Błąd akcji w tle:", err));
+  // ZŁOTY ŚRODEK UX: Spinner blokuje UI tylko na 0.5s (czas zapisu), a odświeżanie idzie w tło
+  const handleAction = async (actionFn, id) => {
+    try {
+      setLoadingId(id);
+      const success = await actionFn(id); // Czeka TYLKO na potwierdzenie z bazy
+      
+      if (success) {
+        setHandledRequests(prev => new Set(prev).add(id)); // Ukrywa zaproszenie
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoadingId(null);
+    }
   };
 
   if (!isOpen) return null;
@@ -84,15 +90,17 @@ export default function NotificationsDrawer({
                     <div className="flex gap-2">
                       <button 
                         onClick={() => handleAction(onAcceptFriend, req.friendship_id)} 
-                        className="flex-1 py-2 bg-gymRed hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-all cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.2)] active:scale-95 flex items-center justify-center h-8"
+                        disabled={loadingId === req.friendship_id}
+                        className="flex-1 py-2 bg-gymRed hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-all cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.2)] active:scale-95 flex items-center justify-center h-8 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        Akceptuj
+                        {loadingId === req.friendship_id ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Akceptuj'}
                       </button>
                       <button 
                         onClick={() => handleAction(onRejectFriend, req.friendship_id)} 
-                        className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-lg transition-all cursor-pointer active:scale-95 flex items-center justify-center h-8"
+                        disabled={loadingId === req.friendship_id}
+                        className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-lg transition-all cursor-pointer active:scale-95 flex items-center justify-center h-8 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        Odrzuć
+                        {loadingId === req.friendship_id ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Odrzuć'}
                       </button>
                     </div>
                   </div>

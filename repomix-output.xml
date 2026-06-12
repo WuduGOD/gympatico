@@ -82,6 +82,7 @@ frontend/src/assets/react.svg
 frontend/src/assets/vite.svg
 frontend/src/components/FriendProfileModal.jsx
 frontend/src/components/NotificationBell.jsx
+frontend/src/components/NotificationsDrawer.jsx
 frontend/src/components/WeightChart.jsx
 frontend/src/components/WorkoutCalendar.jsx
 frontend/src/config/api.js
@@ -146,72 +147,6 @@ const authenticateToken = (req, res, next) => {
 module.exports = authenticateToken;
 </file>
 
-<file path="backend/routes/notifications.js">
-// backend/routes/notifications.js
-const express = require('express');
-const router = express.Router();
-const pool = require('../config/db');
-const authenticateToken = require('../middleware/auth');
-const webpush = require('web-push');
-
-// Konfiguracja VAPID
-if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:kontakt@gympatico.pl',
-    process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
-  );
-}
-
-// =========================================================================
-// 1. REJESTRACJA SUBSKRYPCJI PUSH (POST /api/notifications/subscribe)
-// =========================================================================
-router.post('/subscribe', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const subscription = req.body;
-
-  if (!subscription || !subscription.endpoint || !subscription.keys) {
-    return res.status(400).json({ error: "Brak poprawnych danych subskrypcji." });
-  }
-
-  try {
-    await pool.query(
-      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) 
-       VALUES ($1::uuid, $2, $3, $4) 
-       ON CONFLICT (user_id, endpoint) DO NOTHING`,
-      [userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth]
-    );
-    res.status(201).json({ message: "Subskrypcja Push zapisana poprawnie! 🔔" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd zapisu subskrypcji Push", details: error.message });
-  }
-});
-
-// =========================================================================
-// 2. USUWANIE SUBSKRYPCJI PUSH (DELETE /api/notifications/unsubscribe)
-// =========================================================================
-router.delete('/unsubscribe', authenticateToken, async (req, res) => {
-  const userId = req.user.userId;
-  const { endpoint } = req.body;
-
-  if (!endpoint) {
-    return res.status(400).json({ error: "Brak endpointu subskrypcji do usunięcia." });
-  }
-
-  try {
-    await pool.query(
-      "DELETE FROM push_subscriptions WHERE user_id = $1::uuid AND endpoint = $2",
-      [userId, endpoint]
-    );
-    res.json({ message: "Subskrypcja Push została wyrejestrowana. 🔕" });
-  } catch (error) {
-    res.status(500).json({ error: "Błąd usuwania subskrypcji Push", details: error.message });
-  }
-});
-
-module.exports = router;
-</file>
-
 <file path="backend/schema.sql">
 -- Użyj pliku init.sql w katalogu głównym repozytorium (CI i lokalna baza testowa).
 -- Ten plik pozostaje tylko jako wskaźnik dla starszych skryptów.
@@ -266,75 +201,6 @@ export default defineConfig([
 
 <file path="frontend/public/favicon.svg">
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="46" fill="none" viewBox="0 0 48 46"><path fill="#863bff" d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" style="fill:#863bff;fill:color(display-p3 .5252 .23 1);fill-opacity:1"/><mask id="a" width="48" height="46" x="0" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M25.842 44.938c-.664.844-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.183c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.498 0-3.579-1.842-3.579H1.133c-.92 0-1.456-1.04-.92-1.787L9.91.473c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.578 1.842 3.578h11.377c.943 0 1.473 1.088.89 1.832L25.843 44.94z" style="fill:#000;fill-opacity:1"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#ede6ff" rx="5.508" ry="14.704" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -4.47 31.516)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#ede6ff" rx="10.399" ry="29.851" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -39.328 7.883)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#7e14ff" rx="5.508" ry="30.487" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -25.913 -14.639)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -32.644 -3.334)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -34.34 30.47)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#ede6ff" rx="14.072" ry="22.078" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="rotate(93.35 24.506 48.493)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx=".387" cy="8.972" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(39.51 .387 8.972)"/></g><g filter="url(#k)"><ellipse cx="47.523" cy="-6.092" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 47.523 -6.092)"/></g><g filter="url(#l)"><ellipse cx="41.412" cy="6.333" fill="#47bfff" rx="5.971" ry="9.665" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 41.412 6.333)"/></g><g filter="url(#m)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#n)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#o)"><ellipse cx="35.651" cy="29.907" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 35.651 29.907)"/></g><g filter="url(#p)"><ellipse cx="38.418" cy="32.4" fill="#47bfff" rx="5.971" ry="15.297" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 38.418 32.4)"/></g></g><defs><filter id="b" width="60.045" height="41.654" x="-19.77" y="16.149" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-54.613" y="-7.533" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-49.64" y="2.03" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-45.045" y="20.029" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-43.513" y="21.178" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="15.756" y="-17.901" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-27.636" y="-22.853" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="20.116" y="-38.415" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="24.641" y="-11.323" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="8.244" y="-2.416" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="18.713" y="10.588" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter></defs></svg>
-</file>
-
-<file path="frontend/public/gym-push.js">
-// frontend/public/sw.js
-
-// =========================================================================
-// 1. ODBIÓR POWIADOMIENIA (Zdarzenie 'push')
-// =========================================================================
-self.addEventListener('push', function(event) {
-  // Jeśli z backendu nie przyszły żadne dane, przerywamy
-  if (!event.data) return;
-
-  try {
-    const data = event.data.json();
-    
-    // Opcje konfiguracyjne powiadomienia (UX)
-    const options = {
-      body: data.body,
-      // 'icon' to główne logo, które pojawia się obok tekstu powiadomienia
-      icon: data.icon || '/vite.svg', 
-      // 'badge' to malutka, zazwyczaj biała na przezroczystym tle ikonka (tylko na Androida), 
-      // która pojawia się na górnym pasku statusu telefonu
-      badge: data.badge || '/vite.svg', 
-      // Wibracja: [wibruj, pauza, wibruj] (w milisekundach)
-      vibrate: [200, 100, 200], 
-      // Przekazujemy ukryte dane (np. URL do otwarcia po kliknięciu)
-      data: {
-        url: data.url || '/'
-      },
-      // Wymusza pokazanie powiadomienia na ekranie telefonu, a nie tylko ciche doręczenie
-      requireInteraction: false
-    };
-
-    // Zmuszamy Service Workera, aby poczekał na wyświetlenie powiadomienia systemu operacyjnego
-    event.waitUntil(
-      self.registration.showNotification(data.title, options)
-    );
-  } catch (error) {
-    console.error('Błąd parsowania danych Push:', error);
-  }
-});
-
-// =========================================================================
-// 2. REAKCJA NA KLIKNIĘCIE (Zdarzenie 'notificationclick')
-// =========================================================================
-self.addEventListener('notificationclick', function(event) {
-  // Zamykamy powiadomienie (żeby nie wisiało na pasku zadań telefonu/systemu)
-  event.notification.close();
-
-  const targetUrl = event.notification.data.url;
-
-  // Szukamy, czy karta z aplikacją GymPatico jest już otwarta w tle
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(windowClients) {
-      // Jeśli użytkownik ma już otwartą apkę, po prostu ją "wyciągamy" na wierzch i przekierowujemy
-      for (let i = 0; i < windowClients.length; i++) {
-        const client = windowClients[i];
-        if (client.url.includes(targetUrl) && 'focus' in client) {
-          return client.focus();
-        }
-      }
-      
-      // Jeśli apka była całkowicie zamknięta, otwieramy nowe okno na zadanym URL (np. /social)
-      if (clients.openWindow) {
-        return clients.openWindow(targetUrl);
-      }
-    })
-  );
-});
 </file>
 
 <file path="frontend/public/icons.svg">
@@ -405,107 +271,6 @@ body {
 
 <file path="frontend/src/assets/vite.svg">
 <svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
-</file>
-
-<file path="frontend/src/components/NotificationBell.jsx">
-// frontend/src/components/NotificationBell.jsx
-import React, { useState, useRef, useEffect } from 'react';
-
-const getTimeAgo = (dateStr) => {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'teraz';
-  if (mins < 60) return `${mins} min`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} h`;
-  return `${Math.floor(hours / 24)} d`;
-}
-
-export default function NotificationBell({ notifications = [], markAsRead }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
-
-  const unreadCount = notifications.filter(n => !n.is_read).length;
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleToggle = () => {
-    setIsOpen(!isOpen);
-    if (!isOpen && unreadCount > 0) {
-      markAsRead(); // Oznaczamy jako przeczytane od razu po otwarciu
-    }
-  };
-
-  return (
-    <div className="relative" ref={dropdownRef}>
-      {/* IKONA DZWONKA */}
-      <button 
-        onClick={handleToggle}
-        className="w-10 h-10 rounded-full bg-gymCardSecondary/60 border border-zinc-800/60 flex items-center justify-center text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer relative"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6" />
-          <path d="M9 17v1a3 3 0 0 0 6 0v-1" />
-        </svg>
-        
-        {/* CZERWONA KROPKA / LICZNIK */}
-        {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-gymRed text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full border-2 border-[#15181f] shadow-sm animate-in zoom-in">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
-      </button>
-
-      {/* DROPDOWN POWIADOMIEŃ */}
-      {isOpen && (
-        <div className="absolute top-12 right-0 w-80 bg-[#1a1f27] border border-zinc-800/80 rounded-xl shadow-2xl z-50 overflow-hidden animate-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/60 bg-[#222833]/40">
-            <h3 className="font-bold text-white text-sm">Powiadomienia 🔔</h3>
-            <span className="text-[10px] text-zinc-500 font-bold uppercase">Najnowsze</span>
-          </div>
-          
-          <div className="max-h-[350px] overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="p-6 text-center text-zinc-500 text-xs italic">
-                Brak nowych powiadomień.
-              </div>
-            ) : (
-              <div className="flex flex-col">
-                {notifications.map((n) => (
-                  <div 
-                    key={n.id} 
-                    className={`flex items-start gap-3 p-3 border-b border-zinc-800/40 transition-colors ${!n.is_read ? 'bg-gymRed/5' : 'hover:bg-zinc-800/30'}`}
-                  >
-                    <div className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-300 flex items-center justify-center font-bold text-xs shrink-0 border border-zinc-700">
-                      {n.sender_nick ? n.sender_nick.charAt(0).toUpperCase() : '🤖'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-zinc-300 leading-tight">
-                        <strong className="text-white">{n.sender_nick}</strong> {n.message}
-                      </p>
-                      <span className="text-[9px] text-zinc-500 font-mono mt-1 block">
-                        {getTimeAgo(n.created_at)}
-                      </span>
-                    </div>
-                    {!n.is_read && <div className="w-2 h-2 rounded-full bg-gymRed shrink-0 mt-1 shadow-[0_0_5px_rgba(239,68,68,0.5)]" />}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 </file>
 
 <file path="frontend/src/components/WeightChart.jsx">
@@ -1048,6 +813,72 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 module.exports = router;
 </file>
 
+<file path="backend/routes/notifications.js">
+// backend/routes/notifications.js
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const authenticateToken = require('../middleware/auth');
+const webpush = require('web-push');
+
+// Konfiguracja VAPID
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:kontakt@gympatico.pl',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+}
+
+// =========================================================================
+// 1. REJESTRACJA SUBSKRYPCJI PUSH (POST /api/notifications/subscribe)
+// =========================================================================
+router.post('/subscribe', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const subscription = req.body;
+
+  if (!subscription || !subscription.endpoint || !subscription.keys) {
+    return res.status(400).json({ error: "Brak poprawnych danych subskrypcji." });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) 
+       VALUES ($1::uuid, $2, $3, $4) 
+       ON CONFLICT (user_id, endpoint) DO NOTHING`,
+      [userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth]
+    );
+    res.status(201).json({ message: "Subskrypcja Push zapisana poprawnie! 🔔" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd zapisu subskrypcji Push", details: error.message });
+  }
+});
+
+// =========================================================================
+// 2. USUWANIE SUBSKRYPCJI PUSH (DELETE /api/notifications/unsubscribe)
+// =========================================================================
+router.delete('/unsubscribe', authenticateToken, async (req, res) => {
+  const userId = req.user.userId;
+  const { endpoint } = req.body;
+
+  if (!endpoint) {
+    return res.status(400).json({ error: "Brak endpointu subskrypcji do usunięcia." });
+  }
+
+  try {
+    await pool.query(
+      "DELETE FROM push_subscriptions WHERE user_id = $1::uuid AND endpoint = $2",
+      [userId, endpoint]
+    );
+    res.json({ message: "Subskrypcja Push została wyrejestrowana. 🔕" });
+  } catch (error) {
+    res.status(500).json({ error: "Błąd usuwania subskrypcji Push", details: error.message });
+  }
+});
+
+module.exports = router;
+</file>
+
 <file path="backend/routes/stats.js">
 // backend/routes/stats.js
 const express = require('express');
@@ -1247,6 +1078,87 @@ dist-ssr
 /playwright/.auth/
 </file>
 
+<file path="frontend/public/gym-push.js">
+// frontend/public/gym-push.js (lub sw.js)
+
+// =========================================================================
+// 1. ODBIÓR POWIADOMIENIA (Zdarzenie 'push')
+// =========================================================================
+self.addEventListener('push', function(event) {
+  // Jeśli z backendu nie przyszły żadne dane, przerywamy
+  if (!event.data) return;
+
+  try {
+    const data = event.data.json();
+    
+    // Opcje konfiguracyjne powiadomienia (UX)
+    const options = {
+      body: data.body,
+      // 'icon' to główne logo, które pojawia się obok tekstu powiadomienia
+      icon: data.icon || '/icon-192x192.png', 
+      // 'badge' to malutka, zazwyczaj biała na przezroczystym tle ikonka (tylko na Androida)
+      badge: data.badge || '/badge-72x72.png', 
+      // Wibracja: [wibruj, pauza, wibruj] (w milisekundach)
+      vibrate: [200, 100, 200], 
+      // Przekazujemy ukryte dane (np. URL do otwarcia po kliknięciu)
+      data: {
+        url: data.url || '/'
+      },
+      // Wymusza pokazanie powiadomienia na ekranie telefonu
+      requireInteraction: false
+    };
+
+    // AKCJA 1: Wyświetlenie fizycznego powiadomienia przez system
+    const showNotificationPromise = self.registration.showNotification(data.title, options);
+
+    // AKCJA 2: Sygnał do aplikacji React (Auto-odświeżanie w czasie rzeczywistym)
+    const notifyClientsPromise = clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then(function(windowClients) {
+        windowClients.forEach(function(client) {
+          // Jeśli aplikacja jest w miarę aktywna (nie została całkowicie "zabita" przez telefon)
+          if (client.visibilityState === 'visible' || client.focused) {
+            client.postMessage({ type: 'PUSH_RECEIVED' });
+          }
+        });
+      });
+
+    // Zmuszamy Service Workera, aby poczekał na wykonanie OBU operacji naraz
+    event.waitUntil(Promise.all([showNotificationPromise, notifyClientsPromise]));
+    
+  } catch (error) {
+    console.error('Błąd parsowania danych Push:', error);
+  }
+});
+
+// =========================================================================
+// 2. REAKCJA NA KLIKNIĘCIE (Zdarzenie 'notificationclick')
+// =========================================================================
+self.addEventListener('notificationclick', function(event) {
+  // Zamykamy powiadomienie (żeby nie wisiało na pasku zadań telefonu/systemu)
+  event.notification.close();
+
+  const targetUrl = event.notification.data.url;
+
+  // Szukamy, czy karta z aplikacją GymPatico jest już otwarta w tle
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(windowClients) {
+      // Jeśli użytkownik ma już otwartą apkę, po prostu ją "wyciągamy" na wierzch i przekierowujemy
+      for (let i = 0; i < windowClients.length; i++) {
+        const client = windowClients[i];
+        if (client.url.includes(targetUrl) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      
+      // Jeśli apka była całkowicie zamknięta, otwieramy nowe okno na zadanym URL (np. /social)
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
+</file>
+
 <file path="frontend/src/components/FriendProfileModal.jsx">
 // frontend/src/components/FriendProfileModal.jsx
 import React from 'react';
@@ -1353,6 +1265,35 @@ export default function FriendProfileModal({ profile, onClose, myNick, onRemoveF
         </div>
       </div>
     </div>
+  );
+}
+</file>
+
+<file path="frontend/src/components/NotificationBell.jsx">
+// frontend/src/components/NotificationBell.jsx
+import React from 'react';
+
+export default function NotificationBell({ notifications = [], pendingRequests = [], onClick }) {
+  // Zliczamy nieprzeczytane powiadomienia + oczekujące zaproszenia z obu źródeł
+  const unreadCount = notifications.filter(n => !n.is_read).length + (pendingRequests?.length || 0);
+
+  return (
+    <button 
+      onClick={onClick}
+      className="w-10 h-10 rounded-full bg-gymCardSecondary/60 border border-zinc-800/60 flex items-center justify-center text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer relative shrink-0"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6" />
+        <path d="M9 17v1a3 3 0 0 0 6 0v-1" />
+      </svg>
+      
+      {/* CZERWONA KROPKA / LICZNIK */}
+      {unreadCount > 0 && (
+        <span className="absolute -top-1 -right-1 bg-gymRed text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full border-2 border-[#15181f] shadow-sm animate-in zoom-in">
+          {unreadCount > 9 ? '9+' : unreadCount}
+        </span>
+      )}
+    </button>
   );
 }
 </file>
@@ -1842,6 +1783,100 @@ export default function LoginView({ onLoginSuccess }) {
 }
 </file>
 
+<file path="backend/config/db.js">
+const { Pool } = require('pg');
+require('dotenv').config();
+
+// Budujemy konfigurację puli w zależności od obecności DATABASE_URL
+const useSsl =
+  process.env.DATABASE_URL &&
+  !/localhost|127\.0\.0\.1/i.test(process.env.DATABASE_URL);
+
+const poolConfig = process.env.DATABASE_URL
+  ? {
+      connectionString: process.env.DATABASE_URL,
+      ...(useSsl
+        ? { ssl: { rejectUnauthorized: false } }
+        : {}),
+    }
+  : {
+      // DEWELOPMENT: Fallback na lokalny kontener Docker
+      user: process.env.DB_USER || 'gymadmin',
+      host: process.env.DB_HOST || 'localhost',
+      database: process.env.DB_NAME || 'gympatico_dev',
+      password: process.env.DB_PASSWORD || '',
+      port: parseInt(process.env.DB_PORT || '5433', 10),
+    };
+
+const pool = new Pool(poolConfig);
+
+module.exports = pool;
+</file>
+
+<file path="frontend/index.html">
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, interactive-widget=resizes-content, viewport-fit=cover" />
+    
+    <title>GymPatico</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+</file>
+
+<file path="frontend/package.json">
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-router-dom": "^7.15.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.9.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "autoprefixer": "^10.5.0",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.0",
+    "vite": "^8.0.12",
+    "vite-plugin-pwa": "^1.3.0"
+  }
+}
+</file>
+
 <file path="frontend/src/views/Settings.jsx">
 // frontend/src/views/Settings.jsx
 import { useState, useEffect } from 'react';
@@ -2000,100 +2035,6 @@ export default function Settings({ token, showToast }) {
       </div>
     </div>
   );
-}
-</file>
-
-<file path="backend/config/db.js">
-const { Pool } = require('pg');
-require('dotenv').config();
-
-// Budujemy konfigurację puli w zależności od obecności DATABASE_URL
-const useSsl =
-  process.env.DATABASE_URL &&
-  !/localhost|127\.0\.0\.1/i.test(process.env.DATABASE_URL);
-
-const poolConfig = process.env.DATABASE_URL
-  ? {
-      connectionString: process.env.DATABASE_URL,
-      ...(useSsl
-        ? { ssl: { rejectUnauthorized: false } }
-        : {}),
-    }
-  : {
-      // DEWELOPMENT: Fallback na lokalny kontener Docker
-      user: process.env.DB_USER || 'gymadmin',
-      host: process.env.DB_HOST || 'localhost',
-      database: process.env.DB_NAME || 'gympatico_dev',
-      password: process.env.DB_PASSWORD || '',
-      port: parseInt(process.env.DB_PORT || '5433', 10),
-    };
-
-const pool = new Pool(poolConfig);
-
-module.exports = pool;
-</file>
-
-<file path="frontend/index.html">
-<!doctype html>
-<html lang="pl">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, interactive-widget=resizes-content, viewport-fit=cover" />
-    
-    <title>GymPatico</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
-</html>
-</file>
-
-<file path="frontend/package.json">
-{
-  "name": "frontend",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed",
-    "test:e2e:report": "playwright show-report"
-  },
-  "dependencies": {
-    "@tailwindcss/vite": "^4.3.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "react-router-dom": "^7.15.1"
-  },
-  "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.60.0",
-    "@types/node": "^25.9.1",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "autoprefixer": "^10.5.0",
-    "eslint": "^10.3.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.6.0",
-    "postcss": "^8.5.15",
-    "tailwindcss": "^4.3.0",
-    "vite": "^8.0.12",
-    "vite-plugin-pwa": "^1.3.0"
-  }
 }
 </file>
 
@@ -2703,6 +2644,145 @@ const checkLimits = (resourceType) => {
 };
 
 module.exports = checkLimits;
+</file>
+
+<file path="frontend/src/components/NotificationsDrawer.jsx">
+// frontend/src/components/NotificationsDrawer.jsx
+import React, { useEffect, useState } from 'react';
+
+export default function NotificationsDrawer({
+  isOpen,
+  onClose,
+  pendingRequests,
+  notifications,
+  onAcceptFriend,
+  onRejectFriend,
+  markAsRead
+}) {
+  // Stan przechowujący ID zaproszeń, z którymi weszliśmy w interakcję
+  const [handledRequests, setHandledRequests] = useState(new Set());
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      if (markAsRead) markAsRead();
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => { document.body.style.overflow = 'unset'; };
+  }, [isOpen, markAsRead]);
+
+  // Wyświetlamy tylko te zaproszenia, których jeszcze nie kliknęliśmy
+  const visibleRequests = pendingRequests?.filter(req => !handledRequests.has(req.friendship_id)) || [];
+
+  // 🔴 PRAWDZIWE OPTYMISTYCZNE UI
+  const handleAction = (actionFn, id) => {
+    // 1. NATYCHMIAST (0 ms opóźnienia) ukrywamy zaproszenie z ekranu 
+    setHandledRequests(prev => new Set(prev).add(id));
+
+    // 2. Po cichu, w tle wysyłamy żądanie do backendu. 
+    // Użytkownik już poszedł dalej i nie musi patrzeć na żaden spinner!
+    actionFn(id).catch(err => console.error("Błąd akcji w tle:", err));
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex justify-end">
+      
+      <div 
+        onClick={onClose} 
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity cursor-pointer" 
+      />
+
+      <div className="relative w-full max-w-md bg-[#0c0e12] border-l border-zinc-800/80 h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+        
+        <div className="flex items-center justify-between p-5 border-b border-zinc-800/80 bg-[#161920]">
+          <h2 className="text-lg font-black text-white flex items-center gap-2">
+            🔔 Powiadomienia
+          </h2>
+          <button 
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-8">
+
+          {visibleRequests.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold text-gymRed uppercase tracking-wider pl-1 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-gymRed animate-pulse" />
+                Oczekujące akcje
+              </h3>
+              
+              <div className="space-y-3">
+                {visibleRequests.map(req => (
+                  <div key={req.friendship_id} className="bg-[#161920] border border-zinc-700/80 rounded-xl p-4 shadow-lg animate-in fade-in zoom-in-95 duration-200">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-lg font-bold text-white border border-zinc-700">
+                        {req.nick ? req.nick.charAt(0).toUpperCase() : '👤'}
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-white">{req.nick}</div>
+                        <div className="text-[11px] text-zinc-400">Chce dołączyć do Twojego Gangu</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => handleAction(onAcceptFriend, req.friendship_id)} 
+                        className="flex-1 py-2 bg-gymRed hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-all cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.2)] active:scale-95 flex items-center justify-center h-8"
+                      >
+                        Akceptuj
+                      </button>
+                      <button 
+                        onClick={() => handleAction(onRejectFriend, req.friendship_id)} 
+                        className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-lg transition-all cursor-pointer active:scale-95 flex items-center justify-center h-8"
+                      >
+                        Odrzuć
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider pl-1">Historia</h3>
+            
+            {!notifications || notifications.length === 0 ? (
+              <div className="text-center py-12 text-zinc-600 text-sm border border-dashed border-zinc-800 rounded-xl">
+                Brak nowych powiadomień.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {notifications.map(notif => (
+                  <div key={notif.id} className={`p-3 rounded-xl border flex items-start gap-3 transition-colors ${notif.is_read ? 'bg-zinc-900/20 border-zinc-800/40 opacity-70' : 'bg-[#161920] border-zinc-700 shadow-md'}`}>
+                    <div className="text-xl mt-0.5">
+                      {notif.type === 'REACTION' ? '🔥' : '👋'}
+                    </div>
+                    <div>
+                      <p className="text-sm text-zinc-300 leading-snug">
+                        <span className="font-bold text-white">{notif.sender_nick || 'Ktoś'}</span> {notif.message}
+                      </p>
+                      <span className="text-[10px] text-zinc-500 mt-1.5 block font-medium">
+                        {new Date(notif.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
 </file>
 
 <file path="frontend/vite.config.js">
@@ -3458,83 +3538,6 @@ export default function History({
 }
 </file>
 
-<file path="backend/index.js">
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const pool = require('./config/db');
-const templatesRouter = require('./routes/templates');
-
-// Krytyczny bezpiecznik środowiskowy
-if (!process.env.JWT_SECRET) {
-  console.error("FATAL ERROR: Zmienna środowiskowa JWT_SECRET nie została zdefiniowana!");
-  process.exit(1);
-}
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// --- GLOBALNE MIDDLEWARE BEZPIECZEŃSTWA NAGŁÓWKÓW ---
-app.use(helmet());
-
-// Zaawansowana i w pełni utwardzona konfiguracja CORS
-app.use(cors({
-  origin: (origin, callback) => {
-    // Zezwalamy na żądania bez nagłówka Origin (np. wewnętrzne testy serwera, Postman, Insomnia)
-    if (!origin) return callback(null, true);
-
-    // Czyszczenie stringów ze skrajnych spacji oraz końcowych ukośników (BHP danych)
-    const cleanOrigin = origin.trim().replace(/\/$/, "");
-    const cleanFrontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim().replace(/\/$/, "") : "";
-
-    // Kryteria dopasowania uprawnień sieciowych (Origins Whitelist)
-    const isLocalhost = cleanOrigin.startsWith('http://localhost') || cleanOrigin.startsWith('http://127.0.0.1');
-    const isMainVercel = cleanFrontendUrl && cleanOrigin === cleanFrontendUrl;
-    
-    // FIX SECURE: Łączymy prefiks nazwy projektu z domeną Vercel.
-    // Wpuszcza tylko adresy typu: gympatico.vercel.app, gympatico-git-main.vercel.app itp.
-    // Blokuje natomiast: jakas-inna-nazwa-uzytkownika.vercel.app
-    const isVercelSubdomain = cleanOrigin.startsWith('https://gympatico') && cleanOrigin.endsWith('.vercel.app');
-
-    if (isLocalhost || isMainVercel || isVercelSubdomain) {
-      // Adres zweryfikowany pozytywnie -> generujemy poprawne nagłówki dla Preflight (OPTIONS)
-      return callback(null, true);
-    } else {
-      // Rejestrujemy próby nieautoryzowanego dostępu na żywo w logach Rendera
-      console.error(`[CORS BLOKADA] Nieautoryzowany Origin: "${origin}". Oczekiwano FRONTEND_URL: "${process.env.FRONTEND_URL}"`);
-      return callback(null, false); // Blokujemy ruch przeglądarkowy czysto, bez crashowania procesu Node
-    }
-  },
-  credentials: true,
-  optionsSuccessStatus: 200 // Zapewnia stabilną obsługę zapytań przedwstępnych OPTIONS w starszych przeglądarkach
-}));
-
-app.use(express.json());
-
-// --- PODPIĘCIE MODUŁOWYCH ROUTERÓW API ---
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/weight', require('./routes/weight'));
-app.use('/api/workouts', require('./routes/workouts'));
-app.use('/api/friends', require('./routes/friends'));
-app.use('/api/exercises', require('./routes/exercises'));
-app.use('/api/stats', require('./routes/stats'));
-app.use('/api/templates', templatesRouter);
-app.use('/api/notifications', require('./routes/notifications'));
-
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true });
-});
-
-if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`🚀 Serwer GymPatico działa stabilnie i bezpiecznie na porcie ${PORT}`);
-  });
-}
-
-module.exports = app;
-</file>
-
 <file path="frontend/src/hooks/useWorkouts.js">
 // frontend/src/hooks/useWorkouts.js
 import { useState, useCallback, useRef } from 'react'
@@ -3711,6 +3714,83 @@ export function useWorkouts(token, exercises, showToast) {
     handleUpdateWorkout
   }
 }
+</file>
+
+<file path="backend/index.js">
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const pool = require('./config/db');
+const templatesRouter = require('./routes/templates');
+
+// Krytyczny bezpiecznik środowiskowy
+if (!process.env.JWT_SECRET) {
+  console.error("FATAL ERROR: Zmienna środowiskowa JWT_SECRET nie została zdefiniowana!");
+  process.exit(1);
+}
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// --- GLOBALNE MIDDLEWARE BEZPIECZEŃSTWA NAGŁÓWKÓW ---
+app.use(helmet());
+
+// Zaawansowana i w pełni utwardzona konfiguracja CORS
+app.use(cors({
+  origin: (origin, callback) => {
+    // Zezwalamy na żądania bez nagłówka Origin (np. wewnętrzne testy serwera, Postman, Insomnia)
+    if (!origin) return callback(null, true);
+
+    // Czyszczenie stringów ze skrajnych spacji oraz końcowych ukośników (BHP danych)
+    const cleanOrigin = origin.trim().replace(/\/$/, "");
+    const cleanFrontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim().replace(/\/$/, "") : "";
+
+    // Kryteria dopasowania uprawnień sieciowych (Origins Whitelist)
+    const isLocalhost = cleanOrigin.startsWith('http://localhost') || cleanOrigin.startsWith('http://127.0.0.1');
+    const isMainVercel = cleanFrontendUrl && cleanOrigin === cleanFrontendUrl;
+    
+    // FIX SECURE: Łączymy prefiks nazwy projektu z domeną Vercel.
+    // Wpuszcza tylko adresy typu: gympatico.vercel.app, gympatico-git-main.vercel.app itp.
+    // Blokuje natomiast: jakas-inna-nazwa-uzytkownika.vercel.app
+    const isVercelSubdomain = cleanOrigin.startsWith('https://gympatico') && cleanOrigin.endsWith('.vercel.app');
+
+    if (isLocalhost || isMainVercel || isVercelSubdomain) {
+      // Adres zweryfikowany pozytywnie -> generujemy poprawne nagłówki dla Preflight (OPTIONS)
+      return callback(null, true);
+    } else {
+      // Rejestrujemy próby nieautoryzowanego dostępu na żywo w logach Rendera
+      console.error(`[CORS BLOKADA] Nieautoryzowany Origin: "${origin}". Oczekiwano FRONTEND_URL: "${process.env.FRONTEND_URL}"`);
+      return callback(null, false); // Blokujemy ruch przeglądarkowy czysto, bez crashowania procesu Node
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200 // Zapewnia stabilną obsługę zapytań przedwstępnych OPTIONS w starszych przeglądarkach
+}));
+
+app.use(express.json());
+
+// --- PODPIĘCIE MODUŁOWYCH ROUTERÓW API ---
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/weight', require('./routes/weight'));
+app.use('/api/workouts', require('./routes/workouts'));
+app.use('/api/friends', require('./routes/friends'));
+app.use('/api/exercises', require('./routes/exercises'));
+app.use('/api/stats', require('./routes/stats'));
+app.use('/api/templates', templatesRouter);
+app.use('/api/notifications', require('./routes/notifications'));
+
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true });
+});
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Serwer GymPatico działa stabilnie i bezpiecznie na porcie ${PORT}`);
+  });
+}
+
+module.exports = app;
 </file>
 
 <file path="init.sql">
@@ -3919,7 +3999,6 @@ const getTimeAgo = (dateStr) => {
 
 export default function Social({
   friendNickInput, setFriendNickInput, onSendFriendRequest,
-  pendingRequests, handleAcceptFriend, handleRejectFriend,
   friends, user, activityFeed, onToggleReaction, 
   fetchFriendProfile, selectedFriendProfile, setSelectedFriendProfile, isProfileLoading,
   weeklyChallenge, onRemoveFriend
@@ -3931,13 +4010,13 @@ export default function Social({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left pb-16">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left pb-16 animate-in fade-in duration-300">
       
-      {/* LEWA STRONA: WYSZUKIWARKA + OCZEKUJĄCE */}
+      {/* LEWA STRONA: WYSZUKIWARKA */}
       <div className="lg:col-span-1 flex flex-col gap-6">
         <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
           <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2 text-white">Szukaj znajomych 🔍</h2>
-          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick dewelopera, aby zaprosić go do gangu.</p>
+          <p className="text-zinc-400 text-xs mb-4">Wpisz dokładny nick użytkownika, aby zaprosić go do gangu.</p>
           <form onSubmit={handleSubmit} className="flex gap-2">
             <input 
               type="text" placeholder="np. MarekWorkout" value={friendNickInput} onChange={e => setFriendNickInput(e.target.value)} 
@@ -3949,23 +4028,15 @@ export default function Social({
           </form>
         </section>
 
-        <section className="bg-gymCard p-4 md:p-5 rounded-xl shadow-lg border border-zinc-800/40">
-          <h2 className="text-lg md:text-xl font-bold tracking-tight mb-4 text-white">Oczekujące zaproszenia ✉️</h2>
-          {pendingRequests.length === 0 ? (
-            <p className="text-zinc-500 italic text-sm text-center py-4">Brak nowych zaproszeń.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {pendingRequests.map(req => (
-                <div key={req.friendship_id} className="flex flex-col gap-3 bg-[#2d2d2d] p-3 rounded-lg border border-zinc-800 shadow-sm">
-                  <span className="text-sm text-zinc-400">Zaproszenie od: <strong className="text-white">{req.nick}</strong></span>
-                  <div className="flex gap-2 w-full">
-                    <button onClick={() => handleAcceptFriend(req.friendship_id)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded text-xs transition-all active:scale-95 cursor-pointer">Akceptuj ✓</button>
-                    <button onClick={() => handleRejectFriend(req.friendship_id)} className="flex-1 border border-zinc-700 hover:border-gymDanger text-zinc-400 hover:text-gymDanger font-bold px-3 py-2 rounded text-xs transition-all active:scale-95 cursor-pointer">Odrzuć ✕</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+        {/* INFO WIDGET (Tylko na większych ekranach, żeby wypełnić pustkę po zaproszeniach) */}
+        <section className="hidden lg:block bg-[#161920]/50 border border-zinc-800/40 p-6 rounded-xl text-center shadow-inner">
+          <div className="w-12 h-12 bg-zinc-800 rounded-full flex items-center justify-center text-2xl mx-auto mb-4 border border-zinc-700 shadow-lg">
+            🤝
+          </div>
+          <h3 className="text-white font-bold text-sm mb-2">Siła tkwi w Gangu</h3>
+          <p className="text-xs text-zinc-500 leading-relaxed">
+            Dodawaj znajomych, by śledzić ich aktywność. Wzajemna motywacja, walka o pozycję Króla Tonażu i utrzymywanie płonących streaków to klucz do regularności!
+          </p>
         </section>
       </div>
 
@@ -3981,7 +4052,7 @@ export default function Social({
             <p className="text-zinc-400 text-xs md:text-sm mt-1">Utrzymuj cel tygodniowy, aby piąć się w górę tabeli!</p>
           </div>
           {friends.length === 0 ? (
-            <p className="text-zinc-500 italic text-center py-8">Brak znajomych w rankingu. Zaproś kogoś!</p>
+            <p className="text-zinc-500 italic text-center py-8 text-sm">Brak znajomych w rankingu. Zaproś kogoś!</p>
           ) : (
             <div className="flex flex-col gap-2.5">
               {friends.map((f, idx) => {
@@ -5501,6 +5572,7 @@ import { API_BASE_URL } from './config/api'
 import StatsView from './views/StatsView'
 
 import NotificationBell from './components/NotificationBell';
+import NotificationsDrawer from './components/NotificationsDrawer';
 
 // Prosty dekoder weryfikujący czas życia JWT
 const getJwtExpiry = (token) => {
@@ -5528,6 +5600,7 @@ function AppContent() {
   const [loadingData, setLoadingData] = useState(false)
 
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
+  const [isNotificationsDrawerOpen, setIsNotificationsDrawerOpen] = useState(false);
 
   const navigate = useNavigate()
   const location = useLocation()
@@ -5573,14 +5646,12 @@ function AppContent() {
   }
 
   const handleLogout = useCallback(async () => {
-    // 🔴 KLAUZULA CZYSZCZENIA: Usuwamy subskrypcję z bazy i przeglądarki przed wylogowaniem
     try {
       if ('serviceWorker' in navigator && 'PushManager' in window) {
         const registration = await navigator.serviceWorker.ready;
         const subscription = await registration.pushManager.getSubscription();
         
         if (subscription) {
-          // 1. Najpierw usuwamy wpis z bazy przez nasz nowy, dedykowany moduł powiadomień
           await fetch(`${API_BASE_URL}/api/notifications/unsubscribe`, {
             method: 'DELETE',
             headers: { 
@@ -5590,7 +5661,6 @@ function AppContent() {
             body: JSON.stringify({ endpoint: subscription.endpoint })
           });
 
-          // 2. Dopiero po sukcesie sieciowym niszczymy subskrypcję lokalnie w urządzeniu
           await subscription.unsubscribe();
           console.log("▶ Subskrypcja Web Push została pomyślnie wyrejestrowana globalnie.");
         }
@@ -5599,7 +5669,6 @@ function AppContent() {
       console.error("⚠️ Ignorowany błąd czyszczenia subskrypcji przy wylogowaniu:", e);
     }
 
-    // Standardowa procedura czyszczenia stanu aplikacji i pamięci lokalnej
     localStorage.removeItem('gp_token');
     localStorage.removeItem('gp_user');
     setToken(null);
@@ -5673,13 +5742,11 @@ function AppContent() {
     }
   }, [token, fetchWeightLogs, fetchWorkoutsData, fetchFriendsData, setCurrentSelectedExercise, fetchStatsData, fetchTemplates]);
 
-  // 🔴 ZABEZPIECZENIE PRZED INFINITE LOOP (wywołanie tylko przy zmianie tokena)
   useEffect(() => {
     fetchAllData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
 
-  // 🔴 SILENT REFRESH: Automatyczne przedłużanie sesji
   useEffect(() => {
     if (!token) return;
 
@@ -5724,6 +5791,34 @@ function AppContent() {
       window.removeEventListener('gympatico-unauthorized', handleSessionExpired);
     };
   }, [handleLogout]);
+
+  // 🔴 NOWOŚĆ: Nasłuchiwanie na powiadomienia Push w tle (Real-Time Auto Refresh)
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+
+    const handleSWMessage = (event) => {
+      if (event.data && event.data.type === 'PUSH_RECEIVED') {
+        console.log('🔄 Odebrano sygnał Web Push! Ciche odświeżanie danych...');
+        fetchAllData(); 
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleSWMessage);
+    
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+    };
+  }, [fetchAllData]);
+
+  // 🔴 NOWOŚĆ: Ciche odpytywanie (Fallback) co 30 sekund
+  useEffect(() => {
+    if (!token) return;
+    const interval = setInterval(() => {
+      fetchFriendsData(); 
+    }, 30000); 
+    
+    return () => clearInterval(interval);
+  }, [token, fetchFriendsData]);
 
   const onUpdateWeeklyTarget = async (newTarget) => {
     try {
@@ -5791,9 +5886,11 @@ function AppContent() {
     try {
       await handleAcceptFriend(friendshipId);
       showToast('Zaproszenie zaakceptowane! 🤝', 'success');
-      await fetchAllData();
+      fetchAllData(); // 🔴 BRAK AWAIT! Pobieranie rusza w tle
+      return true; 
     } catch (err) {
       showToast(err.message, 'error');
+      return false; 
     }
   };
 
@@ -5801,19 +5898,20 @@ function AppContent() {
     try {
       await handleRejectFriend(friendshipId);
       showToast('Zaproszenie zostało odrzucone.', 'success');
-      await fetchAllData();
+      fetchAllData(); // 🔴 BRAK AWAIT!
+      return true; 
     } catch (err) {
       showToast(err.message, 'error');
+      return false; 
     }
   };
 
-  // 🔴 NOWOŚĆ: Wrapper usuwania znajomego
   const onRemoveFriend = async (friendId) => {
     try {
       await handleRemoveFriend(friendId);
       showToast('Użytkownik został usunięty z Gangu 💔', 'success');
-      setSelectedFriendProfile(null); // Zamykamy modal profilu
-      await fetchAllData(); // Odświeżamy rankingi i feed
+      setSelectedFriendProfile(null); 
+      await fetchAllData(); 
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -5897,7 +5995,9 @@ function AppContent() {
             <div className="flex items-center gap-3 md:gap-4 shrink-0">
               <NotificationBell 
                 notifications={notifications} 
+                pendingRequests={pendingRequests}
                 markAsRead={markNotificationsAsRead} 
+                onClick={() => setIsNotificationsDrawerOpen(true)}
               />
               
               <nav className="hidden md:flex items-center gap-2">
@@ -5979,7 +6079,6 @@ function AppContent() {
 
       <main className="pb-24 md:pb-0">
         <Routes>
-          {/* 1. STRONA GŁÓWNA: Niezalogowany widzi Landing, zalogowany widzi Dashboard */}
           <Route path="/" element={token ? (
             <Dashboard 
               user={user} 
@@ -5997,11 +6096,9 @@ function AppContent() {
             />
           ) : <Landing />} />
 
-          {/* 2. AUTORYZACJA: Oba adresy korzystają z komponentu LoginView */}
           <Route path="/login" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
           <Route path="/register" element={token ? <Navigate to="/" /> : <LoginView onLoginSuccess={handleLoginSuccess} />} />
           
-          {/* 3. ZABLOKOWANE ŚCIEŻKI APLIKACJI */}
           <Route path="/exercises" element={token ? <ExercisesList exercises={exercises} onAddExercise={onAddCustomExercise} onDeleteExercise={onDeleteCustomExercise} /> : <Navigate to="/login" />} />
           
           <Route path="/new-workout" element={token ? (
@@ -6035,20 +6132,29 @@ function AppContent() {
             />
           ) : <Navigate to="/login" />} />
           
-          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} pendingRequests={pendingRequests} handleAcceptFriend={onAcceptFriend} handleRejectFriend={onRejectFriend} friends={friends} user={user} activityFeed={activityFeed} onToggleReaction={handleToggleReaction} weeklyChallenge={weeklyChallenge} fetchFriendProfile={fetchFriendProfile} selectedFriendProfile={selectedFriendProfile} setSelectedFriendProfile={setSelectedFriendProfile} isProfileLoading={isProfileLoading} onRemoveFriend={onRemoveFriend} /> : <Navigate to="/login" />} />
+          <Route path="/social" element={token ? <Social friendNickInput={friendNickInput} setFriendNickInput={setFriendNickInput} onSendFriendRequest={onSendFriendRequest} friends={friends} user={user} activityFeed={activityFeed} onToggleReaction={handleToggleReaction} weeklyChallenge={weeklyChallenge} fetchFriendProfile={fetchFriendProfile} selectedFriendProfile={selectedFriendProfile} setSelectedFriendProfile={setSelectedFriendProfile} isProfileLoading={isProfileLoading} onRemoveFriend={onRemoveFriend} /> : <Navigate to="/login" />} />
           
           <Route path="/stats" element={token ? <StatsView stats={stats} loading={loadingData} /> : <Navigate to="/login" />} />
           
           <Route path="/settings" element={token ? <Settings token={token} showToast={showToast} /> : <Navigate to="/login" />} />
           
-          {/* 4. FALLBACK: Nieznany adres URL */}
           <Route path="*" element={<Navigate to={token ? "/" : "/login"} />} />
         </Routes>
       </main>
 
+      <NotificationsDrawer 
+        isOpen={isNotificationsDrawerOpen}
+        onClose={() => setIsNotificationsDrawerOpen(false)}
+        pendingRequests={pendingRequests}
+        notifications={notifications}
+        onAcceptFriend={onAcceptFriend}
+        onRejectFriend={onRejectFriend}
+        markAsRead={markNotificationsAsRead}
+      />
+
       {toast.message && (
         <div 
-          className={`fixed bottom-24 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-xl text-white font-bold text-xs md:text-sm shadow-2xl z-[1000] tracking-wide animate-in fade-in slide-in-from-bottom-4 duration-200
+          className={`fixed bottom-24 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-xl text-white font-bold text-xs md:text-sm shadow-2xl z-[99999] tracking-wide animate-in fade-in slide-in-from-bottom-4 duration-200
             ${toast.type === 'error' ? 'bg-gymRed border border-red-600' : 'bg-emerald-500 border border-emerald-600'}`}
         >
           {toast.message}
