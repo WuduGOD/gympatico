@@ -245,8 +245,8 @@ function AppContent() {
 
     const handleSWMessage = (event) => {
       if (event.data && event.data.type === 'PUSH_RECEIVED') {
-        console.log('🔄 Odebrano sygnał Web Push! Ciche odświeżanie gangu...');
-        fetchFriendsData(); // SKALPEL: Odświeżamy tylko mały pakiet danych!
+        console.log('🔄 SW Signal: Wykryto zmianę w Gangu. Szybki refetch...');
+        fetchFriendsData(); 
       }
     };
 
@@ -257,9 +257,24 @@ function AppContent() {
   // 🔴 NOWOŚĆ: Ciche odpytywanie (Fallback) co 30 sekund
   useEffect(() => {
     if (!token) return;
+
+    const handleWindowFocus = () => {
+      console.log('🍏 Okno aktywne: Błyskawiczna weryfikacja stanu Gangu...');
+      fetchFriendsData(); // Odświeża listę w 0 ms od momentu spojrzenia na ekran
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    return () => window.removeEventListener('focus', handleWindowFocus);
+  }, [token, fetchFriendsData]);
+
+  // 3. AGRESYWNY POLLING (Fallback): Sprawdzanie zmian co 7 sekund w tle
+  useEffect(() => {
+    if (!token) return;
+
+    // Pobieramy tylko lekkie dane relacji, Supabase obsłuży to natychmiastowo
     const interval = setInterval(() => {
       fetchFriendsData(); 
-    }, 30000); 
+    }, 7000); // Zmniejszone z 30s do 7s pod kątem dynamicznej synchronizacji
     
     return () => clearInterval(interval);
   }, [token, fetchFriendsData]);
