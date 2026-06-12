@@ -245,17 +245,14 @@ function AppContent() {
 
     const handleSWMessage = (event) => {
       if (event.data && event.data.type === 'PUSH_RECEIVED') {
-        console.log('🔄 Odebrano sygnał Web Push! Ciche odświeżanie danych...');
-        fetchAllData(); 
+        console.log('🔄 Odebrano sygnał Web Push! Ciche odświeżanie gangu...');
+        fetchFriendsData(); // SKALPEL: Odświeżamy tylko mały pakiet danych!
       }
     };
 
     navigator.serviceWorker.addEventListener('message', handleSWMessage);
-    
-    return () => {
-      navigator.serviceWorker.removeEventListener('message', handleSWMessage);
-    };
-  }, [fetchAllData]);
+    return () => navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+  }, [fetchFriendsData]);
 
   // 🔴 NOWOŚĆ: Ciche odpytywanie (Fallback) co 30 sekund
   useEffect(() => {
@@ -323,34 +320,30 @@ function AppContent() {
     try {
       await handleSendFriendRequest(friendNickInput);
       showToast('Zaproszenie wysłane pomyślnie! ✉️', 'success');
-      await fetchAllData();
+      fetchFriendsData(); // SKALPEL
     } catch (err) {
       showToast(err.message, 'error');
     }
   };
 
-  const onAcceptFriend = async (friendshipId) => {
-    try {
-      await handleAcceptFriend(friendshipId);
+  const onAcceptFriend = (friendshipId) => {
+    handleAcceptFriend(friendshipId).then(() => {
       showToast('Zaproszenie zaakceptowane! 🤝', 'success');
-      fetchAllData(); // 🔴 BRAK AWAIT! Pobieranie rusza w tle
-      return true; 
-    } catch (err) {
+      fetchFriendsData(); // SKALPEL
+    }).catch(err => {
       showToast(err.message, 'error');
-      return false; 
-    }
+    });
+    return true; // Szuflada dostaje informację "zrobione" natychmiast
   };
 
-  const onRejectFriend = async (friendshipId) => {
-    try {
-      await handleRejectFriend(friendshipId);
+  const onRejectFriend = (friendshipId) => {
+    handleRejectFriend(friendshipId).then(() => {
       showToast('Zaproszenie zostało odrzucone.', 'success');
-      fetchAllData(); // 🔴 BRAK AWAIT!
-      return true; 
-    } catch (err) {
+      fetchFriendsData(); // SKALPEL
+    }).catch(err => {
       showToast(err.message, 'error');
-      return false; 
-    }
+    });
+    return true;
   };
 
   const onRemoveFriend = async (friendId) => {
@@ -358,7 +351,7 @@ function AppContent() {
       await handleRemoveFriend(friendId);
       showToast('Użytkownik został usunięty z Gangu 💔', 'success');
       setSelectedFriendProfile(null); 
-      await fetchAllData(); 
+      fetchFriendsData(); // SKALPEL
     } catch (err) {
       showToast(err.message, 'error');
     }
